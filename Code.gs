@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '8';
+const SCRIPT_VERSION = '10';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -105,6 +105,56 @@ function clearRosterData() {
   
   SpreadsheetApp.flush();
   SpreadsheetApp.getUi().alert('Data Cleared', 'Roster data has been cleared. Metadata rows 1-5 and Manual/Formula columns preserved.', SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * Validate that script metadata matches what's in the sheet
+ * Throws an error if there are mismatches, indicating the script needs updating
+ */
+function validateRosterMetadata(rosterSheet, rosterColumns) {
+  const maxCols = rosterSheet.getMaxColumns();
+  const existingHeaders = rosterSheet.getRange(1, 1, 1, maxCols).getValues()[0];
+  const existingTypes = rosterSheet.getRange(2, 1, 1, maxCols).getValues()[0];
+  const existingSources = rosterSheet.getRange(3, 1, 1, maxCols).getValues()[0];
+  const existingNotes = rosterSheet.getRange(4, 1, 1, maxCols).getValues()[0];
+  
+  const mismatches = [];
+  
+  // Check each column the script knows about
+  rosterColumns.forEach(col => {
+    const colIndex = existingHeaders.indexOf(col.name);
+    
+    if (colIndex === -1) {
+      // Column is missing from sheet
+      mismatches.push(`❌ MISSING COLUMN: "${col.name}" is defined in the script but not found in the sheet. Please add this column manually.`);
+    } else {
+      // Column exists in sheet - validate metadata
+      const sheetType = existingTypes[colIndex]?.toString().trim() || '';
+      const sheetSource = existingSources[colIndex]?.toString().trim() || '';
+      const sheetNote = existingNotes[colIndex]?.toString().trim() || '';
+      
+      // Compare with script definitions (allow empty values to match)
+      if (sheetType && sheetType !== col.type) {
+        mismatches.push(`Column "${col.name}": Type mismatch. Sheet has "${sheetType}", script expects "${col.type}"`);
+      }
+      
+      if (sheetSource && sheetSource !== col.source) {
+        mismatches.push(`Column "${col.name}": Source mismatch. Sheet has "${sheetSource}", script expects "${col.source}"`);
+      }
+      
+      if (sheetNote && col.note && sheetNote !== col.note) {
+        mismatches.push(`Column "${col.name}": Note mismatch. Sheet has different note than script expects`);
+      }
+    }
+  });
+  
+  if (mismatches.length > 0) {
+    const errorMessage = `❌ METADATA MISMATCH DETECTED ❌\n\nThe sheet metadata doesn't match the script definitions. Please update the script or fix the sheet metadata:\n\n${mismatches.join('\n\n')}\n\n⚠️ The sheet is now the source of truth. Update the script to match what's in the sheet, or fix the sheet metadata to match the script.`;
+    
+    throw new Error(errorMessage);
+  }
+  
+  console.log('✅ Metadata validation passed - sheet and script are in sync');
 }
 
 /**
@@ -264,13 +314,6 @@ function buildRosterSheet(spreadsheet) {
       formula: `=IFERROR(VLOOKUP(S6,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
     },
     {
-      name: 'Additional Info Questionnaire Filled Out?',
-      type: 'Boolean',
-      source: '',
-      note: 'True if was able to find a match for the player in Final Forms and the Additional Info form. \\nFalse otherwise.',
-      formula: `=IF(COUNTIF('Additional Info'!B:B,TRIM(A6&" "&C6))>0,TRUE,FALSE)`
-    },
-    {
       name: 'Player Pronouns (select all that apply)',
       type: 'String',
       source: 'AdditionalInfoForm',
@@ -363,30 +406,13 @@ function buildRosterSheet(spreadsheet) {
     }
   ];
   
-  // Process each column definition
+  // Validate that script metadata matches sheet metadata
+  validateRosterMetadata(rosterSheet, rosterColumns);
+  
+  // Process each column definition (validation ensures all exist)
   rosterColumns.forEach((col) => {
-    let colNum = columnMap.get(col.name);
-    
-    // If column doesn't exist, find the next available column
-    if (!colNum) {
-      colNum = maxCols + 1;
-      // Expand sheet if needed
-      if (colNum > rosterSheet.getMaxColumns()) {
-        rosterSheet.insertColumnsAfter(rosterSheet.getMaxColumns(), 1);
-      }
-    }
-    
-    // Set metadata for this column
-    // Row 1: Column Name
-    rosterSheet.getRange(1, colNum).setValue(col.name);
-    // Row 2: Type
-    rosterSheet.getRange(2, colNum).setValue(col.type);
-    // Row 3: Data Source
-    rosterSheet.getRange(3, colNum).setValue(col.source);
-    // Row 4: Additional Note
-    rosterSheet.getRange(4, colNum).setValue(col.note);
-    // Row 5: Repeat Column Name (for pivot tables)
-    rosterSheet.getRange(5, colNum).setValue(col.name);
+    const colNum = columnMap.get(col.name);
+    // Note: validation above ensures this column exists
     
     // Now we need to update formulas to reference the correct columns dynamically
     // Create a formula that adapts to the current column positions
@@ -472,6 +498,7 @@ function createCustomMenu() {
     .addItem('📈 Show Statistics', 'showStatistics')
     .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')
     .addItem('👥 Parents Not Members of Mailing List', 'findPendingParents')
+    .addItem('❗ Find Unmatched Additional Info Responses', 'findUnmatchedAdditionalInfo')
     .addToUi();
 }
 
@@ -568,7 +595,6 @@ function showStatistics() {
   const formsParentSignedCol = columnMap.get('Are All Forms Parent Signed');
   const formsStudentSignedCol = columnMap.get('Are All Forms Student Signed');
   const physicalClearedCol = columnMap.get('Physical Cleared');
-  const additionalInfoCol = columnMap.get('Additional Info Questionnaire Filled Out?');
   const parent1MailingCol = columnMap.get('Parent 1 Email On Mailing List?');
   const parent2MailingCol = columnMap.get('Parent 2 Email On Mailing List?');
   const gradeCol = columnMap.get('Grade');
@@ -1083,6 +1109,200 @@ function showPendingParentsDialog(pendingParents) {
   
   SpreadsheetApp.getUi().showModalDialog(html, 'Parents Not Members of Mailing List');
 }
+
+/**
+ * Find Additional Info responses that don't match any roster entries
+ * Provides options to highlight or filter unmatched responses
+ */
+function findUnmatchedAdditionalInfo() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+  const additionalInfoSheet = ss.getSheetByName(CONFIG.additionalInfo.sheetName);
+  
+  if (!rosterSheet || !additionalInfoSheet) {
+    SpreadsheetApp.getUi().alert('Error: Could not find Roster or Additional Info sheets');
+    return;
+  }
+  
+  // Get roster names for matching
+  const rosterHeaders = rosterSheet.getRange(1, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
+  const firstNameCol = rosterHeaders.indexOf('First Name') + 1;
+  const lastNameCol = rosterHeaders.indexOf('Last Name') + 1;
+  const preferredNameCol = rosterHeaders.indexOf('Preferred Name') + 1;
+  
+  if (!firstNameCol || !lastNameCol) {
+    SpreadsheetApp.getUi().alert('Error: Could not find First Name or Last Name columns in roster');
+    return;
+  }
+  
+  // Get all roster names
+  const rosterLastRow = rosterSheet.getLastRow();
+  const rosterNames = new Set();
+  
+  for (let row = FIRST_DATA_ROW; row <= rosterLastRow; row++) {
+    const firstName = rosterSheet.getRange(row, firstNameCol).getValue();
+    const lastName = rosterSheet.getRange(row, lastNameCol).getValue();
+    const preferredName = preferredNameCol ? rosterSheet.getRange(row, preferredNameCol).getValue() : '';
+    
+    if (firstName && lastName) {
+      // Add all possible name combinations
+      rosterNames.add(`${firstName} ${lastName}`.trim().toLowerCase());
+      if (preferredName) {
+        rosterNames.add(`${preferredName} ${lastName}`.trim().toLowerCase());
+      }
+    }
+  }
+  
+  // Get Additional Info responses
+  const additionalInfoData = additionalInfoSheet.getDataRange().getValues();
+  if (additionalInfoData.length < 2) {
+    SpreadsheetApp.getUi().alert('No Additional Info data found');
+    return;
+  }
+  
+  const headers = additionalInfoData[0];
+  const playerNameCol = headers.indexOf('Player Name (First & Last)');
+  
+  if (playerNameCol === -1) {
+    SpreadsheetApp.getUi().alert('Error: Could not find "Player Name (First & Last)" column in Additional Info');
+    return;
+  }
+  
+  // Find unmatched responses
+  const unmatchedResponses = [];
+  
+  for (let i = 1; i < additionalInfoData.length; i++) {
+    const row = additionalInfoData[i];
+    const playerName = row[playerNameCol];
+    
+    if (playerName) {
+      const normalizedName = playerName.toString().trim().toLowerCase();
+      
+      if (!rosterNames.has(normalizedName)) {
+        unmatchedResponses.push({
+          rowNumber: i + 1, // 1-based row number in sheet
+          playerName: playerName.toString(),
+          timestamp: row[0] ? row[0].toString() : 'N/A',
+          rowData: row
+        });
+      }
+    }
+  }
+  
+  if (unmatchedResponses.length === 0) {
+    SpreadsheetApp.getUi().alert(
+      'All Responses Matched',
+      'All Additional Info responses have matching entries in the roster.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } else {
+    // Automatically highlight unmatched rows inline
+    highlightUnmatchedRowsInline(unmatchedResponses, additionalInfoSheet);
+    
+    // Create filter for unmatched rows
+    createUnmatchedFilterInline(unmatchedResponses, additionalInfoSheet);
+    
+    // Show summary dialog
+    showUnmatchedSummaryDialog(unmatchedResponses, additionalInfoSheet);
+  }
+}
+
+/**
+ * Highlight unmatched rows directly in the Additional Info sheet
+ */
+function highlightUnmatchedRowsInline(unmatchedResponses, additionalInfoSheet) {
+  // Clear existing highlighting first
+  const dataRange = additionalInfoSheet.getDataRange();
+  dataRange.setBackground(null);
+  
+  // Add a note column to track unmatched status if it doesn't exist
+  const headers = additionalInfoSheet.getRange(1, 1, 1, additionalInfoSheet.getMaxColumns()).getValues()[0];
+  let statusCol = headers.indexOf('Roster Match Status') + 1;
+  
+  if (statusCol === 0) {
+    // Add status column if it doesn't exist
+    statusCol = additionalInfoSheet.getMaxColumns() + 1;
+    additionalInfoSheet.getRange(1, statusCol).setValue('Roster Match Status');
+    additionalInfoSheet.getRange(1, statusCol).setBackground('#f1f3f4').setFontWeight('bold');
+  }
+  
+  // Set all rows to "MATCHED" first
+  for (let i = 2; i <= additionalInfoSheet.getLastRow(); i++) {
+    additionalInfoSheet.getRange(i, statusCol).setValue('MATCHED').setBackground('#d9ead3');
+  }
+  
+  // Highlight and mark unmatched rows
+  unmatchedResponses.forEach(response => {
+    const range = additionalInfoSheet.getRange(response.rowNumber, 1, 1, additionalInfoSheet.getMaxColumns());
+    range.setBackground('#fce8e6'); // Light red background
+    
+    // Mark status column
+    additionalInfoSheet.getRange(response.rowNumber, statusCol)
+      .setValue('UNMATCHED')
+      .setBackground('#f28b82')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold');
+  });
+  
+  // Make the Additional Info sheet active so user can see the highlighting
+  additionalInfoSheet.activate();
+}
+
+/**
+ * Create inline filter in the Additional Info sheet
+ */
+function createUnmatchedFilterInline(unmatchedResponses, additionalInfoSheet) {
+  // Remove existing filters
+  if (additionalInfoSheet.getFilter()) {
+    additionalInfoSheet.getFilter().remove();
+  }
+  
+  // Create new filter on the entire data range
+  const dataRange = additionalInfoSheet.getDataRange();
+  const filter = dataRange.createFilter();
+  
+  // Find the status column we just created/updated
+  const headers = additionalInfoSheet.getRange(1, 1, 1, additionalInfoSheet.getMaxColumns()).getValues()[0];
+  const statusCol = headers.indexOf('Roster Match Status') + 1;
+  
+  if (statusCol > 0) {
+    // Set up filter criteria to show UNMATCHED rows by default (hide MATCHED ones)
+    const criteria = SpreadsheetApp.newFilterCriteria()
+      .setHiddenValues(['MATCHED'])
+      .build();
+    
+    filter.setColumnFilterCriteria(statusCol, criteria);
+  }
+}
+
+/**
+ * Show simple summary dialog for unmatched responses
+ */
+function showUnmatchedSummaryDialog(unmatchedResponses, additionalInfoSheet) {
+  // Simple alert showing what was done
+  const message = `Found ${unmatchedResponses.length} unmatched Additional Info responses.
+
+✅ Actions completed:
+• Highlighted unmatched rows in red
+• Added "Roster Match Status" column 
+• Applied filter to show only unmatched rows
+• Switched to Additional Info sheet
+
+You can now:
+• Review the highlighted unmatched entries
+• Use the filter dropdown to toggle between MATCHED/UNMATCHED
+• Update roster or Additional Info data to resolve mismatches
+
+Unmatched names:
+${unmatchedResponses.map(r => `• ${r.playerName}`).join('\n')}`;
+
+  SpreadsheetApp.getUi().alert(
+    'Unmatched Responses Found', 
+    message, 
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
 
 /**
  * Run on spreadsheet open to create menu
