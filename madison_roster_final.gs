@@ -11,10 +11,13 @@
  * 6. Grant permissions when prompted
  */
 
+// Script Version - Increment this number when making changes  
+const SCRIPT_VERSION = '5';
+
 // Configuration
 const CONFIG = {
   finalForms: {
-    fileId: '1pWUIw2rM0MfNWnaC3Ltsz6Wj8_PGFHrH',
+    fileId: '1p4cX6RmO0abXHdniSMnvxFtPYJFauCVj',
     sheetName: 'Final Forms'
   },
   additionalInfo: {
@@ -51,41 +54,40 @@ function generateRoster() {
   SpreadsheetApp.getUi().alert('Roster Generated!', 'The roster has been created with metadata rows and all data mappings.\n\nNote: Columns are matched by header name, so you can safely reorder columns and regenerate.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
+
 /**
- * Clear all formatting from the roster sheet
+ * Clear roster data while preserving metadata rows and Manual/Formula columns
+ * Internal function that does the actual clearing
  */
-function clearRosterFormatting() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+function clearRosterDataInternal(rosterSheet) {
+  const lastRow = rosterSheet.getMaxRows();
+  const lastCol = rosterSheet.getMaxColumns();
   
-  if (!rosterSheet) {
-    SpreadsheetApp.getUi().alert('Error', 'Roster sheet not found.', SpreadsheetApp.getUi().ButtonSet.OK);
-    return;
+  if (lastRow >= 6) {
+    // Get the source row (row 3) to determine which columns to preserve
+    const sourceRow = rosterSheet.getRange(3, 1, 1, lastCol).getValues()[0];
+    
+    // Clear data column by column, preserving Manual, Formula, and blank sources
+    for (let col = 1; col <= lastCol; col++) {
+      const columnSource = sourceRow[col - 1];
+      const sourceString = columnSource ? columnSource.toString().trim() : '';
+      
+      // Skip columns with source "Manual", "Formula", or blank/empty
+      if (sourceString === 'Manual' || sourceString === 'Formula' || sourceString === '') {
+        console.log(`Preserving column ${col} (source: "${sourceString}")`);
+        continue;
+      }
+      
+      // Clear content for all other columns
+      const columnRange = rosterSheet.getRange(6, col, lastRow - 5, 1);
+      columnRange.clearContent();
+    }
   }
-  
-  // Clear all formatting
-  const fullRange = rosterSheet.getDataRange();
-  fullRange.clearFormat();
-  
-  // Clear conditional formatting rules
-  rosterSheet.clearConditionalFormatRules();
-  
-  // Reset row heights to default
-  for (let i = 1; i <= rosterSheet.getMaxRows(); i++) {
-    rosterSheet.setRowHeight(i, 21); // Default height
-  }
-  
-  // Reset column widths to default
-  for (let i = 1; i <= rosterSheet.getMaxColumns(); i++) {
-    rosterSheet.setColumnWidth(i, 100); // Default width
-  }
-  
-  SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert('Formatting Cleared', 'All formatting has been removed from the Roster sheet.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 /**
- * Clear roster data while preserving metadata rows
+ * Clear roster data while preserving metadata rows and Manual/Formula columns
+ * User-facing function with UI alert
  */
 function clearRosterData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -96,18 +98,10 @@ function clearRosterData() {
     return;
   }
   
-  // Clear all data from row 6 onwards, preserving metadata rows 1-5
-  const lastRow = rosterSheet.getMaxRows();
-  const lastCol = rosterSheet.getMaxColumns();
-  
-  if (lastRow >= 6) {
-    // Clear content and formulas from row 6 to the last row
-    const dataRange = rosterSheet.getRange(6, 1, lastRow - 5, lastCol);
-    dataRange.clearContent();
-  }
+  clearRosterDataInternal(rosterSheet);
   
   SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert('Data Cleared', 'Roster data has been cleared. Metadata rows 1-5 preserved.', SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert('Data Cleared', 'Roster data has been cleared. Metadata rows 1-5 and Manual/Formula columns preserved.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 /**
@@ -128,12 +122,8 @@ function buildRosterSheet(spreadsheet) {
     }
   });
   
-  // Clear data rows (6+) if they exist
-  const lastRow = rosterSheet.getMaxRows();
-  if (lastRow >= 6) {
-    const dataRange = rosterSheet.getRange(6, 1, lastRow - 5, maxCols);
-    dataRange.clearContent();
-  }
+  // Clear data rows (6+) for defined columns only, preserve Manual/Formula columns
+  clearRosterDataInternal(rosterSheet);
   
   // Define all roster columns with metadata
   const rosterColumns = [
@@ -142,238 +132,231 @@ function buildRosterSheet(spreadsheet) {
       type: 'String',
       source: 'FinalForms First Name',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!D:D,ROW()-4),""))`
-    },
-    {
-      name: 'Preferred Name',
-      type: 'String', 
-      source: 'Maybe FinalForms or AdditionalInfoForm',
-      note: 'If you get any sense that this person goes by a different name than their official first name, then go ahead and add it here. For example, "Pete" instead of "Peter".',
-      formula: `=IF(ROW()<6,"","")` // Manual entry
+      formula: `=IFERROR(INDEX('Final Forms'!D:D,ROW()-4),"")`
     },
     {
       name: 'Last Name',
       type: 'String',
       source: 'FinalForms Last Name',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!E:E,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!E:E,ROW()-4),"")`
     },
     {
       name: 'Student SPS Email',
       type: 'Email Address',
       source: 'FinalForms Email',
       note: 'Only set this if the domain is seattleschools.org',
-      formula: `=IF(ROW()<6,"",IFERROR(IF(REGEXMATCH(INDEX('Final Forms'!F:F,ROW()-4),"@seattleschools\\.org"),INDEX('Final Forms'!F:F,ROW()-4),""),""))`
+      formula: `=IFERROR(IF(REGEXMATCH(INDEX('Final Forms'!F:F,ROW()-4),"@seattleschools\\.org"),INDEX('Final Forms'!F:F,ROW()-4),""),"")`
     },
     {
       name: 'Student Personal Email',
       type: 'Email',
       source: 'FinalForms Email',
       note: 'Only set this if the domain is not seattleschools.org and the email address is not used as a FinalForms parent email',
-      formula: `=IF(ROW()<6,"",IFERROR(IF(AND(NOT(REGEXMATCH(INDEX('Final Forms'!F:F,ROW()-4),"@seattleschools\\.org")),INDEX('Final Forms'!F:F,ROW()-4)<>INDEX('Final Forms'!AO:AO,ROW()-4),INDEX('Final Forms'!F:F,ROW()-4)<>INDEX('Final Forms'!AU:AU,ROW()-4)),INDEX('Final Forms'!F:F,ROW()-4),""),""))`
+      formula: `=IFERROR(IF(AND(NOT(REGEXMATCH(INDEX('Final Forms'!F:F,ROW()-4),"@seattleschools\\.org")),INDEX('Final Forms'!F:F,ROW()-4)<>INDEX('Final Forms'!AO:AO,ROW()-4),INDEX('Final Forms'!F:F,ROW()-4)<>INDEX('Final Forms'!AU:AU,ROW()-4)),INDEX('Final Forms'!F:F,ROW()-4),""),"")`
     },
     {
       name: 'Student Personal Email On Mailing List?',
       type: 'Boolean',
-      source: 'MailingList Email address and Posting permissions',
-      note: 'TRUE if email is on mailing list with posting permissions allowed, FALSE otherwise',
-      formula: `=IF(ROW()<6,"",IF(E6="",FALSE,IF(AND(COUNTIF('Mailing List'!A:A,E6)>0,INDEX('Mailing List'!F:F,MATCH(E6,'Mailing List'!A:A,0))="allowed"),TRUE,FALSE)))`
+      source: 'MailingList Email address',
+      note: 'TRUE if email is on mailing list, FALSE otherwise',
+      formula: `=IF(E6="",FALSE,COUNTIF('Mailing List'!$A$3:$A,E6)>0)`
     },
     {
       name: 'Are All Forms Parent Signed',
       type: 'Boolean',
       source: 'FinalForms Are All Forms Parent Signed',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!P:P,ROW()-4),FALSE))`
+      formula: `=IFERROR(INDEX('Final Forms'!P:P,ROW()-4),FALSE)`
     },
     {
       name: 'Are All Forms Student Signed',
       type: 'Boolean',
       source: 'FinalForms Are All Forms Student Signed',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!Q:Q,ROW()-4),FALSE))`
+      formula: `=IFERROR(INDEX('Final Forms'!Q:Q,ROW()-4),FALSE)`
     },
     {
       name: 'Physical Cleared',
       type: 'Boolean',
       source: 'FinalForms Physical Cleared',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(IF(INDEX('Final Forms'!AB:AB,ROW()-4)="Cleared",TRUE,FALSE),FALSE))`
+      formula: `=IFERROR(IF(INDEX('Final Forms'!AB:AB,ROW()-4)="Cleared",TRUE,FALSE),FALSE)`
     },
     {
       name: 'Gender',
       type: 'Enum',
       source: 'FinalForms Gender',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!U:U,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!U:U,ROW()-4),"")`
     },
     {
       name: 'Grade',
       type: 'Number',
       source: 'FinalForms Grade',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!W:W,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!W:W,ROW()-4),"")`
     },
     {
       name: 'Date of Birth',
       type: 'Date',
       source: 'FinalForms Date of Birth',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!X:X,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!X:X,ROW()-4),"")`
     },
     {
       name: 'Parent 1 First Name',
       type: 'String',
       source: 'FinalForms Parent 1 First Name',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!AM:AM,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!AM:AM,ROW()-4),"")`
     },
     {
       name: 'Parent 1 Last Name',
       type: 'String',
       source: 'FinalForms Parent 1 Last Name',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!AN:AN,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!AN:AN,ROW()-4),"")`
     },
     {
       name: 'Parent 1 Email',
       type: 'Email',
       source: 'FinalForms Parent 1 Email',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!AO:AO,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!AO:AO,ROW()-4),"")`
     },
     {
       name: 'Parent 1 Email On Mailing List?',
       type: 'Boolean',
-      source: 'MailingList Email address and Posting permissions',
-      note: 'TRUE if email is on mailing list with posting permissions allowed, FALSE otherwise',
-      formula: `=IF(ROW()<6,"",IF(O6="",FALSE,IF(AND(COUNTIF('Mailing List'!A:A,O6)>0,INDEX('Mailing List'!F:F,MATCH(O6,'Mailing List'!A:A,0))="allowed"),TRUE,FALSE)))`
+      source: 'MailingList Email address',
+      note: 'TRUE if email is on mailing list, FALSE otherwise',
+      formula: `=IF(O6="",FALSE,COUNTIF('Mailing List'!$A$3:$A,O6)>0)`
     },
     {
       name: 'Parent 2 First Name',
       type: 'String',
       source: 'FinalForms Parent 2 First Name',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!AS:AS,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!AS:AS,ROW()-4),"")`
     },
     {
       name: 'Parent 2 Last Name',
       type: 'String',
       source: 'FinalForms Parent 2 Last Name',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!AT:AT,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!AT:AT,ROW()-4),"")`
     },
     {
       name: 'Parent 2 Email',
       type: 'Email',
       source: 'FinalForms Parent 2 Email',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!AU:AU,ROW()-4),""))`
+      formula: `=IFERROR(INDEX('Final Forms'!AU:AU,ROW()-4),"")`
     },
     {
       name: 'Parent 2 Email On Mailing List?',
       type: 'Boolean',
-      source: 'MailingList Email address and Posting permissions',
-      note: 'TRUE if email is on mailing list with posting permissions allowed, FALSE otherwise',
-      formula: `=IF(ROW()<6,"",IF(S6="",FALSE,IF(AND(COUNTIF('Mailing List'!A:A,S6)>0,INDEX('Mailing List'!F:F,MATCH(S6,'Mailing List'!A:A,0))="allowed"),TRUE,FALSE)))`
+      source: 'MailingList Email address',
+      note: 'TRUE if email is on mailing list, FALSE otherwise',
+      formula: `=IF(S6="",FALSE,COUNTIF('Mailing List'!$A$3:$A,S6)>0)`
     },
     {
       name: 'Additional Info Questionnaire Filled Out?',
       type: 'Boolean',
       source: '',
       note: 'True if was able to find a match for the player in Final Forms and the Additional Info form. \\nFalse otherwise.',
-      formula: `=IF(ROW()<6,"",IF(COUNTIF('Additional Info'!B:B,TRIM(A6&" "&C6))>0,TRUE,FALSE))`
+      formula: `=IF(COUNTIF('Additional Info'!B:B,TRIM(A6&" "&C6))>0,TRUE,FALSE)`
     },
     {
       name: 'Player Pronouns (select all that apply)',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!C:C,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!C:C,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Player Gender Identification',
       type: 'Enum',
       source: 'AdditionalInfoForm',
       note: 'Set this to values of either "Gx" or "Bx".',
-      formula: `=IF(ROW()<6,"",IFERROR(IF(REGEXMATCH(INDEX('Additional Info'!D:D,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"Girl|Gx"),"Gx",IF(REGEXMATCH(INDEX('Additional Info'!D:D,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"Boy|Bx"),"Bx","")),""))`
+      formula: `=IFERROR(IF(REGEXMATCH(INDEX('Additional Info'!D:D,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"Girl|Gx"),"Gx",IF(REGEXMATCH(INDEX('Additional Info'!D:D,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"Boy|Bx"),"Bx","")),"")`
     },
     {
       name: 'Player Allergies',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!E:E,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!E:E,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Competing Sports and Activities',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!F:F,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!F:F,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Jersey Size',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!G:G,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!G:G,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Playing Experience',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!H:H,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!H:H,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Player hopes for the season',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!I:I,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!I:I,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Other Player Info',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!K:K,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!K:K,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Are you interested in helping coach?',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!L:L,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!L:L,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: "Have you played or coached Ultimate before? What's been your experience?",
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!M:M,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!M:M,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: "Have you played or coached other team sports? What's been your experience?",
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!N:N,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!N:N,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Are you interested in helping in other ways?',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!O:O,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!O:O,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
       name: 'Anything else you want to share?',
       type: 'String',
       source: 'AdditionalInfoForm',
       note: '',
-      formula: `=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!P:P,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))`
+      formula: `=IFERROR(INDEX('Additional Info'!P:P,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     }
   ];
   
@@ -475,10 +458,9 @@ function getColumnLetter(columnNumber) {
  */
 function createCustomMenu() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🥏 Madison Ultimate')
+  ui.createMenu(`🥏 Madison Ultimate (v${SCRIPT_VERSION})`)
     .addItem('📝 Generate Fresh Roster', 'generateRoster')
     .addItem('🗑️ Clear Roster Data (Keep Metadata)', 'clearRosterData')
-    .addItem('🧹 Clear All Formatting', 'clearRosterFormatting')
     .addSeparator()
     .addItem('🔄 Refresh All Data', 'refreshAllData')
     .addItem('📊 Update Final Forms', 'updateFinalForms')
