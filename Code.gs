@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '10';
+const SCRIPT_VERSION = '12';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -498,7 +498,7 @@ function createCustomMenu() {
     .addItem('📈 Show Statistics', 'showStatistics')
     .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')
     .addItem('👥 Parents Not Members of Mailing List', 'findPendingParents')
-    .addItem('❗ Find Unmatched Additional Info Responses', 'findUnmatchedAdditionalInfo')
+    .addItem('📊 Analyze Additional Info Responses', 'analyzeAdditionalInfoResponses')
     .addToUi();
 }
 
@@ -1111,10 +1111,10 @@ function showPendingParentsDialog(pendingParents) {
 }
 
 /**
- * Find Additional Info responses that don't match any roster entries
- * Provides options to highlight or filter unmatched responses
+ * Analyze Additional Info responses for matches, suggestions, and potential duplicates
+ * Adds analysis columns without changing existing formatting
  */
-function findUnmatchedAdditionalInfo() {
+function analyzeAdditionalInfoResponses() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
   const additionalInfoSheet = ss.getSheetByName(CONFIG.additionalInfo.sheetName);
@@ -1124,31 +1124,44 @@ function findUnmatchedAdditionalInfo() {
     return;
   }
   
-  // Get roster names for matching
-  const rosterHeaders = rosterSheet.getRange(1, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
-  const firstNameCol = rosterHeaders.indexOf('First Name') + 1;
-  const lastNameCol = rosterHeaders.indexOf('Last Name') + 1;
-  const preferredNameCol = rosterHeaders.indexOf('Preferred Name') + 1;
+  // Get current timestamp for analysis
+  const analysisTimestamp = new Date().toISOString();
   
-  if (!firstNameCol || !lastNameCol) {
-    SpreadsheetApp.getUi().alert('Error: Could not find First Name or Last Name columns in roster');
+  // Get roster names for matching using "Full Name" column
+  const rosterHeaders = rosterSheet.getRange(1, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
+  const fullNameCol = rosterHeaders.indexOf('Full Name') + 1;
+  const lastNameCol = rosterHeaders.indexOf('Last Name') + 1;
+  
+  if (!fullNameCol) {
+    SpreadsheetApp.getUi().alert('Error: Could not find "Full Name" column in roster');
     return;
   }
   
-  // Get all roster names
+  if (!lastNameCol) {
+    SpreadsheetApp.getUi().alert('Error: Could not find "Last Name" column in roster');
+    return;
+  }
+  
+  // Get all roster names and last names for matching and suggestions
   const rosterLastRow = rosterSheet.getLastRow();
   const rosterNames = new Set();
+  const rosterLastNames = new Map(); // Map last names to full names for suggestions
   
   for (let row = FIRST_DATA_ROW; row <= rosterLastRow; row++) {
-    const firstName = rosterSheet.getRange(row, firstNameCol).getValue();
+    const fullName = rosterSheet.getRange(row, fullNameCol).getValue();
     const lastName = rosterSheet.getRange(row, lastNameCol).getValue();
-    const preferredName = preferredNameCol ? rosterSheet.getRange(row, preferredNameCol).getValue() : '';
     
-    if (firstName && lastName) {
-      // Add all possible name combinations
-      rosterNames.add(`${firstName} ${lastName}`.trim().toLowerCase());
-      if (preferredName) {
-        rosterNames.add(`${preferredName} ${lastName}`.trim().toLowerCase());
+    if (fullName) {
+      const normalizedFullName = fullName.toString().trim().toLowerCase();
+      rosterNames.add(normalizedFullName);
+      
+      // Store last name mapping for suggestions
+      if (lastName) {
+        const normalizedLastName = lastName.toString().trim().toLowerCase();
+        if (!rosterLastNames.has(normalizedLastName)) {
+          rosterLastNames.set(normalizedLastName, []);
+        }
+        rosterLastNames.get(normalizedLastName).push(fullName.toString().trim());
       }
     }
   }
@@ -1168,141 +1181,127 @@ function findUnmatchedAdditionalInfo() {
     return;
   }
   
-  // Find unmatched responses
-  const unmatchedResponses = [];
+  // Create analysis columns
+  const analysisStatusCol = `Roster Match Status as of ${analysisTimestamp}`;
+  const suggestionCol = 'Suggested Match';
+  const duplicateCol = 'Potential Duplicate?';
+  
+  // Find or add analysis columns, replacing any existing "Roster Match Status" columns
+  let statusColIndex = -1;
+  let suggestionColIndex = headers.indexOf(suggestionCol) + 1;
+  let duplicateColIndex = headers.indexOf(duplicateCol) + 1;
+  
+  // Look for any existing "Roster Match Status" column (with any timestamp)
+  for (let i = 0; i < headers.length; i++) {
+    if (headers[i].toString().startsWith('Roster Match Status as of ')) {
+      statusColIndex = i + 1;
+      break;
+    }
+  }
+  
+  // If no existing status column found, create a new one
+  if (statusColIndex === -1) {
+    statusColIndex = additionalInfoSheet.getMaxColumns() + 1;
+  }
+  
+  // Set/update the status column header with current timestamp
+  additionalInfoSheet.getRange(1, statusColIndex).setValue(analysisStatusCol);
+  
+  if (suggestionColIndex === 0) {
+    suggestionColIndex = additionalInfoSheet.getMaxColumns() + 1;
+    additionalInfoSheet.getRange(1, suggestionColIndex).setValue(suggestionCol);
+  }
+  
+  if (duplicateColIndex === 0) {
+    duplicateColIndex = additionalInfoSheet.getMaxColumns() + 1;
+    additionalInfoSheet.getRange(1, duplicateColIndex).setValue(duplicateCol);
+  }
+  
+  // Detect potential duplicates by tracking player names
+  const playerNameCounts = new Map();
+  for (let i = 1; i < additionalInfoData.length; i++) {
+    const playerName = additionalInfoData[i][playerNameCol];
+    if (playerName) {
+      const normalizedName = playerName.toString().trim().toLowerCase();
+      playerNameCounts.set(normalizedName, (playerNameCounts.get(normalizedName) || 0) + 1);
+    }
+  }
+  
+  // Analyze each response
+  let matchedCount = 0;
+  let unmatchedCount = 0;
   
   for (let i = 1; i < additionalInfoData.length; i++) {
-    const row = additionalInfoData[i];
-    const playerName = row[playerNameCol];
+    const rowNumber = i + 1; // 1-based row number in sheet
+    const playerName = additionalInfoData[i][playerNameCol];
     
     if (playerName) {
       const normalizedName = playerName.toString().trim().toLowerCase();
+      const isMatched = rosterNames.has(normalizedName);
+      const suggestion = isMatched ? '' : findLastNameSuggestion(playerName.toString(), rosterLastNames);
+      const isDuplicate = playerNameCounts.get(normalizedName) > 1;
       
-      if (!rosterNames.has(normalizedName)) {
-        unmatchedResponses.push({
-          rowNumber: i + 1, // 1-based row number in sheet
-          playerName: playerName.toString(),
-          timestamp: row[0] ? row[0].toString() : 'N/A',
-          rowData: row
-        });
+      // Update analysis columns
+      additionalInfoSheet.getRange(rowNumber, statusColIndex).setValue(isMatched ? 'MATCHED' : 'UNMATCHED');
+      additionalInfoSheet.getRange(rowNumber, suggestionColIndex).setValue(suggestion || '');
+      additionalInfoSheet.getRange(rowNumber, duplicateColIndex).setValue(isDuplicate);
+      
+      if (isMatched) {
+        matchedCount++;
+      } else {
+        unmatchedCount++;
       }
     }
   }
   
-  if (unmatchedResponses.length === 0) {
-    SpreadsheetApp.getUi().alert(
-      'All Responses Matched',
-      'All Additional Info responses have matching entries in the roster.',
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  } else {
-    // Automatically highlight unmatched rows inline
-    highlightUnmatchedRowsInline(unmatchedResponses, additionalInfoSheet);
-    
-    // Create filter for unmatched rows
-    createUnmatchedFilterInline(unmatchedResponses, additionalInfoSheet);
-    
-    // Show summary dialog
-    showUnmatchedSummaryDialog(unmatchedResponses, additionalInfoSheet);
-  }
-}
+  // Show summary
+  const duplicateCount = Array.from(playerNameCounts.values()).filter(count => count > 1).length;
+  
+  SpreadsheetApp.getUi().alert(
+    'Analysis Complete',
+    `Analysis completed at ${analysisTimestamp}
 
-/**
- * Highlight unmatched rows directly in the Additional Info sheet
- */
-function highlightUnmatchedRowsInline(unmatchedResponses, additionalInfoSheet) {
-  // Clear existing highlighting first
-  const dataRange = additionalInfoSheet.getDataRange();
-  dataRange.setBackground(null);
+Results:
+• ${matchedCount} responses matched roster entries
+• ${unmatchedCount} responses did not match roster entries
+• ${duplicateCount} potential duplicate names detected
+
+Analysis columns added/updated:
+• "${analysisStatusCol}"
+• "${suggestionCol}" 
+• "${duplicateCol}"`,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
   
-  // Add a note column to track unmatched status if it doesn't exist
-  const headers = additionalInfoSheet.getRange(1, 1, 1, additionalInfoSheet.getMaxColumns()).getValues()[0];
-  let statusCol = headers.indexOf('Roster Match Status') + 1;
-  
-  if (statusCol === 0) {
-    // Add status column if it doesn't exist
-    statusCol = additionalInfoSheet.getMaxColumns() + 1;
-    additionalInfoSheet.getRange(1, statusCol).setValue('Roster Match Status');
-    additionalInfoSheet.getRange(1, statusCol).setBackground('#f1f3f4').setFontWeight('bold');
-  }
-  
-  // Set all rows to "MATCHED" first
-  for (let i = 2; i <= additionalInfoSheet.getLastRow(); i++) {
-    additionalInfoSheet.getRange(i, statusCol).setValue('MATCHED').setBackground('#d9ead3');
-  }
-  
-  // Highlight and mark unmatched rows
-  unmatchedResponses.forEach(response => {
-    const range = additionalInfoSheet.getRange(response.rowNumber, 1, 1, additionalInfoSheet.getMaxColumns());
-    range.setBackground('#fce8e6'); // Light red background
-    
-    // Mark status column
-    additionalInfoSheet.getRange(response.rowNumber, statusCol)
-      .setValue('UNMATCHED')
-      .setBackground('#f28b82')
-      .setFontColor('#ffffff')
-      .setFontWeight('bold');
-  });
-  
-  // Make the Additional Info sheet active so user can see the highlighting
+  // Switch to Additional Info sheet to show results
   additionalInfoSheet.activate();
 }
 
-/**
- * Create inline filter in the Additional Info sheet
- */
-function createUnmatchedFilterInline(unmatchedResponses, additionalInfoSheet) {
-  // Remove existing filters
-  if (additionalInfoSheet.getFilter()) {
-    additionalInfoSheet.getFilter().remove();
-  }
-  
-  // Create new filter on the entire data range
-  const dataRange = additionalInfoSheet.getDataRange();
-  const filter = dataRange.createFilter();
-  
-  // Find the status column we just created/updated
-  const headers = additionalInfoSheet.getRange(1, 1, 1, additionalInfoSheet.getMaxColumns()).getValues()[0];
-  const statusCol = headers.indexOf('Roster Match Status') + 1;
-  
-  if (statusCol > 0) {
-    // Set up filter criteria to show UNMATCHED rows by default (hide MATCHED ones)
-    const criteria = SpreadsheetApp.newFilterCriteria()
-      .setHiddenValues(['MATCHED'])
-      .build();
-    
-    filter.setColumnFilterCriteria(statusCol, criteria);
-  }
-}
 
 /**
- * Show simple summary dialog for unmatched responses
+ * Helper function to find potential roster matches based on last name
  */
-function showUnmatchedSummaryDialog(unmatchedResponses, additionalInfoSheet) {
-  // Simple alert showing what was done
-  const message = `Found ${unmatchedResponses.length} unmatched Additional Info responses.
-
-✅ Actions completed:
-• Highlighted unmatched rows in red
-• Added "Roster Match Status" column 
-• Applied filter to show only unmatched rows
-• Switched to Additional Info sheet
-
-You can now:
-• Review the highlighted unmatched entries
-• Use the filter dropdown to toggle between MATCHED/UNMATCHED
-• Update roster or Additional Info data to resolve mismatches
-
-Unmatched names:
-${unmatchedResponses.map(r => `• ${r.playerName}`).join('\n')}`;
-
-  SpreadsheetApp.getUi().alert(
-    'Unmatched Responses Found', 
-    message, 
-    SpreadsheetApp.getUi().ButtonSet.OK
-  );
+function findLastNameSuggestion(playerName, rosterLastNames) {
+  // Extract last name from the player name (assume "First Last" format)
+  const nameParts = playerName.trim().split(/\s+/);
+  if (nameParts.length < 2) {
+    return null; // Can't extract last name
+  }
+  
+  const lastName = nameParts[nameParts.length - 1].toLowerCase();
+  
+  // Look for matching last names in roster
+  if (rosterLastNames.has(lastName)) {
+    const matches = rosterLastNames.get(lastName);
+    if (matches.length === 1) {
+      return matches[0]; // Single suggestion
+    } else if (matches.length > 1) {
+      return matches.join(' OR '); // Multiple suggestions
+    }
+  }
+  
+  return null; // No suggestion found
 }
-
 
 /**
  * Run on spreadsheet open to create menu
