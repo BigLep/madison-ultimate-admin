@@ -12,7 +12,10 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '7';
+const SCRIPT_VERSION = '8';
+
+// Constants
+const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
 
 // Configuration
 const CONFIG = {
@@ -63,7 +66,7 @@ function clearRosterDataInternal(rosterSheet) {
   const lastRow = rosterSheet.getMaxRows();
   const lastCol = rosterSheet.getMaxColumns();
   
-  if (lastRow >= 6) {
+  if (lastRow >= FIRST_DATA_ROW) {
     // Get the source row (row 3) to determine which columns to preserve
     const sourceRow = rosterSheet.getRange(3, 1, 1, lastCol).getValues()[0];
     
@@ -79,7 +82,7 @@ function clearRosterDataInternal(rosterSheet) {
       }
       
       // Clear content for all other columns
-      const columnRange = rosterSheet.getRange(6, col, lastRow - 5, 1);
+      const columnRange = rosterSheet.getRange(FIRST_DATA_ROW, col, lastRow - 5, 1);
       columnRange.clearContent();
     }
   }
@@ -122,7 +125,7 @@ function buildRosterSheet(spreadsheet) {
     }
   });
   
-  // Clear data rows (6+) for defined columns only, preserve Manual/Formula columns
+  // Clear data rows (FIRST_DATA_ROW+) for defined columns only, preserve Manual/Formula columns
   clearRosterDataInternal(rosterSheet);
   
   // Define all roster columns with metadata
@@ -428,12 +431,12 @@ function buildRosterSheet(spreadsheet) {
       formula = formula.replace(/S6/g, parent2EmailLetter + '6');
     }
     
-    // Set formula for row 6
-    rosterSheet.getRange(6, colNum).setFormula(formula);
+    // Set formula for FIRST_DATA_ROW
+    rosterSheet.getRange(FIRST_DATA_ROW, colNum).setFormula(formula);
     
     // Copy formula down to row 200
-    const sourceRange = rosterSheet.getRange(6, colNum, 1, 1);
-    const targetRange = rosterSheet.getRange(7, colNum, 194, 1);
+    const sourceRange = rosterSheet.getRange(FIRST_DATA_ROW, colNum, 1, 1);
+    const targetRange = rosterSheet.getRange(FIRST_DATA_ROW + 1, colNum, 194, 1);
     sourceRange.copyTo(targetRange);
   });
   
@@ -468,6 +471,7 @@ function createCustomMenu() {
     .addSeparator()
     .addItem('📈 Show Statistics', 'showStatistics')
     .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')
+    .addItem('👥 Parents Not Members of Mailing List', 'findPendingParents')
     .addToUi();
 }
 
@@ -569,8 +573,8 @@ function showStatistics() {
   const parent2MailingCol = columnMap.get('Parent 2 Email On Mailing List?');
   const gradeCol = columnMap.get('Grade');
   
-  // Start counting from row 6 (first data row)
-  const firstDataRow = 6;
+  // Start counting from FIRST_DATA_ROW
+  const firstDataRow = FIRST_DATA_ROW;
   const lastRow = rosterSheet.getLastRow();
   
   // Count non-empty student rows
@@ -698,7 +702,7 @@ function findMissingEmails() {
   // Process each email column
   emailColumns.forEach(colNum => {
     if (lastRow > 5) { // Skip metadata rows
-      const emailData = rosterSheet.getRange(6, colNum, lastRow - 5, 1).getValues();
+      const emailData = rosterSheet.getRange(FIRST_DATA_ROW, colNum, lastRow - 5, 1).getValues();
       emailData.forEach((row, rowIndex) => {
         const email = row[0];
         if (email && email.toString().trim()) {
@@ -716,15 +720,15 @@ function findMissingEmails() {
             uniqueRosterEmails.add(emailLower);
             
             // Get student name from same row
-            const firstName = rosterSheet.getRange(rowIndex + 6, 1).getValue();
-            const lastName = rosterSheet.getRange(rowIndex + 6, 2).getValue();
+            const firstName = rosterSheet.getRange(rowIndex + FIRST_DATA_ROW, 1).getValue();
+            const lastName = rosterSheet.getRange(rowIndex + FIRST_DATA_ROW, 2).getValue();
             const columnName = headers[colNum - 1];
             
             missingEmails.push({
               email: emailStr,
               name: `${firstName} ${lastName}`.trim(),
               source: columnName,
-              row: rowIndex + 6
+              row: rowIndex + FIRST_DATA_ROW
             });
           }
         }
@@ -838,6 +842,246 @@ function showMissingEmailsDialog(missingEmails, emailList) {
     .setHeight(500);
   
   SpreadsheetApp.getUi().showModalDialog(html, 'Emails Not on Mailing List');
+}
+
+/**
+ * Find all parents/caretakers who are not members of the mailing list
+ * Shows those with any status other than "member" (includes "invited" and "not a member")
+ */
+function findPendingParents() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+  
+  if (!rosterSheet) {
+    SpreadsheetApp.getUi().alert('Error: Could not find Roster sheet');
+    return;
+  }
+  
+  // Get column positions dynamically
+  const headers = rosterSheet.getRange(1, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
+  const columnMap = new Map();
+  headers.forEach((header, index) => {
+    if (header) columnMap.set(header, index + 1);
+  });
+  
+  // Get the columns we need
+  const firstNameCol = columnMap.get('First Name');
+  const lastNameCol = columnMap.get('Last Name');
+  const parent1FirstCol = columnMap.get('Parent 1 First Name');
+  const parent1LastCol = columnMap.get('Parent 1 Last Name');
+  const parent1EmailCol = columnMap.get('Parent 1 Email');
+  const parent1StatusCol = columnMap.get('Parent 1 Email On Mailing List?');
+  const parent2FirstCol = columnMap.get('Parent 2 First Name');
+  const parent2LastCol = columnMap.get('Parent 2 Last Name');
+  const parent2EmailCol = columnMap.get('Parent 2 Email');
+  const parent2StatusCol = columnMap.get('Parent 2 Email On Mailing List?');
+  
+  if (!firstNameCol || !lastNameCol) {
+    SpreadsheetApp.getUi().alert('Error: Could not find required columns');
+    return;
+  }
+  
+  const lastRow = rosterSheet.getLastRow();
+  const pendingParents = [];
+  const seenEmails = new Set(); // Avoid duplicates
+  
+  // Process each data row (starting from FIRST_DATA_ROW)
+  for (let row = FIRST_DATA_ROW; row <= lastRow; row++) {
+    const studentFirst = rosterSheet.getRange(row, firstNameCol).getValue();
+    const studentLast = rosterSheet.getRange(row, lastNameCol).getValue();
+    
+    // Skip empty rows
+    if (!studentFirst) continue;
+    
+    // Check Parent 1
+    if (parent1StatusCol && parent1EmailCol && parent1FirstCol && parent1LastCol) {
+      const status = rosterSheet.getRange(row, parent1StatusCol).getValue();
+      const email = rosterSheet.getRange(row, parent1EmailCol).getValue();
+      const firstName = rosterSheet.getRange(row, parent1FirstCol).getValue();
+      const lastName = rosterSheet.getRange(row, parent1LastCol).getValue();
+      
+      if (status && status !== 'member' && email && firstName && !seenEmails.has(email.toLowerCase())) {
+        seenEmails.add(email.toLowerCase());
+        pendingParents.push({
+          firstName: firstName.toString().trim(),
+          lastName: lastName.toString().trim(),
+          email: email.toString().trim(),
+          status: status.toString(),
+          student: `${studentFirst} ${studentLast}`.trim(),
+          parentType: 'Parent 1'
+        });
+      }
+    }
+    
+    // Check Parent 2
+    if (parent2StatusCol && parent2EmailCol && parent2FirstCol && parent2LastCol) {
+      const status = rosterSheet.getRange(row, parent2StatusCol).getValue();
+      const email = rosterSheet.getRange(row, parent2EmailCol).getValue();
+      const firstName = rosterSheet.getRange(row, parent2FirstCol).getValue();
+      const lastName = rosterSheet.getRange(row, parent2LastCol).getValue();
+      
+      if (status && status !== 'member' && email && firstName && !seenEmails.has(email.toLowerCase())) {
+        seenEmails.add(email.toLowerCase());
+        pendingParents.push({
+          firstName: firstName.toString().trim(),
+          lastName: lastName.toString().trim(),
+          email: email.toString().trim(),
+          status: status.toString(),
+          student: `${studentFirst} ${studentLast}`.trim(),
+          parentType: 'Parent 2'
+        });
+      }
+    }
+  }
+  
+  // Sort by last name, then first name
+  pendingParents.sort((a, b) => {
+    const lastNameCompare = a.lastName.localeCompare(b.lastName);
+    return lastNameCompare !== 0 ? lastNameCompare : a.firstName.localeCompare(b.firstName);
+  });
+  
+  // Generate table data
+  const tableData = pendingParents;
+  
+  if (pendingParents.length === 0) {
+    SpreadsheetApp.getUi().alert(
+      'All Parents Are Members',
+      'All parents have "member" status on the mailing list.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } else {
+    showPendingParentsDialog(pendingParents);
+  }
+}
+
+/**
+ * Show pending parents in a modal dialog with HTML table for easy copy/paste
+ */
+function showPendingParentsDialog(pendingParents) {
+  const html = HtmlService.createHtmlOutput(`
+    <style>
+      body { font-family: Arial, sans-serif; padding: 15px; }
+      h3 { color: #1a73e8; margin-bottom: 5px; }
+      .stats { color: #5f6368; margin-bottom: 20px; font-size: 14px; }
+      
+      .table-container { 
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 20px;
+      }
+      
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      
+      th {
+        background: #f8f9fa;
+        color: #202124;
+        font-weight: 600;
+        padding: 12px 16px;
+        text-align: left;
+        border-bottom: 2px solid #e8eaed;
+      }
+      
+      td {
+        padding: 10px 16px;
+        border-bottom: 1px solid #e8eaed;
+        vertical-align: top;
+      }
+      
+      tr:hover {
+        background: #f8f9fa;
+      }
+      
+      .status-invited {
+        background: #fff3cd;
+        color: #856404;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 500;
+      }
+      
+      .status-not-member {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 500;
+      }
+      
+      .instructions {
+        background: #e8f0fe;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 15px;
+        font-size: 13px;
+      }
+      
+      .copy-instructions {
+        color: #5f6368;
+        font-style: italic;
+      }
+    </style>
+    <div>
+      <h3>Parents Not Members of Mailing List</h3>
+      <div class="stats">Found ${pendingParents.length} parents who are not members</div>
+      
+      <div class="instructions">
+        <strong>Instructions:</strong> Select the table below and copy (Ctrl+C / Cmd+C) to paste into spreadsheets or emails.
+        <br><span class="copy-instructions">The table will copy with proper formatting and can be pasted directly into Excel, Google Sheets, or email.</span>
+      </div>
+      
+      <div class="table-container">
+        <table id="parentTable">
+          <thead>
+            <tr>
+              <th>First Name</th>
+              <th>Last Name</th>
+              <th>Email Address</th>
+              <th>Status</th>
+              <th>Student</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pendingParents.map(parent => `
+              <tr>
+                <td>${parent.firstName}</td>
+                <td>${parent.lastName}</td>
+                <td>${parent.email}</td>
+                <td><span class="status-${parent.status.replace(' ', '-')}">${parent.status}</span></td>
+                <td>${parent.student}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      
+      <div style="margin-top: 15px; font-size: 12px; color: #5f6368;">
+        <strong>Tip:</strong> You can select individual rows or the entire table and copy to paste elsewhere.
+      </div>
+    </div>
+    
+    <script>
+      // Auto-select table when clicked for easy copying
+      document.getElementById('parentTable').addEventListener('click', function() {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(this);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      });
+    </script>
+  `)
+    .setWidth(700)
+    .setHeight(600);
+  
+  SpreadsheetApp.getUi().showModalDialog(html, 'Parents Not Members of Mailing List');
 }
 
 /**
