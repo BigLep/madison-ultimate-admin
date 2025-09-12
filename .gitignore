@@ -1,11 +1,13 @@
-# Ignore all files starting with dot (except .gitignore)
+# Ignore all files starting with dot (except .gitignore and clasp files)
 .*
 !.gitignore
+!.clasp.json
 
 # Personal Information - Do not commit sensitive data
 *.xlsx
 *.csv
 *.json
+!appsscript.json
 *roster*.csv
 *forms*.csv
 *mailing*.csv
