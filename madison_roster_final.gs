@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '5';
+const SCRIPT_VERSION = '7';
 
 // Configuration
 const CONFIG = {
@@ -26,7 +26,7 @@ const CONFIG = {
     rangeToImport: 'Form Responses 1!A:Z'
   },
   mailingList: {
-    fileId: '1n0h81l31lsGvvSPrZUT5SOuS6jXT4h6E',
+    fileId: '1OZO3lo-WIdOp5piegWxVyR-R9PyO2ZoU',
     sheetName: 'Mailing List'
   },
   roster: {
@@ -157,10 +157,10 @@ function buildRosterSheet(spreadsheet) {
     },
     {
       name: 'Student Personal Email On Mailing List?',
-      type: 'Boolean',
+      type: 'Enum',
       source: 'MailingList Email address',
-      note: 'TRUE if email is on mailing list, FALSE otherwise',
-      formula: `=IF(E6="",FALSE,COUNTIF('Mailing List'!$A$3:$A,E6)>0)`
+      note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
+      formula: `=IFERROR(VLOOKUP(G6,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
     },
     {
       name: 'Are All Forms Parent Signed',
@@ -227,10 +227,10 @@ function buildRosterSheet(spreadsheet) {
     },
     {
       name: 'Parent 1 Email On Mailing List?',
-      type: 'Boolean',
+      type: 'Enum',
       source: 'MailingList Email address',
-      note: 'TRUE if email is on mailing list, FALSE otherwise',
-      formula: `=IF(O6="",FALSE,COUNTIF('Mailing List'!$A$3:$A,O6)>0)`
+      note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
+      formula: `=IFERROR(VLOOKUP(O6,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
     },
     {
       name: 'Parent 2 First Name',
@@ -255,10 +255,10 @@ function buildRosterSheet(spreadsheet) {
     },
     {
       name: 'Parent 2 Email On Mailing List?',
-      type: 'Boolean',
+      type: 'Enum',
       source: 'MailingList Email address',
-      note: 'TRUE if email is on mailing list, FALSE otherwise',
-      formula: `=IF(S6="",FALSE,COUNTIF('Mailing List'!$A$3:$A,S6)>0)`
+      note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
+      formula: `=IFERROR(VLOOKUP(S6,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
     },
     {
       name: 'Additional Info Questionnaire Filled Out?',
@@ -467,6 +467,7 @@ function createCustomMenu() {
     .addItem('📧 Update Mailing List', 'updateMailingList')
     .addSeparator()
     .addItem('📈 Show Statistics', 'showStatistics')
+    .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')
     .addToUi();
 }
 
@@ -651,6 +652,192 @@ function showStatistics() {
   }
   
   SpreadsheetApp.getUi().alert('Madison Ultimate Roster Statistics', message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * Find all email addresses in roster that are not on the mailing list
+ * Excludes Seattle School email addresses
+ */
+function findMissingEmails() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+  const mailingSheet = ss.getSheetByName(CONFIG.mailingList.sheetName);
+  
+  if (!rosterSheet || !mailingSheet) {
+    SpreadsheetApp.getUi().alert('Error: Could not find Roster or Mailing List sheets');
+    return;
+  }
+  
+  // Get all email addresses from mailing list (column A, starting from row 3)
+  const mailingListData = mailingSheet.getRange('A3:A').getValues();
+  const mailingListEmails = new Set(
+    mailingListData
+      .flat()
+      .filter(email => email && email.toString().trim())
+      .map(email => email.toString().toLowerCase().trim())
+  );
+  
+  console.log(`Found ${mailingListEmails.size} emails in mailing list`);
+  
+  // Find email columns in roster (looking for columns with "Email" in header)
+  const headers = rosterSheet.getRange('1:1').getValues()[0];
+  const emailColumns = [];
+  
+  headers.forEach((header, index) => {
+    if (header && header.toString().toLowerCase().includes('email')) {
+      emailColumns.push(index + 1); // 1-based column index
+      console.log(`Found email column: ${header} at column ${index + 1}`);
+    }
+  });
+  
+  // Collect all unique emails from roster
+  const lastRow = rosterSheet.getLastRow();
+  const uniqueRosterEmails = new Set();
+  const missingEmails = [];
+  
+  // Process each email column
+  emailColumns.forEach(colNum => {
+    if (lastRow > 5) { // Skip metadata rows
+      const emailData = rosterSheet.getRange(6, colNum, lastRow - 5, 1).getValues();
+      emailData.forEach((row, rowIndex) => {
+        const email = row[0];
+        if (email && email.toString().trim()) {
+          const emailStr = email.toString().trim();
+          const emailLower = emailStr.toLowerCase();
+          
+          // Skip Seattle School email addresses
+          if (emailLower.includes('@seattleschools.org')) {
+            console.log(`Skipping Seattle Schools email: ${emailStr}`);
+            return;
+          }
+          
+          // Check if this email is not in mailing list and not already added
+          if (!mailingListEmails.has(emailLower) && !uniqueRosterEmails.has(emailLower)) {
+            uniqueRosterEmails.add(emailLower);
+            
+            // Get student name from same row
+            const firstName = rosterSheet.getRange(rowIndex + 6, 1).getValue();
+            const lastName = rosterSheet.getRange(rowIndex + 6, 2).getValue();
+            const columnName = headers[colNum - 1];
+            
+            missingEmails.push({
+              email: emailStr,
+              name: `${firstName} ${lastName}`.trim(),
+              source: columnName,
+              row: rowIndex + 6
+            });
+          }
+        }
+      });
+    }
+  });
+  
+  // Sort missing emails alphabetically
+  missingEmails.sort((a, b) => a.email.localeCompare(b.email));
+  
+  // Display results
+  if (missingEmails.length === 0) {
+    SpreadsheetApp.getUi().alert(
+      'All Emails on Mailing List',
+      'All roster email addresses are already on the mailing list (Seattle Schools emails excluded).',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } else {
+    // Create a formatted message
+    let message = `Found ${missingEmails.length} email addresses not on the mailing list:\n\n`;
+    
+    // Group by source column for better readability
+    const bySource = {};
+    missingEmails.forEach(item => {
+      if (!bySource[item.source]) {
+        bySource[item.source] = [];
+      }
+      bySource[item.source].push(item);
+    });
+    
+    // Format the message
+    Object.keys(bySource).sort().forEach(source => {
+      message += `\n${source}:\n`;
+      bySource[source].forEach(item => {
+        message += `  • ${item.email} (${item.name})\n`;
+      });
+    });
+    
+    message += '\n\nYou can copy these addresses to add them to the mailing list.';
+    
+    // For easier copying, also create a comma-separated list
+    const emailList = missingEmails.map(item => item.email).join(', ');
+    message += `\n\nComma-separated list for easy copying:\n${emailList}`;
+    
+    // Show in a dialog (alert has size limits, so using custom HTML dialog for long lists)
+    if (missingEmails.length > 10) {
+      showMissingEmailsDialog(missingEmails, emailList);
+    } else {
+      SpreadsheetApp.getUi().alert(
+        'Emails Not on Mailing List',
+        message,
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+    }
+  }
+}
+
+/**
+ * Show missing emails in a scrollable HTML dialog for long lists
+ */
+function showMissingEmailsDialog(missingEmails, emailList) {
+  const html = HtmlService.createHtmlOutput(`
+    <style>
+      body { font-family: Arial, sans-serif; padding: 10px; }
+      h3 { color: #1a73e8; }
+      .email-group { margin-bottom: 20px; }
+      .email-item { margin: 5px 0; padding: 5px; background: #f8f9fa; }
+      .copy-section { 
+        margin-top: 20px; 
+        padding: 10px; 
+        background: #e8f0fe; 
+        border-radius: 5px;
+      }
+      textarea { 
+        width: 100%; 
+        height: 100px; 
+        margin-top: 10px;
+        font-family: monospace;
+      }
+      .stats { color: #5f6368; margin-bottom: 15px; }
+    </style>
+    <div>
+      <h3>Emails Not on Mailing List</h3>
+      <div class="stats">Found ${missingEmails.length} email addresses (Seattle Schools excluded)</div>
+      
+      <div class="copy-section">
+        <strong>All emails (comma-separated):</strong>
+        <textarea readonly onclick="this.select()">${emailList}</textarea>
+      </div>
+      
+      <h4>Detailed List by Source:</h4>
+      ${Object.entries(
+        missingEmails.reduce((acc, item) => {
+          if (!acc[item.source]) acc[item.source] = [];
+          acc[item.source].push(item);
+          return acc;
+        }, {})
+      ).map(([source, items]) => `
+        <div class="email-group">
+          <strong>${source}:</strong>
+          ${items.map(item => `
+            <div class="email-item">
+              ${item.email} - ${item.name} (Row ${item.row})
+            </div>
+          `).join('')}
+        </div>
+      `).join('')}
+    </div>
+  `)
+    .setWidth(600)
+    .setHeight(500);
+  
+  SpreadsheetApp.getUi().showModalDialog(html, 'Emails Not on Mailing List');
 }
 
 /**
