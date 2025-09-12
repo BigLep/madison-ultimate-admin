@@ -1,0 +1,66 @@
+# Ignore all files starting with dot (except .gitignore)
+.*
+!.gitignore
+
+# Personal Information - Do not commit sensitive data
+*.xlsx
+*.csv
+*.json
+*roster*.csv
+*forms*.csv
+*mailing*.csv
+
+# Common sensitive file patterns
+*secret*
+*private*
+*credential*
+*password*
+*key*
+*token*
+*config*
+
+# Temporary files
+*.tmp
+*.temp
+*~
+*.bak
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+
+# Python (if any)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Logs
+*.log
+logs/
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
