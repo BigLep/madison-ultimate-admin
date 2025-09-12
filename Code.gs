@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '12';
+const SCRIPT_VERSION = '20';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -175,6 +175,7 @@ function buildRosterSheet(spreadsheet) {
     }
   });
   
+  
   // Clear data rows (FIRST_DATA_ROW+) for defined columns only, preserve Manual/Formula columns
   clearRosterDataInternal(rosterSheet);
   
@@ -213,7 +214,7 @@ function buildRosterSheet(spreadsheet) {
       type: 'Enum',
       source: 'MailingList Email address',
       note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
-      formula: `=IFERROR(VLOOKUP(G6,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
+      formula: `=IFERROR(VLOOKUP(STUDENT_PERSONAL_EMAIL_COLUMN,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
     },
     {
       name: 'Are All Forms Parent Signed',
@@ -283,7 +284,7 @@ function buildRosterSheet(spreadsheet) {
       type: 'Enum',
       source: 'MailingList Email address',
       note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
-      formula: `=IFERROR(VLOOKUP(O6,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
+      formula: `=IFERROR(VLOOKUP(PARENT1_EMAIL_COLUMN,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
     },
     {
       name: 'Parent 2 First Name',
@@ -311,7 +312,7 @@ function buildRosterSheet(spreadsheet) {
       type: 'Enum',
       source: 'MailingList Email address',
       note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
-      formula: `=IFERROR(VLOOKUP(S6,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
+      formula: `=IFERROR(VLOOKUP(PARENT2_EMAIL_COLUMN,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
     },
     {
       name: 'Player Pronouns (select all that apply)',
@@ -321,7 +322,7 @@ function buildRosterSheet(spreadsheet) {
       formula: `=IFERROR(INDEX('Additional Info'!C:C,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
     },
     {
-      name: 'Player Gender Identification',
+      name: 'Supplied Gender Identification',
       type: 'Enum',
       source: 'AdditionalInfoForm',
       note: 'Set this to values of either "Gx" or "Bx".',
@@ -409,6 +410,14 @@ function buildRosterSheet(spreadsheet) {
   // Validate that script metadata matches sheet metadata
   validateRosterMetadata(rosterSheet, rosterColumns);
   
+  // Find Full Name column at runtime (critical join key to Additional Info)
+  const fullNameCol = columnMap.get('Full Name');
+  if (!fullNameCol) {
+    throw new Error('❌ CRITICAL: "Full Name" column not found in roster sheet. This column is required as the join key to Additional Info data.');
+  }
+  const fullNameLetter = getColumnLetter(fullNameCol);
+  
+  
   // Process each column definition (validation ensures all exist)
   rosterColumns.forEach((col) => {
     const colNum = columnMap.get(col.name);
@@ -422,10 +431,18 @@ function buildRosterSheet(spreadsheet) {
     // For formulas that reference other columns (like A6, C6, E6, etc.)
     // we need to find those columns' current positions
     
-    if (formula.includes('A6') || formula.includes('C6')) {
-      // Find current positions of First Name and Last Name columns
-      const firstNameCol = columnMap.get('First Name') || 1;
-      const lastNameCol = columnMap.get('Last Name') || 3;
+    if (formula.includes('TRIM(A6&" "&C6)')) {
+      // Replace concatenated First+Last names with Full Name column reference
+      // This is the critical join key to Additional Info data
+      formula = formula.replaceAll('TRIM(A6&" "&C6)', `${fullNameLetter}6`);
+    } else if (formula.includes('A6') || formula.includes('C6')) {
+      // Handle other column references (non-Additional Info lookups)
+      const firstNameCol = columnMap.get('First Name');
+      const lastNameCol = columnMap.get('Last Name');
+      
+      if (!firstNameCol || !lastNameCol) {
+        throw new Error(`Cannot find required columns: First Name (${firstNameCol}), Last Name (${lastNameCol})`);
+      }
       
       // Convert column number to letter
       const firstNameLetter = getColumnLetter(firstNameCol);
@@ -436,25 +453,64 @@ function buildRosterSheet(spreadsheet) {
       formula = formula.replace(/C6/g, lastNameLetter + '6');
     }
     
-    if (formula.includes('E6')) {
+    // Only replace E6 references for columns that actually use Student Personal Email
+    // Don't replace E6 if it was created by our Full Name replacement above
+    if (formula.includes('E6') && col.source && col.source.includes('Email')) {
       // Find Student Personal Email column
-      const emailCol = columnMap.get('Student Personal Email') || 5;
+      const emailCol = columnMap.get('Student Personal Email');
+      if (!emailCol) {
+        throw new Error('Cannot find required column: Student Personal Email');
+      }
       const emailLetter = getColumnLetter(emailCol);
       formula = formula.replace(/E6/g, emailLetter + '6');
     }
     
     if (formula.includes('O6')) {
       // Find Parent 1 Email column
-      const parent1EmailCol = columnMap.get('Parent 1 Email') || 15;
+      const parent1EmailCol = columnMap.get('Parent 1 Email');
+      if (!parent1EmailCol) {
+        throw new Error('Cannot find required column: Parent 1 Email');
+      }
       const parent1EmailLetter = getColumnLetter(parent1EmailCol);
       formula = formula.replace(/O6/g, parent1EmailLetter + '6');
     }
     
     if (formula.includes('S6')) {
       // Find Parent 2 Email column
-      const parent2EmailCol = columnMap.get('Parent 2 Email') || 19;
+      const parent2EmailCol = columnMap.get('Parent 2 Email');
+      if (!parent2EmailCol) {
+        throw new Error('Cannot find required column: Parent 2 Email');
+      }
       const parent2EmailLetter = getColumnLetter(parent2EmailCol);
       formula = formula.replace(/S6/g, parent2EmailLetter + '6');
+    }
+    
+    // Replace placeholder column references with dynamic lookups
+    if (formula.includes('STUDENT_PERSONAL_EMAIL_COLUMN')) {
+      const studentEmailCol = columnMap.get('Student Personal Email');
+      if (!studentEmailCol) {
+        throw new Error('Cannot find required column: Student Personal Email');
+      }
+      const studentEmailLetter = getColumnLetter(studentEmailCol);
+      formula = formula.replace(/STUDENT_PERSONAL_EMAIL_COLUMN/g, `${studentEmailLetter}6`);
+    }
+    
+    if (formula.includes('PARENT1_EMAIL_COLUMN')) {
+      const parent1EmailCol = columnMap.get('Parent 1 Email');
+      if (!parent1EmailCol) {
+        throw new Error('Cannot find required column: Parent 1 Email');
+      }
+      const parent1EmailLetter = getColumnLetter(parent1EmailCol);
+      formula = formula.replace(/PARENT1_EMAIL_COLUMN/g, `${parent1EmailLetter}6`);
+    }
+    
+    if (formula.includes('PARENT2_EMAIL_COLUMN')) {
+      const parent2EmailCol = columnMap.get('Parent 2 Email');
+      if (!parent2EmailCol) {
+        throw new Error('Cannot find required column: Parent 2 Email');
+      }
+      const parent2EmailLetter = getColumnLetter(parent2EmailCol);
+      formula = formula.replace(/PARENT2_EMAIL_COLUMN/g, `${parent2EmailLetter}6`);
     }
     
     // Set formula for FIRST_DATA_ROW
@@ -591,7 +647,10 @@ function showStatistics() {
   });
   
   // Get column positions we need
-  const firstNameCol = columnMap.get('First Name') || 1;
+  const firstNameCol = columnMap.get('First Name');
+  if (!firstNameCol) {
+    throw new Error('Cannot find required column: First Name');
+  }
   const formsParentSignedCol = columnMap.get('Are All Forms Parent Signed');
   const formsStudentSignedCol = columnMap.get('Are All Forms Student Signed');
   const physicalClearedCol = columnMap.get('Physical Cleared');
