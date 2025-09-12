@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '20';
+const SCRIPT_VERSION = '25';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -20,7 +20,7 @@ const FIRST_DATA_ROW = 6; // First row containing actual student data (after met
 // Configuration
 const CONFIG = {
   finalForms: {
-    fileId: '1p4cX6RmO0abXHdniSMnvxFtPYJFauCVj',
+    folderId: '1SnWCxDIn3FxJCvd1JcWyoeoOMscEsQcW', 
     sheetName: 'Final Forms'
   },
   additionalInfo: {
@@ -29,7 +29,7 @@ const CONFIG = {
     rangeToImport: 'Form Responses 1!A:Z'
   },
   mailingList: {
-    fileId: '1OZO3lo-WIdOp5piegWxVyR-R9PyO2ZoU',
+    folderId: '1pAeQMEqiA9QdK9G5yRXsqgbNVzEU7R1E',
     sheetName: 'Mailing List'
   },
   roster: {
@@ -570,6 +570,175 @@ function refreshAllData() {
 }
 
 /**
+ * Helper function to find the most recent CSV file in a folder
+ * @param {string} folderId - The Google Drive folder ID
+ * @returns {File|null} - The most recent CSV file, or null if none found
+ */
+function findMostRecentCsvFile(folderId) {
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+  
+  let mostRecentFile = null;
+  let mostRecentDate = new Date(0); // Start with epoch time
+  
+  // Find the most recent CSV file
+  while (files.hasNext()) {
+    const file = files.next();
+    const fileName = file.getName().toLowerCase();
+    
+    // Only consider CSV files
+    if (fileName.endsWith('.csv')) {
+      const fileDate = file.getLastUpdated();
+      if (fileDate > mostRecentDate) {
+        mostRecentDate = fileDate;
+        mostRecentFile = file;
+      }
+    }
+  }
+  
+  return mostRecentFile;
+}
+
+/**
+ * Helper function to calculate and display differences between old and new data
+ * @param {Array} oldData - Previous data array
+ * @param {Array} newData - New data array  
+ * @param {string} dataType - Type of data (for logging)
+ */
+function reportDataDifferences(oldData, newData, dataType) {
+  const oldCount = oldData ? oldData.length - 1 : 0; // Subtract 1 for header
+  const newCount = newData.length - 1; // Subtract 1 for header
+  
+  const difference = newCount - oldCount;
+  const diffSign = difference > 0 ? '+' : '';
+  
+  console.log(`📊 ${dataType} Import Summary:`);
+  console.log(`   Previous: ${oldCount} rows`);
+  console.log(`   New: ${newCount} rows`);
+  console.log(`   Change: ${diffSign}${difference} rows`);
+  
+  // Show detailed row changes for debugging
+  if (oldData && newData.length > 1) {
+    console.log(`🔍 ${dataType} Row Changes:`);
+    
+    // Create maps using row key (first non-empty column) for comparison
+    const oldRowMap = new Map();
+    const newRowMap = new Map();
+    
+    // Build old data map (skip header row)
+    if (oldData.length > 1) {
+      for (let i = 1; i < oldData.length; i++) {
+        const row = oldData[i];
+        const key = getRowKey(row, i);
+        oldRowMap.set(key, { data: row, index: i });
+      }
+    }
+    
+    // Build new data map (skip header row)
+    for (let i = 1; i < newData.length; i++) {
+      const row = newData[i];
+      const key = getRowKey(row, i);
+      newRowMap.set(key, { data: row, index: i });
+    }
+    
+    const addedRows = [];
+    const removedRows = [];
+    const modifiedRows = [];
+    
+    // Find added and modified rows
+    for (const [key, newRow] of newRowMap) {
+      if (!oldRowMap.has(key)) {
+        // New row
+        addedRows.push({ key, data: newRow.data });
+      } else {
+        // Check if row content changed
+        const oldRow = oldRowMap.get(key);
+        if (JSON.stringify(oldRow.data) !== JSON.stringify(newRow.data)) {
+          modifiedRows.push({
+            key,
+            oldData: oldRow.data,
+            newData: newRow.data
+          });
+        }
+      }
+    }
+    
+    // Find removed rows
+    for (const [key, oldRow] of oldRowMap) {
+      if (!newRowMap.has(key)) {
+        removedRows.push({ key, data: oldRow.data });
+      }
+    }
+    
+    // Log added rows
+    if (addedRows.length > 0) {
+      console.log(`   ➕ Added ${addedRows.length} rows:`);
+      addedRows.forEach(({ key, data }) => {
+        console.log(`      + ${key}`);
+      });
+    }
+    
+    // Log removed rows
+    if (removedRows.length > 0) {
+      console.log(`   ➖ Removed ${removedRows.length} rows:`);
+      removedRows.forEach(({ key, data }) => {
+        console.log(`      - ${key}`);
+      });
+    }
+    
+    // Log modified rows with before/after
+    if (modifiedRows.length > 0) {
+      console.log(`   ✏️ Modified ${modifiedRows.length} rows:`);
+      modifiedRows.forEach(({ key, oldData, newData }) => {
+        console.log(`      📝 ${key}:`);
+        
+        // Compare each column to show what changed
+        const maxColumns = Math.max(oldData.length, newData.length);
+        for (let col = 0; col < maxColumns; col++) {
+          const oldValue = oldData[col] || '';
+          const newValue = newData[col] || '';
+          
+          if (oldValue !== newValue) {
+            console.log(`         Column ${col + 1}: "${oldValue}" → "${newValue}"`);
+          }
+        }
+      });
+    }
+    
+    if (addedRows.length === 0 && removedRows.length === 0 && modifiedRows.length === 0) {
+      console.log(`   ✅ No changes detected - data is identical`);
+    }
+  } else if (!oldData) {
+    console.log(`   🆕 Initial import - no previous data to compare`);
+  }
+  
+  return {
+    oldCount,
+    newCount, 
+    difference
+  };
+}
+
+/**
+ * Helper function to get a unique key for a row (used for row matching)
+ * @param {Array} row - The row data array
+ * @param {number} index - Row index as fallback
+ * @returns {string} - Unique key for the row
+ */
+function getRowKey(row, index) {
+  // Try to find a good identifier from the first few columns
+  for (let i = 0; i < Math.min(3, row.length); i++) {
+    const value = row[i];
+    if (value && value.toString().trim()) {
+      return value.toString().trim();
+    }
+  }
+  
+  // Fallback to row index if no good identifier found
+  return `Row_${index}`;
+}
+
+/**
  * Update Final Forms data
  */
 function updateFinalForms() {
@@ -582,19 +751,42 @@ function updateFinalForms() {
   }
   
   try {
-    const file = DriveApp.getFileById(CONFIG.finalForms.fileId);
-    const csvData = file.getBlob().getDataAsString();
+    // Get existing data for comparison
+    const lastRow = sheet.getLastRow();
+    const oldData = lastRow > 0 ? sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues() : null;
+    
+    // Get the most recent CSV file from the Final Forms folder
+    const mostRecentFile = findMostRecentCsvFile(CONFIG.finalForms.folderId);
+    
+    if (!mostRecentFile) {
+      SpreadsheetApp.getUi().alert('Error', 'No CSV files found in the Final Forms folder.', SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    console.log(`Using most recent Final Forms file: ${mostRecentFile.getName()} (${mostRecentFile.getLastUpdated()})`);
+    
+    const csvData = mostRecentFile.getBlob().getDataAsString();
     const csvArray = Utilities.parseCsv(csvData);
+    
+    // Report differences
+    const diff = reportDataDifferences(oldData, csvArray, 'Final Forms');
     
     sheet.clear();
     if (csvArray.length > 0) {
       sheet.getRange(1, 1, csvArray.length, csvArray[0].length).setValues(csvArray);
     }
     
-    console.log(`Updated Final Forms: ${csvArray.length - 1} students`);
+    const fileName = mostRecentFile.getName();
+    const studentCount = csvArray.length - 1; // Subtract 1 for header row
+    
+    console.log(`✅ Updated Final Forms from: ${fileName}`);
+    SpreadsheetApp.getUi().alert('Final Forms Updated', 
+      `Successfully imported ${studentCount} students from:\n${fileName}\n\nChange: ${diff.difference >= 0 ? '+' : ''}${diff.difference} students`, 
+      SpreadsheetApp.getUi().ButtonSet.OK);
+      
   } catch (e) {
     console.error('Error updating Final Forms:', e);
-    SpreadsheetApp.getUi().alert('Error', 'Could not update Final Forms data. Check the file ID.', SpreadsheetApp.getUi().ButtonSet.OK);
+    SpreadsheetApp.getUi().alert('Error', 'Could not update Final Forms data. Check the folder and file permissions.', SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
@@ -611,19 +803,42 @@ function updateMailingList() {
   }
   
   try {
-    const file = DriveApp.getFileById(CONFIG.mailingList.fileId);
-    const csvData = file.getBlob().getDataAsString();
+    // Get existing data for comparison
+    const lastRow = sheet.getLastRow();
+    const oldData = lastRow > 0 ? sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues() : null;
+    
+    // Get the most recent CSV file from the mailing list folder
+    const mostRecentFile = findMostRecentCsvFile(CONFIG.mailingList.folderId);
+    
+    if (!mostRecentFile) {
+      SpreadsheetApp.getUi().alert('Error', 'No CSV files found in the mailing list folder.', SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    console.log(`Using most recent mailing list file: ${mostRecentFile.getName()} (${mostRecentFile.getLastUpdated()})`);
+    
+    const csvData = mostRecentFile.getBlob().getDataAsString();
     const csvArray = Utilities.parseCsv(csvData);
+    
+    // Report differences
+    const diff = reportDataDifferences(oldData, csvArray, 'Mailing List');
     
     sheet.clear();
     if (csvArray.length > 0) {
       sheet.getRange(1, 1, csvArray.length, csvArray[0].length).setValues(csvArray);
     }
     
-    console.log(`Updated Mailing List: ${csvArray.length - 1} emails`);
+    const fileName = mostRecentFile.getName();
+    const emailCount = csvArray.length - 1; // Subtract 1 for header row
+    
+    console.log(`✅ Updated Mailing List from: ${fileName}`);
+    
+    SpreadsheetApp.getUi().alert('Mailing List Updated!', 
+      `Successfully imported ${emailCount} emails from:\n${fileName}\n\nChange: ${diff.difference >= 0 ? '+' : ''}${diff.difference} emails`, 
+      SpreadsheetApp.getUi().ButtonSet.OK);
   } catch (e) {
     console.error('Error updating Mailing List:', e);
-    SpreadsheetApp.getUi().alert('Error', 'Could not update Mailing List data. Check the file ID.', SpreadsheetApp.getUi().ButtonSet.OK);
+    SpreadsheetApp.getUi().alert('Error', `Could not update Mailing List data:\n${e.toString()}\n\nCheck the folder ID in CONFIG.mailingList.folderId`, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
