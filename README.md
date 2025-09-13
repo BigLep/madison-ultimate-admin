@@ -16,6 +16,32 @@ The **"Full Name" column** is the critical join key between the Roster and Addit
 
 **Important**: When adding formulas that reference Additional Info data, always use the "Full Name" column as the lookup key.
 
+## Final Forms Integration & XLOOKUP Pattern
+
+### 🔑 Student ID as Primary Key
+
+All **Final Forms data** uses **Student ID** as the primary lookup key via XLOOKUP formulas:
+
+- **Student ID Column**: Required column containing copied values (not formulas) of unique student identifiers
+- **Auto-Population**: Student ID values are automatically copied from Final Forms during import
+- **XLOOKUP Formulas**: All other Final Forms columns use XLOOKUP with Student ID for robust matching
+- **Sort-Safe**: XLOOKUP formulas work regardless of row ordering or sorting
+- **Dynamic References**: Student ID column position is discovered at runtime
+
+### 📋 Final Forms Formula Pattern
+
+**✅ Final Forms Formulas (XLOOKUP with Student ID):**
+```javascript
+formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!D:D),"")` // Template
+// A6 gets replaced with actual Student ID column at runtime
+// Final result: =IFERROR(XLOOKUP(B6,'Final Forms'!A:A,'Final Forms'!D:D),"")
+```
+
+**❌ Old Pattern (ROW()-based - DEPRECATED):**
+```javascript
+formula: `=IFERROR(INDEX('Final Forms'!D:D,ROW()-4),"")` // BREAKS when sorted
+```
+
 ## Dynamic Column Positioning
 
 ### 🚫 No Hardcoded Column References

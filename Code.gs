@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '25';
+const SCRIPT_VERSION = '31';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -54,7 +54,7 @@ function generateRoster() {
   SpreadsheetApp.flush();
   
   console.log('Roster generated successfully!');
-  SpreadsheetApp.getUi().alert('Roster Generated!', 'The roster has been created with metadata rows and all data mappings.\n\nNote: Columns are matched by header name, so you can safely reorder columns and regenerate.', SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert('Roster Generated!', 'The roster has been created with metadata rows and all data mappings.\n\nNext Steps:\n1. Run "Update Final Forms" to populate StudentID and enable XLOOKUP formulas\n2. Run "Update Mailing List" to populate email status columns\n\nNote: Columns are matched by header name, so you can safely reorder columns and regenerate.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 
@@ -182,32 +182,39 @@ function buildRosterSheet(spreadsheet) {
   // Define all roster columns with metadata
   const rosterColumns = [
     {
+      name: 'StudentID',
+      type: 'String',
+      source: 'FinalForms StudentID',
+      note: ''
+      // No formula - this column gets populated with actual values during Final Forms import
+    },
+    {
       name: 'First Name',
       type: 'String',
       source: 'FinalForms First Name',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!D:D,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!D:D),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Last Name',
       type: 'String',
       source: 'FinalForms Last Name',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!E:E,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!E:E),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Student SPS Email',
       type: 'Email Address',
       source: 'FinalForms Email',
       note: 'Only set this if the domain is seattleschools.org',
-      formula: `=IFERROR(IF(REGEXMATCH(INDEX('Final Forms'!F:F,ROW()-4),"@seattleschools\\.org"),INDEX('Final Forms'!F:F,ROW()-4),""),"")`
+      formula: `=IFERROR(IF(REGEXMATCH(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),"@seattleschools\\.org"),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),""),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Student Personal Email',
       type: 'Email',
       source: 'FinalForms Email',
       note: 'Only set this if the domain is not seattleschools.org and the email address is not used as a FinalForms parent email',
-      formula: `=IFERROR(IF(AND(NOT(REGEXMATCH(INDEX('Final Forms'!F:F,ROW()-4),"@seattleschools\\.org")),INDEX('Final Forms'!F:F,ROW()-4)<>INDEX('Final Forms'!AO:AO,ROW()-4),INDEX('Final Forms'!F:F,ROW()-4)<>INDEX('Final Forms'!AU:AU,ROW()-4)),INDEX('Final Forms'!F:F,ROW()-4),""),"")`
+      formula: `=IFERROR(IF(AND(NOT(REGEXMATCH(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),"@seattleschools\\.org")),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F)<>XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AO:AO),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F)<>XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AU:AU)),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),""),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Student Personal Email On Mailing List?',
@@ -221,63 +228,63 @@ function buildRosterSheet(spreadsheet) {
       type: 'Boolean',
       source: 'FinalForms Are All Forms Parent Signed',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!P:P,ROW()-4),FALSE)`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!P:P),FALSE)` // Using XLOOKUP with Student ID
     },
     {
       name: 'Are All Forms Student Signed',
       type: 'Boolean',
       source: 'FinalForms Are All Forms Student Signed',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!Q:Q,ROW()-4),FALSE)`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!Q:Q),FALSE)` // Using XLOOKUP with Student ID
     },
     {
       name: 'Physical Cleared',
       type: 'Boolean',
       source: 'FinalForms Physical Cleared',
       note: '',
-      formula: `=IFERROR(IF(INDEX('Final Forms'!AB:AB,ROW()-4)="Cleared",TRUE,FALSE),FALSE)`
+      formula: `=IFERROR(IF(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AB:AB)="Cleared",TRUE,FALSE),FALSE)` // Using XLOOKUP with Student ID
     },
     {
       name: 'Gender',
       type: 'Enum',
       source: 'FinalForms Gender',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!U:U,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!U:U),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Grade',
       type: 'Number',
       source: 'FinalForms Grade',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!W:W,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!W:W),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Date of Birth',
       type: 'Date',
       source: 'FinalForms Date of Birth',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!X:X,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!X:X),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Parent 1 First Name',
       type: 'String',
       source: 'FinalForms Parent 1 First Name',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!AM:AM,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AM:AM),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Parent 1 Last Name',
       type: 'String',
       source: 'FinalForms Parent 1 Last Name',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!AN:AN,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AN:AN),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Parent 1 Email',
       type: 'Email',
       source: 'FinalForms Parent 1 Email',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!AO:AO,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AO:AO),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Parent 1 Email On Mailing List?',
@@ -291,21 +298,21 @@ function buildRosterSheet(spreadsheet) {
       type: 'String',
       source: 'FinalForms Parent 2 First Name',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!AS:AS,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AS:AS),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Parent 2 Last Name',
       type: 'String',
       source: 'FinalForms Parent 2 Last Name',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!AT:AT,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AT:AT),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Parent 2 Email',
       type: 'Email',
       source: 'FinalForms Parent 2 Email',
       note: '',
-      formula: `=IFERROR(INDEX('Final Forms'!AU:AU,ROW()-4),"")`
+      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AU:AU),"")` // Using XLOOKUP with Student ID
     },
     {
       name: 'Parent 2 Email On Mailing List?',
@@ -427,16 +434,32 @@ function buildRosterSheet(spreadsheet) {
     // Create a formula that adapts to the current column positions
     let formula = col.formula;
     
-    // Replace column references with dynamic lookups
-    // For formulas that reference other columns (like A6, C6, E6, etc.)
-    // we need to find those columns' current positions
-    
-    if (formula.includes('TRIM(A6&" "&C6)')) {
+    // Process formula if it exists
+    if (!formula) {
+      console.log(`Column "${col.name}" has no formula - column will be populated manually or via import`);
+    } else {
+      // Replace column references with dynamic lookups
+      // For formulas that reference other columns (like A6, C6, E6, etc.)
+      // we need to find those columns' current positions
+      
+      if (formula.includes('TRIM(A6&" "&C6)')) {
       // Replace concatenated First+Last names with Full Name column reference
       // This is the critical join key to Additional Info data
       formula = formula.replaceAll('TRIM(A6&" "&C6)', `${fullNameLetter}6`);
+    } else if (formula.includes('XLOOKUP(A6,')) {
+      // Handle XLOOKUP formulas that reference StudentID column
+      const studentIdCol = columnMap.get('StudentID');
+      if (!studentIdCol) {
+        throw new Error('❌ CRITICAL: "StudentID" column not found. Required for Final Forms XLOOKUP formulas.');
+      }
+      
+      // Convert column number to letter
+      const studentIdLetter = getColumnLetter(studentIdCol);
+      
+      // Replace A6 with actual StudentID column in XLOOKUP formulas
+      formula = formula.replace(/XLOOKUP\(A6,/g, `XLOOKUP(${studentIdLetter}6,`);
     } else if (formula.includes('A6') || formula.includes('C6')) {
-      // Handle other column references (non-Additional Info lookups)
+      // Handle other column references (non-Additional Info lookups, non-XLOOKUP)
       const firstNameCol = columnMap.get('First Name');
       const lastNameCol = columnMap.get('Last Name');
       
@@ -513,13 +536,14 @@ function buildRosterSheet(spreadsheet) {
       formula = formula.replace(/PARENT2_EMAIL_COLUMN/g, `${parent2EmailLetter}6`);
     }
     
-    // Set formula for FIRST_DATA_ROW
-    rosterSheet.getRange(FIRST_DATA_ROW, colNum).setFormula(formula);
-    
-    // Copy formula down to row 200
-    const sourceRange = rosterSheet.getRange(FIRST_DATA_ROW, colNum, 1, 1);
-    const targetRange = rosterSheet.getRange(FIRST_DATA_ROW + 1, colNum, 194, 1);
-    sourceRange.copyTo(targetRange);
+      // Set formula for FIRST_DATA_ROW
+      rosterSheet.getRange(FIRST_DATA_ROW, colNum).setFormula(formula);
+      
+      // Copy formula down to row 200
+      const sourceRange = rosterSheet.getRange(FIRST_DATA_ROW, colNum, 1, 1);
+      const targetRange = rosterSheet.getRange(FIRST_DATA_ROW + 1, colNum, 194, 1);
+      sourceRange.copyTo(targetRange);
+    } // End of formula processing else block
   });
   
   console.log('Roster sheet built with dynamic column mapping');
@@ -739,6 +763,63 @@ function getRowKey(row, index) {
 }
 
 /**
+ * Helper function to update the roster Student ID column with values from Final Forms
+ * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
+ * @param {Array} finalFormsData - The Final Forms CSV data array
+ */
+function updateRosterStudentIds(ss, finalFormsData) {
+  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+  if (!rosterSheet) {
+    console.warn('Roster sheet not found, skipping Student ID update');
+    return;
+  }
+  
+  // Check if StudentID column exists in roster
+  const headerRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
+  const studentIdColIndex = headerRow.findIndex(header => header === 'StudentID');
+  
+  if (studentIdColIndex === -1) {
+    console.warn('StudentID column not found in roster, skipping update');
+    return;
+  }
+  
+  const studentIdCol = studentIdColIndex + 1; // Convert to 1-based column number
+  
+  // Extract Student IDs from Final Forms data (assuming column A contains Student IDs)
+  if (finalFormsData.length <= 1) {
+    console.warn('No Final Forms data to extract Student IDs from');
+    return;
+  }
+  
+  // Get the Student IDs (skip header row)
+  const studentIds = finalFormsData.slice(1).map(row => row[0] || ''); // Column A is Student ID
+  
+  if (studentIds.length === 0) {
+    console.warn('No Student IDs found in Final Forms data');
+    return;
+  }
+  
+  // Update the roster Student ID column with actual values
+  const startRow = FIRST_DATA_ROW; // Start from first data row
+  const numStudents = studentIds.length;
+  
+  // Clear existing data in Student ID column (data rows only)
+  const maxRows = rosterSheet.getMaxRows();
+  if (maxRows >= startRow) {
+    rosterSheet.getRange(startRow, studentIdCol, maxRows - startRow + 1, 1).clearContent();
+  }
+  
+  // Write the new Student IDs
+  if (numStudents > 0) {
+    const range = rosterSheet.getRange(startRow, studentIdCol, numStudents, 1);
+    const values = studentIds.map(id => [id]); // Convert to 2D array
+    range.setValues(values);
+  }
+  
+  console.log(`✅ Updated ${numStudents} Student IDs in roster column ${studentIdCol}`);
+}
+
+/**
  * Update Final Forms data
  */
 function updateFinalForms() {
@@ -780,6 +861,15 @@ function updateFinalForms() {
     const studentCount = csvArray.length - 1; // Subtract 1 for header row
     
     console.log(`✅ Updated Final Forms from: ${fileName}`);
+    
+    // Also update Student ID column in roster with actual values from Final Forms
+    try {
+      updateRosterStudentIds(ss, csvArray);
+    } catch (idError) {
+      console.warn('Could not update roster Student IDs:', idError);
+      // Don't fail the entire import if Student ID update fails
+    }
+    
     SpreadsheetApp.getUi().alert('Final Forms Updated', 
       `Successfully imported ${studentCount} students from:\n${fileName}\n\nChange: ${diff.difference >= 0 ? '+' : ''}${diff.difference} students`, 
       SpreadsheetApp.getUi().ButtonSet.OK);
