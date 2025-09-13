@@ -416,6 +416,10 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     headerRange.setBackground('#4285f4');
     headerRange.setFontColor('white');
     
+    // Copy conditional formatting from roster sheet
+    console.log('🎨 Copying conditional formatting...');
+    copyConditionalFormattingFromRoster(newSheet, rosterSheet, headers, headerRow, totalRows);
+    
     // Enable filtering on the data range
     console.log('🔍 Enabling filtering...');
     const filterRange = newSheet.getRange(1, 1, totalRows, headers.length);
@@ -493,4 +497,48 @@ function copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, rosterHe
       console.warn(`Could not copy formatting for column "${columnName}":`, error);
     }
   });
+}
+
+/**
+ * Copy conditional formatting rules from roster sheet to new custom sheet
+ * Applies all rules to the entire new sheet range (simple approach)
+ */
+function copyConditionalFormattingFromRoster(newSheet, rosterSheet, headers, rosterHeaderRow, totalRows) {
+  try {
+    // Get all conditional formatting rules from the roster sheet
+    const rosterRules = rosterSheet.getConditionalFormatRules();
+    
+    if (rosterRules.length === 0) {
+      console.log('No conditional formatting rules found in roster sheet');
+      return;
+    }
+    
+    console.log(`Found ${rosterRules.length} conditional formatting rules in roster sheet`);
+    
+    // Apply all rules to the entire new sheet range
+    const entireSheetRange = newSheet.getRange(1, 1, totalRows, headers.length);
+    const newRules = [];
+    
+    rosterRules.forEach((rule, ruleIndex) => {
+      try {
+        // Clone the rule and apply it to the entire new sheet
+        const newRule = rule.copy().setRanges([entireSheetRange]);
+        newRules.push(newRule);
+        
+        console.log(`✅ Applied conditional formatting rule ${ruleIndex + 1} to entire new sheet`);
+        
+      } catch (ruleError) {
+        console.warn(`Could not copy conditional formatting rule ${ruleIndex + 1}:`, ruleError);
+      }
+    });
+    
+    // Set all rules on the new sheet
+    if (newRules.length > 0) {
+      newSheet.setConditionalFormatRules(newRules);
+      console.log(`✅ Applied ${newRules.length} conditional formatting rules to new sheet`);
+    }
+    
+  } catch (error) {
+    console.warn('Could not copy conditional formatting:', error);
+  }
 }
