@@ -306,8 +306,8 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
       }
     });
     
-    // Auto-resize columns
-    newSheet.autoResizeColumns(1, headers.length);
+    // Copy column formatting from roster sheet
+    copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, headerRow);
     
     // Apply alternating colors to the entire data range
     const totalRows = nonEmptyFullNames.length + 1; // +1 for header row
@@ -320,7 +320,7 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
       true  // Show footer (not used but required parameter)
     );
     
-    // Ensure header row styling is preserved
+    // Ensure header row styling is preserved (after banding)
     headerRange.setFontWeight('bold');
     headerRange.setBackground('#4285f4');
     headerRange.setFontColor('white');
@@ -336,4 +336,64 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     console.error('Error creating custom sheet:', error);
     throw error; // Let the HTML dialog handle the error display
   }
+}
+
+/**
+ * Copy column formatting from roster sheet to new custom sheet
+ * Includes column widths, number formats, text wrapping, and alignment
+ */
+function copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, rosterHeaderRow) {
+  headers.forEach((columnName, newColumnIndex) => {
+    // Find the column in the roster sheet
+    const rosterColumnIndex = rosterHeaderRow.findIndex(name => name === columnName);
+    
+    if (rosterColumnIndex === -1) {
+      console.warn(`Column "${columnName}" not found in roster sheet for formatting`);
+      return;
+    }
+    
+    const newColumn = newColumnIndex + 1; // Convert to 1-based
+    const rosterColumn = rosterColumnIndex + 1; // Convert to 1-based
+    
+    try {
+      // Copy column width
+      const rosterColumnWidth = rosterSheet.getColumnWidth(rosterColumn);
+      newSheet.setColumnWidth(newColumn, rosterColumnWidth);
+      
+      // Copy formatting from a data cell in the roster (row 6 = first data row)
+      const rosterFormatCell = rosterSheet.getRange(FIRST_DATA_ROW, rosterColumn);
+      const newFormatCell = newSheet.getRange(2, newColumn); // Row 2 = first data row in new sheet
+      
+      // Copy number format
+      const numberFormat = rosterFormatCell.getNumberFormat();
+      if (numberFormat) {
+        const newColumnRange = newSheet.getRange(2, newColumn, newSheet.getMaxRows() - 1, 1);
+        newColumnRange.setNumberFormat(numberFormat);
+      }
+      
+      // Copy text wrapping
+      const textWrapping = rosterFormatCell.getWrap();
+      const newColumnRange = newSheet.getRange(2, newColumn, newSheet.getMaxRows() - 1, 1);
+      newColumnRange.setWrap(textWrapping);
+      
+      // Copy horizontal alignment
+      const horizontalAlignment = rosterFormatCell.getHorizontalAlignment();
+      newColumnRange.setHorizontalAlignment(horizontalAlignment);
+      
+      // Copy vertical alignment
+      const verticalAlignment = rosterFormatCell.getVerticalAlignment();
+      newColumnRange.setVerticalAlignment(verticalAlignment);
+      
+      // Copy font family and size (but not color/weight as that might interfere with banding)
+      const fontFamily = rosterFormatCell.getFontFamily();
+      const fontSize = rosterFormatCell.getFontSize();
+      newColumnRange.setFontFamily(fontFamily);
+      newColumnRange.setFontSize(fontSize);
+      
+      console.log(`✅ Copied formatting for column "${columnName}" (width: ${rosterColumnWidth}px)`);
+      
+    } catch (error) {
+      console.warn(`Could not copy formatting for column "${columnName}":`, error);
+    }
+  });
 }
