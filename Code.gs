@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '40';
+const SCRIPT_VERSION = '43';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -576,6 +576,7 @@ function createCustomMenu() {
     .addItem('📧 Update Mailing List', 'updateMailingList')
     .addSeparator()
     .addItem('🏗️ Build Custom Sheet', 'buildCustomSheet')
+    .addItem('🎨 Format Spruce Up', 'formatSpruceUp')
     .addSeparator()
     .addItem('📈 Show Statistics', 'showStatistics')
     .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')

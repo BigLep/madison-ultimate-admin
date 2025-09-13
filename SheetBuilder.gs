@@ -399,31 +399,19 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     console.log('🎨 Copying column formatting...');
     copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, headerRow);
     
-    // Apply alternating colors to the entire data range
-    console.log('🌈 Applying alternating colors...');
-    const totalRows = nonEmptyFullNames.length + 1; // +1 for header row
-    const dataRange = newSheet.getRange(1, 1, totalRows, headers.length);
+    // Apply Format Spruce Up formatting (alternating colors, filtering, vertical centering)
+    console.log('✨ Applying Format Spruce Up formatting...');
+    applySpruceUpFormatting(newSheet);
     
-    // Set up alternating row colors with header row
-    dataRange.applyRowBanding(
-      SpreadsheetApp.BandingTheme.LIGHT_GREY, // Use light grey theme
-      true, // Show header
-      true  // Show footer (not used but required parameter)
-    );
-    
-    // Ensure header row styling is preserved (after banding)
+    // Ensure header row styling is preserved (after Format Spruce Up)
     headerRange.setFontWeight('bold');
     headerRange.setBackground('#4285f4');
     headerRange.setFontColor('white');
     
     // Copy conditional formatting from roster sheet
     console.log('🎨 Copying conditional formatting...');
+    const totalRows = nonEmptyFullNames.length + 1; // +1 for header row
     copyConditionalFormattingFromRoster(newSheet, rosterSheet, headers, headerRow, totalRows);
-    
-    // Enable filtering on the data range
-    console.log('🔍 Enabling filtering...');
-    const filterRange = newSheet.getRange(1, 1, totalRows, headers.length);
-    filterRange.createFilter();
     
     // Activate the new sheet
     console.log('🎯 Activating new sheet...');
