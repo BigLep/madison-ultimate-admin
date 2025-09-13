@@ -40,7 +40,7 @@ function showColumnSelectionDialog(columnNames) {
   // Create HTML dialog
   const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
     .setWidth(500)
-    .setHeight(600)
+    .setHeight(700) // Increased height to prevent button cutoff
     .setTitle('Build Custom Sheet');
   
   // Show the dialog
@@ -71,7 +71,7 @@ function createColumnSelectionHtml(columnNames) {
           label { font-weight: bold; display: block; margin-bottom: 5px; }
           input[type="text"] { width: 100%; padding: 8px; font-size: 14px; }
           .columns-container { 
-            max-height: 300px; 
+            max-height: 250px; 
             overflow-y: auto; 
             border: 1px solid #ccc; 
             padding: 10px; 
@@ -126,6 +126,50 @@ function createColumnSelectionHtml(columnNames) {
             border-left: 4px solid #4caf50;
             font-size: 14px;
           }
+          .progress-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 1000;
+          }
+          .progress-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            padding: 30px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          }
+          .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4285f4;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+          }
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          .progress-text {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+          }
+          .progress-detail {
+            font-size: 14px;
+            color: #666;
+          }
         </style>
       </head>
       <body>
@@ -152,6 +196,15 @@ function createColumnSelectionHtml(columnNames) {
           <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
         </div>
         
+        <!-- Progress Overlay -->
+        <div class="progress-overlay" id="progressOverlay">
+          <div class="progress-content">
+            <div class="spinner"></div>
+            <div class="progress-text" id="progressText">Creating Sheet...</div>
+            <div class="progress-detail" id="progressDetail">Please wait while we build your custom sheet</div>
+          </div>
+        </div>
+        
         <script>
           function createSheet() {
             const sheetName = document.getElementById('sheetName').value.trim();
@@ -164,25 +217,57 @@ function createColumnSelectionHtml(columnNames) {
             const checkboxes = document.querySelectorAll('input[name="columns"]:checked');
             const selectedColumns = Array.from(checkboxes).map(cb => cb.value);
             
+            // Show progress overlay
+            showProgress('Creating Sheet...', 'Preparing your custom sheet');
+            
             // Call server-side function
             google.script.run
               .withSuccessHandler(onSuccess)
               .withFailureHandler(onFailure)
-              .processSheetCreation(sheetName, selectedColumns);
+              .processSheetCreationWithProgress(sheetName, selectedColumns);
+          }
+          
+          function showProgress(title, detail) {
+            document.getElementById('progressText').textContent = title;
+            document.getElementById('progressDetail').textContent = detail;
+            document.getElementById('progressOverlay').style.display = 'block';
+          }
+          
+          function hideProgress() {
+            document.getElementById('progressOverlay').style.display = 'none';
+          }
+          
+          function updateProgress(title, detail) {
+            document.getElementById('progressText').textContent = title;
+            document.getElementById('progressDetail').textContent = detail;
           }
           
           function onSuccess(message) {
-            alert(message);
+            hideProgress();
             google.script.host.close();
           }
           
           function onFailure(error) {
+            hideProgress();
             alert('Error: ' + error.message);
           }
         </script>
       </body>
     </html>
   `;
+}
+
+/**
+ * Server-side function called from HTML dialog with progress updates
+ * Processes the sheet creation request
+ */
+function processSheetCreationWithProgress(sheetName, selectedColumns) {
+  // This function provides better console logging for progress tracking
+  console.log('🏗️ Starting sheet creation process...');
+  console.log(`   Sheet name: "${sheetName}"`);
+  console.log(`   Selected columns: ${selectedColumns.length}`);
+  
+  return processSheetCreation(sheetName, selectedColumns);
 }
 
 /**
@@ -226,6 +311,7 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
   
   try {
     // Create new sheet
+    console.log('📄 Creating new sheet...');
     const newSheet = ss.insertSheet(sheetName);
     
     // Find Full Name column in roster
@@ -237,6 +323,7 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     }
     
     // Set up headers: Full Name + selected columns
+    console.log('📋 Setting up headers...');
     const headers = ['Full Name', ...selectedColumns];
     
     // Set headers with XLOOKUP formulas for column names (for debugging)
@@ -275,10 +362,12 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     }
     
     // Copy Full Name values to new sheet
+    console.log('👥 Copying student names...');
     const newSheetDataStartRow = 2;
     newSheet.getRange(newSheetDataStartRow, 1, nonEmptyFullNames.length, 1).setValues(nonEmptyFullNames);
     
     // Create XLOOKUP formulas for each selected column
+    console.log('🔗 Creating XLOOKUP formulas...');
     selectedColumns.forEach((columnName, columnIndex) => {
       const targetColumn = columnIndex + 2; // +2 because Full Name is column 1
       
@@ -307,9 +396,11 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     });
     
     // Copy column formatting from roster sheet
+    console.log('🎨 Copying column formatting...');
     copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, headerRow);
     
     // Apply alternating colors to the entire data range
+    console.log('🌈 Applying alternating colors...');
     const totalRows = nonEmptyFullNames.length + 1; // +1 for header row
     const dataRange = newSheet.getRange(1, 1, totalRows, headers.length);
     
@@ -325,10 +416,16 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     headerRange.setBackground('#4285f4');
     headerRange.setFontColor('white');
     
+    // Enable filtering on the data range
+    console.log('🔍 Enabling filtering...');
+    const filterRange = newSheet.getRange(1, 1, totalRows, headers.length);
+    filterRange.createFilter();
+    
     // Activate the new sheet
+    console.log('🎯 Activating new sheet...');
     newSheet.activate();
     
-    console.log(`✅ Created custom sheet "${sheetName}" with ${selectedColumns.length} columns and ${nonEmptyFullNames.length} students`);
+    console.log(`✅ Sheet creation complete! "${sheetName}" with ${selectedColumns.length} columns and ${nonEmptyFullNames.length} students`);
     
     // Don't show alert here as it's handled by the HTML dialog success handler
     
