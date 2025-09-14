@@ -1,0 +1,10 @@
+{
+  "scriptId": "1dN-1gp9BTCPb8A23lC26C_0uoCsqfTpoThhdWs5vLcgFdPJFKyVuOulD",
+  "rootDir": ".",
+  "filePushOrder": [
+    "appsscript.json",
+    "Code.gs",
+    "SheetBuilder.gs",
+    "FormatSpruceUp.gs"
+  ]
+}
