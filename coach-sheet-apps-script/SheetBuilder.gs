@@ -18,24 +18,93 @@ function buildCustomSheet() {
   
   // Get all column names from roster sheet
   const headerRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
-  const columnNames = headerRow.filter(name => name && name.toString().trim() !== '');
+  const rosterColumns = headerRow.filter(name => name && name.toString().trim() !== '');
   
-  if (columnNames.length === 0) {
+  if (rosterColumns.length === 0) {
     SpreadsheetApp.getUi().alert('Error', 'No columns found in roster sheet.', SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
   
-  // Show column selection dialog
-  showColumnSelectionDialog(columnNames);
+  // Discover native Attendance columns (columns that aren't copied from Roster)
+  const attendanceColumns = discoverAttendanceColumns();
+  
+  // Show column selection dialog with both Roster and Attendance columns
+  showColumnSelectionDialog(rosterColumns, attendanceColumns);
+}
+
+/**
+ * Get the Attendance sheet from the current spreadsheet
+ * @return {Sheet|null} The Attendance sheet or null if not accessible
+ */
+function getAttendanceSheet() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const attendanceSheet = ss.getSheetByName('Attendance');
+    
+    if (!attendanceSheet) {
+      console.warn('Sheet named "Attendance" not found in the current spreadsheet');
+      return null;
+    }
+    
+    return attendanceSheet;
+  } catch (error) {
+    console.warn('Could not access Attendance sheet:', error);
+    return null;
+  }
+}
+
+/**
+ * Discover native Attendance columns (columns that aren't copied from Roster)
+ * @return {Array} Array of attendance column names that are native to attendance sheet
+ */
+function discoverAttendanceColumns() {
+  const attendanceSheet = getAttendanceSheet();
+  if (!attendanceSheet) {
+    return [];
+  }
+  
+  // Get header row (row 1)
+  const headerRow = attendanceSheet.getRange(1, 1, 1, attendanceSheet.getLastColumn()).getValues()[0];
+  const allAttendanceColumns = headerRow.filter(name => name && name.toString().trim() !== '');
+  
+  if (allAttendanceColumns.length === 0) {
+    console.warn('No columns found in Attendance sheet');
+    return [];
+  }
+  
+  // Get row 2 formulas to identify which columns are copied from Roster
+  const formulaRow = attendanceSheet.getRange(2, 1, 1, attendanceSheet.getLastColumn()).getFormulas()[0];
+  
+  const nativeAttendanceColumns = [];
+  
+  console.log(`Analyzing ${allAttendanceColumns.length} attendance columns...`);
+  
+  // Check each column - if row 2 does NOT have an XLOOKUP formula, it's a native attendance column
+  allAttendanceColumns.forEach((columnName, index) => {
+    const formula = formulaRow[index] || '';
+    
+    // Check if formula contains XLOOKUP (indicating it's copied from another sheet)
+    const hasXlookup = formula.toUpperCase().includes('XLOOKUP');
+    
+    console.log(`Column ${index + 1} "${columnName}": formula="${formula}", hasXlookup=${hasXlookup}`);
+    
+    // Only include columns that don't have XLOOKUP formulas in row 2 and aren't Full Name
+    if (!hasXlookup && columnName.trim() !== '' && columnName !== 'Full Name') {
+      nativeAttendanceColumns.push(columnName);
+    }
+  });
+  
+  console.log(`Found ${nativeAttendanceColumns.length} native Attendance columns: ${nativeAttendanceColumns.join(', ')}`);
+  return nativeAttendanceColumns;
 }
 
 /**
  * Show dialog for selecting columns and entering sheet name
  * Uses HTML dialog with checkboxes for better UX
  */
-function showColumnSelectionDialog(columnNames) {
-  // Create HTML content for the dialog
-  const htmlContent = createColumnSelectionHtml(columnNames);
+function showColumnSelectionDialog(rosterColumns, attendanceColumns) {
+  // Create HTML content for the dialog with both column types
+  const htmlContent = createColumnSelectionHtml(rosterColumns, attendanceColumns);
   
   // Create HTML dialog
   const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
@@ -50,16 +119,39 @@ function showColumnSelectionDialog(columnNames) {
 /**
  * Create HTML content for column selection dialog
  */
-function createColumnSelectionHtml(columnNames) {
-  const checkboxes = columnNames
-    .filter(name => name !== 'Full Name') // Exclude Full Name as it's always included
+function createColumnSelectionHtml(rosterColumns, attendanceColumns) {
+  // Create checkboxes for Roster columns (exclude Full Name as it's always included)
+  const rosterCheckboxes = rosterColumns
+    .filter(name => name !== 'Full Name')
     .map(name => `
       <div class="checkbox-item">
         <label>
-          <input type="checkbox" name="columns" value="${name}"> ${name}
+          <input type="checkbox" name="columns" value="roster:${name}" data-source="roster"> ${name}
         </label>
       </div>
     `).join('');
+
+  // Create checkboxes for native Attendance columns
+  const attendanceCheckboxes = attendanceColumns
+    .map(name => `
+      <div class="checkbox-item">
+        <label>
+          <input type="checkbox" name="columns" value="attendance:${name}" data-source="attendance"> ${name}
+        </label>
+      </div>
+    `).join('');
+
+  // Combine sections
+  const allCheckboxes = `
+    ${rosterColumns.length > 1 ? `
+      <h4 style="margin-top: 0; color: #4285f4;">📊 Roster Columns</h4>
+      ${rosterCheckboxes}
+    ` : ''}
+    ${attendanceColumns.length > 0 ? `
+      <h4 style="margin-top: 15px; color: #34a853;">📅 Attendance Columns</h4>
+      ${attendanceCheckboxes}
+    ` : ''}
+  `;
   
   return `
     <!DOCTYPE html>
@@ -187,7 +279,7 @@ function createColumnSelectionHtml(columnNames) {
           <label>Select Additional Columns:</label>
           <div class="note">Check the boxes for columns you want to include in your custom sheet</div>
           <div class="columns-container">
-            ${checkboxes}
+            ${allCheckboxes}
           </div>
         </div>
         
@@ -206,6 +298,47 @@ function createColumnSelectionHtml(columnNames) {
         </div>
         
         <script>
+          // Load saved selections when dialog opens
+          window.onload = function() {
+            restoreLastSelections();
+          };
+          
+          function restoreLastSelections() {
+            try {
+              const savedSelections = localStorage.getItem('sheetBuilder_lastSelection');
+              const savedSheetName = localStorage.getItem('sheetBuilder_lastSheetName');
+              
+              if (savedSheetName) {
+                document.getElementById('sheetName').value = savedSheetName;
+              }
+              
+              if (savedSelections) {
+                const selections = JSON.parse(savedSelections);
+                selections.forEach(value => {
+                  const checkbox = document.querySelector('input[value="' + value + '"]');
+                  if (checkbox) {
+                    checkbox.checked = true;
+                  }
+                });
+              }
+            } catch (error) {
+              console.log('Could not restore last selections:', error);
+            }
+          }
+          
+          function saveCurrentSelections() {
+            try {
+              const sheetName = document.getElementById('sheetName').value.trim();
+              const checkboxes = document.querySelectorAll('input[name="columns"]:checked');
+              const selectedColumns = Array.from(checkboxes).map(cb => cb.value);
+              
+              localStorage.setItem('sheetBuilder_lastSelection', JSON.stringify(selectedColumns));
+              localStorage.setItem('sheetBuilder_lastSheetName', sheetName);
+            } catch (error) {
+              console.log('Could not save selections:', error);
+            }
+          }
+          
           function createSheet() {
             const sheetName = document.getElementById('sheetName').value.trim();
             
@@ -216,6 +349,9 @@ function createColumnSelectionHtml(columnNames) {
             
             const checkboxes = document.querySelectorAll('input[name="columns"]:checked');
             const selectedColumns = Array.from(checkboxes).map(cb => cb.value);
+            
+            // Save current selections for next time
+            saveCurrentSelections();
             
             // Show progress overlay
             showProgress('Creating Sheet...', 'Preparing your custom sheet');
@@ -291,13 +427,31 @@ function processSheetCreation(sheetName, selectedColumns) {
     selectedColumns = [];
   }
   
+  // Parse selected columns to separate roster and attendance columns
+  const rosterColumns = [];
+  const attendanceColumns = [];
+  
+  selectedColumns.forEach(columnSpec => {
+    if (columnSpec.startsWith('roster:')) {
+      rosterColumns.push(columnSpec.substring(7)); // Remove 'roster:' prefix
+    } else if (columnSpec.startsWith('attendance:')) {
+      attendanceColumns.push(columnSpec.substring(11)); // Remove 'attendance:' prefix
+    } else {
+      // Legacy format (assume roster column)
+      rosterColumns.push(columnSpec);
+    }
+  });
+  
+  console.log(`Processing ${rosterColumns.length} roster columns and ${attendanceColumns.length} attendance columns`);
+  
   // Create the sheet
-  createCustomSheetWithColumns(sheetName, selectedColumns);
+  createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumns);
   
   // Return success message
-  const message = selectedColumns.length === 0 
+  const totalColumns = rosterColumns.length + attendanceColumns.length;
+  const message = totalColumns === 0 
     ? `Created "${sheetName}" with only the Full Name column.`
-    : `Created "${sheetName}" with Full Name + ${selectedColumns.length} additional columns.`;
+    : `Created "${sheetName}" with Full Name + ${totalColumns} additional columns (${rosterColumns.length} from Roster, ${attendanceColumns.length} from Attendance).`;
     
   return message;
 }
@@ -305,7 +459,7 @@ function processSheetCreation(sheetName, selectedColumns) {
 /**
  * Create the custom sheet with selected columns
  */
-function createCustomSheetWithColumns(sheetName, selectedColumns) {
+function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumns) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
   
@@ -315,30 +469,53 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     const newSheet = ss.insertSheet(sheetName);
     
     // Find Full Name column in roster
-    const headerRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
-    const fullNameColIndex = headerRow.findIndex(name => name === 'Full Name');
+    const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
+    const fullNameColIndex = rosterHeaderRow.findIndex(name => name === 'Full Name');
     
     if (fullNameColIndex === -1) {
       throw new Error('Full Name column not found in roster sheet');
     }
     
-    // Set up headers: Full Name + selected columns
-    console.log('📋 Setting up headers...');
-    const headers = ['Full Name', ...selectedColumns];
+    // Get attendance sheet info if we have attendance columns
+    let attendanceSheet = null;
+    let attendanceHeaderRow = null;
+    if (attendanceColumns.length > 0) {
+      attendanceSheet = getAttendanceSheet();
+      if (!attendanceSheet) {
+        throw new Error('Cannot access Attendance sheet to create selected columns');
+      }
+      attendanceHeaderRow = attendanceSheet.getRange(1, 1, 1, attendanceSheet.getLastColumn()).getValues()[0];
+    }
     
-    // Set headers with XLOOKUP formulas for column names (for debugging)
+    // Set up headers: Full Name + roster columns + attendance columns
+    console.log('📋 Setting up headers...');
+    const allSelectedColumns = [...rosterColumns, ...attendanceColumns];
+    const headers = ['Full Name', ...allSelectedColumns];
+    
+    // Set headers with direct cell references for column names
     const headerFormulas = headers.map((columnName, index) => {
       if (index === 0) {
         // First column is always Full Name
         return 'Full Name';
       } else {
-        // Use XLOOKUP to get the column name from roster (helps spot bugs)
-        const rosterColumnIndex = headerRow.findIndex(name => name === columnName);
-        if (rosterColumnIndex === -1) {
-          return columnName; // Fallback to static name if not found
+        // Check if this is a roster column or attendance column
+        const isRosterColumn = rosterColumns.includes(columnName);
+        const isAttendanceColumn = attendanceColumns.includes(columnName);
+        
+        if (isRosterColumn) {
+          // Use direct reference to roster column header
+          const rosterColumnIndex = rosterHeaderRow.findIndex(name => name === columnName);
+          if (rosterColumnIndex === -1) {
+            return columnName; // Fallback to static name if not found
+          }
+          const rosterColumnLetter = getColumnLetter(rosterColumnIndex + 1);
+          return `=${CONFIG.roster.sheetName}!${rosterColumnLetter}1`;
+        } else if (isAttendanceColumn && attendanceHeaderRow) {
+          // Use static name for attendance columns (they come from external sheet)
+          return columnName;
+        } else {
+          return columnName; // Fallback
         }
-        const rosterColumnLetter = getColumnLetter(rosterColumnIndex + 1);
-        return `=XLOOKUP("${columnName}",'${CONFIG.roster.sheetName}'!1:1,'${CONFIG.roster.sheetName}'!1:1)`;
       }
     });
     
@@ -366,13 +543,13 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     const newSheetDataStartRow = 2;
     newSheet.getRange(newSheetDataStartRow, 1, nonEmptyFullNames.length, 1).setValues(nonEmptyFullNames);
     
-    // Create XLOOKUP formulas for each selected column
-    console.log('🔗 Creating XLOOKUP formulas...');
-    selectedColumns.forEach((columnName, columnIndex) => {
+    // Create XLOOKUP formulas for roster columns
+    console.log('🔗 Creating XLOOKUP formulas for roster columns...');
+    rosterColumns.forEach((columnName, columnIndex) => {
       const targetColumn = columnIndex + 2; // +2 because Full Name is column 1
       
       // Find the column in roster sheet
-      const rosterColumnIndex = headerRow.findIndex(name => name === columnName);
+      const rosterColumnIndex = rosterHeaderRow.findIndex(name => name === columnName);
       if (rosterColumnIndex === -1) {
         console.warn(`Column "${columnName}" not found in roster sheet`);
         return;
@@ -395,9 +572,45 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
       }
     });
     
+    // Create XLOOKUP formulas for attendance columns
+    if (attendanceColumns && attendanceColumns.length > 0) {
+      console.log('🔗 Creating XLOOKUP formulas for attendance columns...');
+      const attendanceSheet = getAttendanceSheet();
+      if (attendanceSheet) {
+        const attendanceHeaderRow = attendanceSheet.getRange(1, 1, 1, attendanceSheet.getLastColumn()).getValues()[0];
+        
+        attendanceColumns.forEach((columnName, columnIndex) => {
+          const targetColumn = rosterColumns.length + columnIndex + 2; // After roster columns
+          
+          // Find the column in attendance sheet
+          const attendanceColumnIndex = attendanceHeaderRow.findIndex(name => name === columnName);
+          if (attendanceColumnIndex === -1) {
+            console.warn(`Column "${columnName}" not found in attendance sheet`);
+            return;
+          }
+          
+          const attendanceColumnLetter = getColumnLetter(attendanceColumnIndex + 1);
+          const fullNameColumnLetter = getColumnLetter(fullNameColIndex + 1);
+          
+          // Create XLOOKUP formula referencing Attendance sheet
+          const formula = `=IFERROR(XLOOKUP(A2,'Attendance'!A:A,'Attendance'!${attendanceColumnLetter}:${attendanceColumnLetter}),"")`;
+          
+          // Set formula in first data row
+          newSheet.getRange(newSheetDataStartRow, targetColumn).setFormula(formula);
+          
+          // Copy formula down for all rows with Full Name data
+          if (nonEmptyFullNames.length > 1) {
+            const sourceRange = newSheet.getRange(newSheetDataStartRow, targetColumn, 1, 1);
+            const targetRange = newSheet.getRange(newSheetDataStartRow + 1, targetColumn, nonEmptyFullNames.length - 1, 1);
+            sourceRange.copyTo(targetRange);
+          }
+        });
+      }
+    }
+    
     // Copy column formatting from roster sheet
     console.log('🎨 Copying column formatting...');
-    copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, headerRow);
+    copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, rosterHeaderRow);
     
     // Apply Format Spruce Up formatting (alternating colors, filtering, vertical centering)
     console.log('✨ Applying Format Spruce Up formatting...');
@@ -411,13 +624,14 @@ function createCustomSheetWithColumns(sheetName, selectedColumns) {
     // Copy conditional formatting from roster sheet
     console.log('🎨 Copying conditional formatting...');
     const totalRows = nonEmptyFullNames.length + 1; // +1 for header row
-    copyConditionalFormattingFromRoster(newSheet, rosterSheet, headers, headerRow, totalRows);
+    copyConditionalFormattingFromRoster(newSheet, rosterSheet, headers, rosterHeaderRow, totalRows);
     
     // Activate the new sheet
     console.log('🎯 Activating new sheet...');
     newSheet.activate();
     
-    console.log(`✅ Sheet creation complete! "${sheetName}" with ${selectedColumns.length} columns and ${nonEmptyFullNames.length} students`);
+    const totalColumns = rosterColumns.length + (attendanceColumns ? attendanceColumns.length : 0);
+    console.log(`✅ Sheet creation complete! "${sheetName}" with ${totalColumns} columns (${rosterColumns.length} roster, ${attendanceColumns ? attendanceColumns.length : 0} attendance) and ${nonEmptyFullNames.length} students`);
     
     // Don't show alert here as it's handled by the HTML dialog success handler
     
