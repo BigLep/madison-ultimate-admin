@@ -6,7 +6,6 @@
 # Personal Information - Do not commit sensitive data
 *.xlsx
 *.csv
-*.json
 !appsscript.json
 *roster*.csv
 *forms*.csv

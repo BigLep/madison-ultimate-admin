@@ -33,9 +33,13 @@ const CONFIG = {
     sheetName: 'Mailing List'
   },
   roster: {
-    sheetName: 'Roster'
+    sheetName: '📋 Roster'
+  },
+  attendance: {
+    sheetName: '🏃 Attendance'
   }
 };
+
 
 /**
  * Main function to generate the roster

@@ -39,16 +39,16 @@ function buildCustomSheet() {
 function getAttendanceSheet() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const attendanceSheet = ss.getSheetByName('Attendance');
+    const attendanceSheet = ss.getSheetByName(CONFIG.attendance.sheetName);
     
     if (!attendanceSheet) {
-      console.warn('Sheet named "Attendance" not found in the current spreadsheet');
+      console.warn(`Sheet named "${CONFIG.attendance.sheetName}" not found in the current spreadsheet`);
       return null;
     }
     
     return attendanceSheet;
   } catch (error) {
-    console.warn('Could not access Attendance sheet:', error);
+    console.warn(`Could not access ${CONFIG.attendance.sheetName} sheet:`, error);
     return null;
   }
 }
@@ -509,7 +509,7 @@ function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumn
             return columnName; // Fallback to static name if not found
           }
           const rosterColumnLetter = getColumnLetter(rosterColumnIndex + 1);
-          return `=${CONFIG.roster.sheetName}!${rosterColumnLetter}1`;
+          return `='${CONFIG.roster.sheetName}'!${rosterColumnLetter}1`;
         } else if (isAttendanceColumn && attendanceHeaderRow) {
           // Use static name for attendance columns (they come from external sheet)
           return columnName;
@@ -593,7 +593,7 @@ function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumn
           const fullNameColumnLetter = getColumnLetter(fullNameColIndex + 1);
           
           // Create XLOOKUP formula referencing Attendance sheet
-          const formula = `=IFERROR(XLOOKUP(A2,'Attendance'!A:A,'Attendance'!${attendanceColumnLetter}:${attendanceColumnLetter}),"")`;
+          const formula = `=IFERROR(XLOOKUP(A2,'${CONFIG.attendance.sheetName}'!A:A,'${CONFIG.attendance.sheetName}'!${attendanceColumnLetter}:${attendanceColumnLetter}),"")`;
           
           // Set formula in first data row
           newSheet.getRange(newSheetDataStartRow, targetColumn).setFormula(formula);
