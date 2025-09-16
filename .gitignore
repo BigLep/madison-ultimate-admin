@@ -20,6 +20,8 @@
 *token*
 *config*
 
+.google-service-account.json
+
 # Temporary files
 *.tmp
 *.temp

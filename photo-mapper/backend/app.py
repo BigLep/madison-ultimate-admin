@@ -69,7 +69,7 @@ def get_photos_from_folder(drive_service, folder_id):
     # Image MIME types to look for
     image_mimes = [
         'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
-        'image/bmp', 'image/webp', 'image/tiff'
+        'image/bmp', 'image/webp', 'image/tiff', 'image/heic', 'image/heif'
     ]
 
     try:
@@ -114,7 +114,7 @@ def load_roster_from_sheets(sheets_client):
     print("Loading roster data from Google Sheets...")
 
     spreadsheet = sheets_client.open_by_key(SPREADSHEET_ID)
-    roster_sheet = spreadsheet.worksheet('Roster')
+    roster_sheet = spreadsheet.worksheet('📋 Roster')
 
     # Get all values
     all_values = roster_sheet.get_all_values()
@@ -350,8 +350,10 @@ def load_data():
         return jsonify(response_data)
 
     except Exception as e:
+        import traceback
         print(f"Error loading data: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 @app.route('/api/rename-files', methods=['POST'])
 def rename_files():
@@ -516,7 +518,7 @@ def export_csv():
                     mapping.get('filename', ''),
                     drive_view_link,
                     direct_image_link,
-                    mapping.get('thumbnailUrl', '')
+                    mapping.get('direct_link', '')
                 ])
 
         return jsonify({

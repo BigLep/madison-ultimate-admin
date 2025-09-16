@@ -13,6 +13,15 @@ cleanup() {
 # Set trap for cleanup
 trap cleanup SIGINT SIGTERM
 
+# Copy Google service account file to backend directory
+echo "Setting up credentials..."
+if [ -f "../.google-service-account.json" ]; then
+    cp "../.google-service-account.json" "backend/.google-service-account.json"
+    echo "✅ Credentials copied"
+else
+    echo "❌ Warning: .google-service-account.json not found in parent directory"
+fi
+
 # Start backend
 echo "Starting Python backend on port 5001..."
 cd backend

@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect } from 'react'
-import { XMarkIcon } from '@heroicons/react/24/outline'
 
 interface ImageModalProps {
   imageUrl: string
@@ -33,7 +32,9 @@ export default function ImageModal({ imageUrl, filename, onClose }: ImageModalPr
           className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
           aria-label="Close modal"
         >
-          <XMarkIcon className="h-8 w-8" />
+          <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
 
         {/* Image */}
