@@ -25,7 +25,7 @@ function formatSpruceUp() {
     console.log(`✅ Format Spruce Up complete for "${sheetName}"`);
     SpreadsheetApp.getUi().alert(
       'Format Spruce Up Complete!',
-      `Successfully applied professional formatting to "${sheetName}":\n\n✓ Alternating row colors\n✓ Data filtering enabled\n✓ Vertical center alignment`,
+      `Successfully applied professional formatting to "${sheetName}":\n\n✓ Alternating row colors\n✓ Data filtering enabled\n✓ Vertical center alignment\n✓ Freeze panes (row 1 & column A)`,
       SpreadsheetApp.getUi().ButtonSet.OK
     );
     
@@ -60,7 +60,11 @@ function applySpruceUpFormatting(sheet) {
   // 3. Center cells vertically
   console.log('📐 Setting vertical center alignment...');
   setCenterVerticalAlignment(sheet, lastRow, lastCol);
-  
+
+  // 4. Set freeze panes (row 1 and column A always visible)
+  console.log('🧊 Setting freeze panes...');
+  setFreezePanes(sheet);
+
   console.log('✅ All formatting applied successfully');
 }
 
@@ -139,5 +143,36 @@ function setCenterVerticalAlignment(sheet, lastRow, lastCol) {
   } catch (error) {
     console.warn('Could not set vertical alignment:', error);
     throw new Error('Failed to set vertical center alignment');
+  }
+}
+
+/**
+ * Set freeze panes to keep row 1 and column A always visible (only if not already set)
+ * @param {Sheet} sheet - The sheet to format
+ */
+function setFreezePanes(sheet) {
+  try {
+    const currentFrozenRows = sheet.getFrozenRows();
+    const currentFrozenColumns = sheet.getFrozenColumns();
+
+    // Only set frozen rows if none are currently set
+    if (currentFrozenRows === 0) {
+      sheet.setFrozenRows(1);
+      console.log('✅ Frozen rows set to 1');
+    } else {
+      console.log(`ℹ️ Frozen rows already set to ${currentFrozenRows}, keeping existing value`);
+    }
+
+    // Only set frozen columns if none are currently set
+    if (currentFrozenColumns === 0) {
+      sheet.setFrozenColumns(1);
+      console.log('✅ Frozen columns set to 1');
+    } else {
+      console.log(`ℹ️ Frozen columns already set to ${currentFrozenColumns}, keeping existing value`);
+    }
+
+  } catch (error) {
+    console.warn('Could not set freeze panes:', error);
+    throw new Error('Failed to set freeze panes');
   }
 }
