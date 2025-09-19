@@ -11,20 +11,20 @@ function fullNameDiff() {
   console.log('🔍 Starting Full Name Diff...');
   
   try {
-    // Discover all sheets with Full Name columns
-    const sheetsWithFullName = discoverSheetsWithFullName();
+    // Get all sheets in the spreadsheet
+    const allSheets = getAllSheets();
     
-    if (sheetsWithFullName.length < 2) {
+    if (allSheets.length < 2) {
       SpreadsheetApp.getUi().alert(
         'Insufficient Sheets',
-        `Found ${sheetsWithFullName.length} sheet(s) with Full Name column. Need at least 2 sheets to compare.`,
+        `Found ${allSheets.length} sheet(s) in the spreadsheet. Need at least 2 sheets to compare.`,
         SpreadsheetApp.getUi().ButtonSet.OK
       );
       return;
     }
     
     // Show sheet selection dialog
-    showSheetSelectionDialog(sheetsWithFullName);
+    showSheetSelectionDialog(allSheets);
     
   } catch (error) {
     console.error('Error in Full Name Diff:', error);
@@ -33,15 +33,15 @@ function fullNameDiff() {
 }
 
 /**
- * Discover all sheets in the spreadsheet that have a "Full Name" column
- * @return {Array} Array of objects with sheet info: {name, fullNameColumn}
+ * Get all sheets in the spreadsheet (excluding hidden and temporary sheets)
+ * @return {Array} Array of objects with sheet info: {name}
  */
-function discoverSheetsWithFullName() {
+function getAllSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const allSheets = ss.getSheets();
-  const sheetsWithFullName = [];
+  const availableSheets = [];
   
-  console.log(`🔍 Scanning ${allSheets.length} sheets for Full Name columns...`);
+  console.log(`📋 Getting all sheets from spreadsheet...`);
   
   allSheets.forEach(sheet => {
     try {
@@ -53,46 +53,26 @@ function discoverSheetsWithFullName() {
         return;
       }
       
-      // Get header row (row 1)
-      const lastCol = sheet.getLastColumn();
-      if (lastCol === 0) {
-        console.log(`⏭️ Skipping empty sheet: "${sheetName}"`);
-        return;
-      }
-      
-      const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-      
-      // Look for "Full Name" column (case-sensitive)
-      const fullNameColumnIndex = headerRow.findIndex(header => 
-        header && header.toString() === 'Full Name'
-      );
-      
-      if (fullNameColumnIndex !== -1) {
-        sheetsWithFullName.push({
-          name: sheetName,
-          fullNameColumn: fullNameColumnIndex + 1, // Convert to 1-based
-          sheet: sheet
-        });
-        console.log(`✅ Found Full Name column in "${sheetName}" at column ${fullNameColumnIndex + 1}`);
-      } else {
-        console.log(`❌ No Full Name column in "${sheetName}"`);
-      }
+      availableSheets.push({
+        name: sheetName
+      });
+      console.log(`📄 Available sheet: "${sheetName}"`);
       
     } catch (error) {
-      console.warn(`Error analyzing sheet "${sheet.getName()}":`, error);
+      console.warn(`Error accessing sheet "${sheet.getName()}":`, error);
     }
   });
   
-  console.log(`🎯 Found ${sheetsWithFullName.length} sheets with Full Name columns`);
-  return sheetsWithFullName;
+  console.log(`📊 Found ${availableSheets.length} available sheets`);
+  return availableSheets;
 }
 
 /**
  * Show dialog for selecting two sheets to compare
- * @param {Array} sheetsWithFullName - Array of sheet objects with Full Name columns
+ * @param {Array} availableSheets - Array of available sheet objects
  */
-function showSheetSelectionDialog(sheetsWithFullName) {
-  const htmlContent = createSheetSelectionHtml(sheetsWithFullName);
+function showSheetSelectionDialog(availableSheets) {
+  const htmlContent = createSheetSelectionHtml(availableSheets);
   
   const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
     .setWidth(600)
@@ -104,11 +84,11 @@ function showSheetSelectionDialog(sheetsWithFullName) {
 
 /**
  * Create HTML content for sheet selection dialog
- * @param {Array} sheetsWithFullName - Array of sheet objects with Full Name columns
+ * @param {Array} availableSheets - Array of available sheet objects
  * @return {string} HTML content
  */
-function createSheetSelectionHtml(sheetsWithFullName) {
-  const sheetOptions = sheetsWithFullName.map(sheet => 
+function createSheetSelectionHtml(availableSheets) {
+  const sheetOptions = availableSheets.map(sheet => 
     `<option value="${sheet.name}">${sheet.name}</option>`
   ).join('');
   
@@ -200,7 +180,7 @@ function createSheetSelectionHtml(sheetsWithFullName) {
           <h2>🔍 Full Name Diff</h2>
           
           <div class="info">
-            <strong>Found ${sheetsWithFullName.length} sheets with Full Name columns.</strong><br>
+            <strong>Found ${availableSheets.length} sheets in the spreadsheet.</strong><br>
             Select two sheets to compare their Full Name columns and see the differences.
           </div>
           
@@ -362,7 +342,7 @@ function getFullNamesFromSheet(sheet, sheetName) {
   );
   
   if (fullNameColumnIndex === -1) {
-    throw new Error(`Full Name column not found in sheet "${sheetName}"`);
+    throw new Error(`Sheet "${sheetName}" does not have a "Full Name" column. Please select sheets that contain a "Full Name" column for comparison.`);
   }
   
   // Get all values in Full Name column (skip header row)
