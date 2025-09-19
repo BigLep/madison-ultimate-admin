@@ -509,7 +509,7 @@ function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumn
             return columnName; // Fallback to static name if not found
           }
           const rosterColumnLetter = getColumnLetter(rosterColumnIndex + 1);
-          return `='${CONFIG.roster.sheetName}'!${rosterColumnLetter}1`;
+          return `='${CONFIG.roster.sheetName}'!${rosterColumnLetter}$1`;
         } else if (isAttendanceColumn && attendanceHeaderRow) {
           // Use static name for attendance columns (they come from external sheet)
           return columnName;
