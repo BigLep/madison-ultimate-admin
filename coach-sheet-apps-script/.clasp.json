@@ -5,6 +5,7 @@
     "appsscript.json",
     "Code.gs",
     "SheetBuilder.gs",
-    "FormatSpruceUp.gs"
+    "FormatSpruceUp.gs",
+    "FullNameDiff.gs"
   ]
 }

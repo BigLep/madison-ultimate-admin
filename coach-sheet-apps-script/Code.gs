@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '59';
+const SCRIPT_VERSION = '60';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -586,6 +586,7 @@ function createCustomMenu() {
     .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')
     .addItem('👥 Parents Not Members of Mailing List', 'findPendingParents')
     .addItem('📊 Analyze Additional Info Responses', 'analyzeAdditionalInfoResponses')
+    .addItem('🔀 Full Name Diff', 'fullNameDiff')
     .addToUi();
 }
 
