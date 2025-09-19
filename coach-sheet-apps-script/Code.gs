@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '60';
+const SCRIPT_VERSION = '62';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -52,13 +52,39 @@ function generateRoster() {
   // Build the roster sheet with metadata and formulas
   buildRosterSheet(ss);
   
+  // Populate Student IDs from Final Forms if available
+  let studentIdResult = null;
+  try {
+    studentIdResult = populateStudentIdsFromFinalForms(ss);
+  } catch (error) {
+    console.warn('Could not populate Student IDs from Final Forms:', error);
+    // Don't fail the entire generation if Student ID population fails
+  }
+  
   // Create custom menu
   createCustomMenu();
   
   SpreadsheetApp.flush();
   
   console.log('Roster generated successfully!');
-  SpreadsheetApp.getUi().alert('Roster Generated!', 'The roster has been created with metadata rows and all data mappings.\n\nNext Steps:\n1. Run "Update Final Forms" to populate StudentID and enable XLOOKUP formulas\n2. Run "Update Mailing List" to populate email status columns\n\nNote: Columns are matched by header name, so you can safely reorder columns and regenerate.', SpreadsheetApp.getUi().ButtonSet.OK);
+  
+  // Create success message with Student ID information
+  let message = 'The roster has been created with metadata rows and formulas.';
+  
+  if (studentIdResult && studentIdResult.success) {
+    message += `\n\n📊 Student IDs: ${studentIdResult.validCount} populated`;
+    if (studentIdResult.emptyIdCount > 0) {
+      message += `\n⚠️ Warning: ${studentIdResult.emptyIdCount} students in Final Forms have empty Student IDs and were skipped`;
+    }
+  } else if (studentIdResult) {
+    message += `\n\n⚠️ Warning: Could not populate Student IDs - ${studentIdResult.emptyIdCount} of ${studentIdResult.totalCount} entries have empty Student IDs`;
+  } else {
+    message += '\n\n⚠️ Warning: Could not access Final Forms to populate Student IDs';
+  }
+  
+  message += '\n\nNext Steps:\n1. Run "Update Mailing List" to populate email status columns\n2. Formulas will automatically pull data as students are added\n\nNote: Columns are matched by header name, so you can safely reorder columns and regenerate.';
+  
+  SpreadsheetApp.getUi().alert('Roster Generated!', message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 
@@ -771,11 +797,35 @@ function getRowKey(row, index) {
 }
 
 /**
- * Helper function to update the roster Student ID column with values from Final Forms
+ * Populate Student IDs in roster from Final Forms sheet
+ * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
+ */
+function populateStudentIdsFromFinalForms(ss) {
+  // Get Final Forms sheet data
+  const finalFormsSheet = ss.getSheetByName(CONFIG.finalForms.sheetName);
+  if (!finalFormsSheet) {
+    console.warn('Final Forms sheet not found, skipping Student ID population');
+    return;
+  }
+  
+  const lastRow = finalFormsSheet.getLastRow();
+  if (lastRow <= 1) {
+    console.warn('No data found in Final Forms sheet, skipping Student ID population');
+    return;
+  }
+  
+  // Get all Final Forms data
+  const finalFormsData = finalFormsSheet.getRange(1, 1, lastRow, finalFormsSheet.getLastColumn()).getValues();
+  
+  return updateRosterStudentIdsInternal(ss, finalFormsData);
+}
+
+/**
+ * Internal helper function to update the roster Student ID column with values from Final Forms
  * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
  * @param {Array} finalFormsData - The Final Forms CSV data array
  */
-function updateRosterStudentIds(ss, finalFormsData) {
+function updateRosterStudentIdsInternal(ss, finalFormsData) {
   const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
   if (!rosterSheet) {
     console.warn('Roster sheet not found, skipping Student ID update');
@@ -799,17 +849,33 @@ function updateRosterStudentIds(ss, finalFormsData) {
     return;
   }
   
-  // Get the Student IDs (skip header row)
-  const studentIds = finalFormsData.slice(1).map(row => row[0] || ''); // Column A is Student ID
+  // Extract and filter Student IDs (skip header row, filter out empty IDs)
+  const allStudentData = finalFormsData.slice(1); // Skip header row
+  const validStudentIds = [];
+  let emptyIdCount = 0;
   
-  if (studentIds.length === 0) {
-    console.warn('No Student IDs found in Final Forms data');
-    return;
+  allStudentData.forEach((row, index) => {
+    const studentId = row[0]; // Column A is Student ID
+    if (studentId && studentId.toString().trim() !== '') {
+      validStudentIds.push(studentId.toString().trim());
+    } else {
+      emptyIdCount++;
+      console.warn(`Row ${index + 2} in Final Forms has empty Student ID`);
+    }
+  });
+  
+  if (validStudentIds.length === 0) {
+    console.warn('No valid Student IDs found in Final Forms data');
+    return {
+      success: false,
+      validCount: 0,
+      emptyIdCount: emptyIdCount,
+      totalCount: allStudentData.length
+    };
   }
   
-  // Update the roster Student ID column with actual values
+  // Update the roster Student ID column with valid values only
   const startRow = FIRST_DATA_ROW; // Start from first data row
-  const numStudents = studentIds.length;
   
   // Clear existing data in Student ID column (data rows only)
   const maxRows = rosterSheet.getMaxRows();
@@ -817,14 +883,22 @@ function updateRosterStudentIds(ss, finalFormsData) {
     rosterSheet.getRange(startRow, studentIdCol, maxRows - startRow + 1, 1).clearContent();
   }
   
-  // Write the new Student IDs
-  if (numStudents > 0) {
-    const range = rosterSheet.getRange(startRow, studentIdCol, numStudents, 1);
-    const values = studentIds.map(id => [id]); // Convert to 2D array
-    range.setValues(values);
+  // Write the valid Student IDs
+  const range = rosterSheet.getRange(startRow, studentIdCol, validStudentIds.length, 1);
+  const values = validStudentIds.map(id => [id]); // Convert to 2D array
+  range.setValues(values);
+  
+  console.log(`✅ Updated ${validStudentIds.length} Student IDs in roster column ${studentIdCol}`);
+  if (emptyIdCount > 0) {
+    console.warn(`⚠️ Skipped ${emptyIdCount} entries with empty Student IDs`);
   }
   
-  console.log(`✅ Updated ${numStudents} Student IDs in roster column ${studentIdCol}`);
+  return {
+    success: true,
+    validCount: validStudentIds.length,
+    emptyIdCount: emptyIdCount,
+    totalCount: allStudentData.length
+  };
 }
 
 /**
@@ -870,16 +944,8 @@ function updateFinalForms() {
     
     console.log(`✅ Updated Final Forms from: ${fileName}`);
     
-    // Also update Student ID column in roster with actual values from Final Forms
-    try {
-      updateRosterStudentIds(ss, csvArray);
-    } catch (idError) {
-      console.warn('Could not update roster Student IDs:', idError);
-      // Don't fail the entire import if Student ID update fails
-    }
-    
     SpreadsheetApp.getUi().alert('Final Forms Updated', 
-      `Successfully imported ${studentCount} students from:\n${fileName}\n\nChange: ${diff.difference >= 0 ? '+' : ''}${diff.difference} students`, 
+      `Successfully imported ${studentCount} students from:\n${fileName}\n\nChange: ${diff.difference >= 0 ? '+' : ''}${diff.difference} students\n\nNote: Run "Generate Fresh Roster" to populate Student IDs and formulas in the roster.`, 
       SpreadsheetApp.getUi().ButtonSet.OK);
       
   } catch (e) {
