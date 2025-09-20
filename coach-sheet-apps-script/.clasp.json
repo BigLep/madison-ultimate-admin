@@ -6,6 +6,7 @@
     "Code.gs",
     "SheetBuilder.gs",
     "FormatSpruceUp.gs",
-    "FullNameDiff.gs"
+    "FullNameDiff.gs",
+    "PracticeAvailability.gs"
   ]
 }

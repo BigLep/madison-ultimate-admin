@@ -1,0 +1,438 @@
+/**
+ * Practice Availability Builder Module
+ * Creates availability tracking columns based on practice dates from Practice Info sheet
+ */
+
+// Configuration for Practice Availability feature
+const PRACTICE_AVAILABILITY_CONFIG = {
+  practiceInfoSheet: '📍Practice Info',
+  practiceAvailabilitySheet: 'Practice Availability',
+  // Data validation options for availability responses
+  validationOptions: [
+    { value: '👍 Planning to be the', color: '#d9ead3' },    // Light green
+    { value: '👎 Can\'t make it', color: '#f4cccc' },        // Light red  
+    { value: '❓ Not sure yet', color: '#efefef' },          // Light gray
+    { value: '💬 Other/comment', color: '#efefef' },        // Light gray
+    { value: 'Was there', color: '#34a853' },               // Green
+    { value: 'Wasn\'t there', color: '#ea4335' }            // Red
+  ]
+};
+
+/**
+ * Main function to build practice availability columns
+ * Called from the menu
+ */
+function buildPracticeAvailability() {
+  console.log('🏃 Starting Build Practice Availability...');
+  
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Get practice dates from Practice Info sheet
+    const practiceDates = getPracticeDatesFromInfo(ss);
+    
+    if (practiceDates.length === 0) {
+      SpreadsheetApp.getUi().alert(
+        'No Practice Dates Found',
+        `No practice dates found in "${PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet}" sheet. Please ensure the sheet exists and contains practice date information.`,
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+      return;
+    }
+    
+    // Build availability columns in Practice Availability sheet
+    const result = buildAvailabilityColumns(ss, practiceDates);
+    
+    console.log('✅ Practice Availability build complete');
+    
+    let message = `Successfully processed Practice Availability sheet for ${practiceDates.length} practice dates.\n\n`;
+    
+    if (result.columnsCreated > 0) {
+      message += `📊 ${result.columnSummary}`;
+    }
+    
+    if (result.columnsSkipped > 0) {
+      if (result.columnsCreated > 0) message += '\n\n';
+      message += `⏭️ ${result.skippedSummary}`;
+    }
+    
+    if (result.columnsCreated === 0 && result.columnsSkipped === 0) {
+      message += 'No changes needed - all columns already exist.';
+    }
+    
+    message += '\n\nData validation rules have been applied/extended for availability tracking.';
+    
+    SpreadsheetApp.getUi().alert('Practice Availability Updated!', message, SpreadsheetApp.getUi().ButtonSet.OK);
+    
+  } catch (error) {
+    console.error('Error building Practice Availability:', error);
+    SpreadsheetApp.getUi().alert('Error', `Failed to build Practice Availability: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * Extract practice dates from the Practice Info sheet
+ * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
+ * @return {Array} Array of practice date objects: {date, formattedDate}
+ */
+function getPracticeDatesFromInfo(ss) {
+  const practiceInfoSheet = ss.getSheetByName(PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet);
+  
+  if (!practiceInfoSheet) {
+    throw new Error(`Practice Info sheet "${PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet}" not found`);
+  }
+  
+  console.log(`📅 Reading practice dates from "${PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet}"`);
+  
+  // Look for a Date column in the Practice Info sheet
+  const headerRow = practiceInfoSheet.getRange(1, 1, 1, practiceInfoSheet.getLastColumn()).getValues()[0];
+  const dateColumnIndex = headerRow.findIndex(header => 
+    header && header.toString().toLowerCase().includes('date')
+  );
+  
+  if (dateColumnIndex === -1) {
+    throw new Error(`No date column found in "${PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet}" sheet. Please ensure there is a column with "date" in the header.`);
+  }
+  
+  console.log(`📍 Found date column at index ${dateColumnIndex + 1}`);
+  
+  // Get all dates from the date column (skip header row)
+  const lastRow = practiceInfoSheet.getLastRow();
+  if (lastRow <= 1) {
+    console.log('⚠️ No practice data found in Practice Info sheet');
+    return [];
+  }
+  
+  const dateData = practiceInfoSheet.getRange(2, dateColumnIndex + 1, lastRow - 1, 1).getValues();
+  const practiceDates = [];
+  
+  dateData.forEach((row, index) => {
+    const dateValue = row[0];
+    if (dateValue && dateValue !== '') {
+      try {
+        // Handle both Date objects and date strings
+        let practiceDate;
+        if (dateValue instanceof Date) {
+          practiceDate = dateValue;
+        } else {
+          practiceDate = new Date(dateValue);
+        }
+        
+        // Validate that it's a valid date
+        if (!isNaN(practiceDate.getTime())) {
+          const formattedDate = formatDateForColumn(practiceDate);
+          practiceDates.push({
+            date: practiceDate,
+            formattedDate: formattedDate,
+            rowIndex: index + 2 // +2 for 1-based indexing and header row
+          });
+          console.log(`📅 Found practice date: ${formattedDate} (row ${index + 2})`);
+        } else {
+          console.warn(`⚠️ Invalid date in row ${index + 2}: "${dateValue}"`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error parsing date in row ${index + 2}: "${dateValue}" - ${error.message}`);
+      }
+    }
+  });
+  
+  console.log(`🎯 Found ${practiceDates.length} valid practice dates`);
+  return practiceDates;
+}
+
+/**
+ * Format a date for use in column headers (e.g., "9/26")
+ * @param {Date} date - The date to format
+ * @return {string} Formatted date string
+ */
+function formatDateForColumn(date) {
+  const month = date.getMonth() + 1; // getMonth() returns 0-based month
+  const day = date.getDate();
+  return `${month}/${day}`;
+}
+
+/**
+ * Build availability columns in the Practice Availability sheet
+ * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
+ * @param {Array} practiceDates - Array of practice date objects
+ * @return {Object} Result object with statistics
+ */
+function buildAvailabilityColumns(ss, practiceDates) {
+  let availabilitySheet = ss.getSheetByName(PRACTICE_AVAILABILITY_CONFIG.practiceAvailabilitySheet);
+  
+  // Create the sheet if it doesn't exist
+  if (!availabilitySheet) {
+    console.log(`📋 Creating new "${PRACTICE_AVAILABILITY_CONFIG.practiceAvailabilitySheet}" sheet`);
+    availabilitySheet = ss.insertSheet(PRACTICE_AVAILABILITY_CONFIG.practiceAvailabilitySheet);
+    
+    // Set up basic structure with Full Name column
+    availabilitySheet.getRange(1, 1).setValue('Full Name');
+    availabilitySheet.getRange(1, 1).setFontWeight('bold');
+  }
+  
+  console.log(`📊 Building availability columns in "${PRACTICE_AVAILABILITY_CONFIG.practiceAvailabilitySheet}"`);
+  
+  // Get existing columns to check what already exists
+  const existingColumns = getExistingColumns(availabilitySheet);
+  console.log(`📋 Found ${Object.keys(existingColumns).length} existing columns`);
+  
+  const columnsCreated = [];
+  const columnsSkipped = [];
+  let validationRanges = []; // Track ranges that need data validation
+  
+  // Find where to start adding new columns (after existing columns)
+  let nextColumnIndex = Math.max(2, availabilitySheet.getLastColumn() + 1);
+  
+  // Process each practice date
+  practiceDates.forEach((practiceInfo, index) => {
+    const dateString = practiceInfo.formattedDate;
+    const availabilityHeader = dateString;
+    const notesHeader = `${dateString} Note`;
+    
+    // Check if availability column already exists
+    console.log(`🔍 Looking for availability column: "${availabilityHeader}"`);
+    if (existingColumns[availabilityHeader]) {
+      console.log(`⏭️ Column "${availabilityHeader}" already exists at column ${existingColumns[availabilityHeader]}`);
+      columnsSkipped.push(availabilityHeader);
+      
+      // Still track for data validation extension
+      validationRanges.push({
+        column: existingColumns[availabilityHeader],
+        header: availabilityHeader,
+        isExisting: true
+      });
+    } else {
+      // Create new availability column
+      console.log(`➕ Creating new column "${availabilityHeader}" at column ${nextColumnIndex} (not found in existing columns)`);
+      availabilitySheet.getRange(1, nextColumnIndex).setValue(availabilityHeader);
+      availabilitySheet.getRange(1, nextColumnIndex).setFontWeight('bold');
+      
+      validationRanges.push({
+        column: nextColumnIndex,
+        header: availabilityHeader,
+        isExisting: false
+      });
+      
+      columnsCreated.push(availabilityHeader);
+      nextColumnIndex++;
+    }
+    
+    // Check if notes column already exists
+    console.log(`🔍 Looking for notes column: "${notesHeader}"`);
+    if (existingColumns[notesHeader]) {
+      console.log(`⏭️ Column "${notesHeader}" already exists at column ${existingColumns[notesHeader]}`);
+      columnsSkipped.push(notesHeader);
+    } else {
+      // Create new notes column
+      console.log(`➕ Creating new column "${notesHeader}" at column ${nextColumnIndex} (not found in existing columns)`);
+      availabilitySheet.getRange(1, nextColumnIndex).setValue(notesHeader);
+      availabilitySheet.getRange(1, nextColumnIndex).setFontWeight('bold');
+      
+      columnsCreated.push(notesHeader);
+      nextColumnIndex++;
+    }
+  });
+  
+  // Apply or extend data validation to availability columns
+  extendOrCreateDataValidation(availabilitySheet, validationRanges);
+  
+  // Apply Format Spruce Up silently (no modal)
+  console.log('✨ Applying Format Spruce Up formatting...');
+  try {
+    applySpruceUpFormatting(availabilitySheet);
+  } catch (error) {
+    console.warn('⚠️ Could not apply Format Spruce Up formatting:', error.message);
+  }
+  
+  return {
+    columnsCreated: columnsCreated.length,
+    columnsSkipped: columnsSkipped.length,
+    columnSummary: columnsCreated.length > 0 ? 
+      `Created: ${columnsCreated.join(', ')}` : 'No new columns created',
+    skippedSummary: columnsSkipped.length > 0 ? 
+      `Skipped existing: ${columnsSkipped.join(', ')}` : ''
+  };
+}
+
+/**
+ * Get a map of existing column headers to their column indices
+ * @param {Sheet} sheet - The Practice Availability sheet
+ * @return {Object} Map of header names to column indices
+ */
+function getExistingColumns(sheet) {
+  const lastColumn = sheet.getLastColumn();
+  if (lastColumn === 0) return {};
+  
+  const headerRow = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const columnMap = {};
+  
+  console.log('🔍 Existing columns found:');
+  headerRow.forEach((header, index) => {
+    if (header && header.toString().trim() !== '') {
+      const cleanHeader = header.toString().trim();
+      columnMap[cleanHeader] = index + 1; // 1-based column index
+      console.log(`  Column ${index + 1}: "${cleanHeader}"`);
+      
+      // Also map date objects to formatted date strings for comparison
+      if (header instanceof Date) {
+        const formattedDate = formatDateForColumn(header);
+        columnMap[formattedDate] = index + 1;
+        console.log(`  Column ${index + 1} also mapped as: "${formattedDate}"`);
+      }
+    }
+  });
+  
+  return columnMap;
+}
+
+/**
+ * Apply or extend data validation to availability columns
+ * @param {Sheet} sheet - The Practice Availability sheet
+ * @param {Array} validationRanges - Array of column info for validation
+ */
+function extendOrCreateDataValidation(sheet, validationRanges) {
+  console.log('🎯 Applying or extending data validation to availability columns...');
+  console.log(`📊 Processing ${validationRanges.length} validation ranges`);
+  
+  // Create validation options from config
+  const validationValues = PRACTICE_AVAILABILITY_CONFIG.validationOptions.map(option => option.value);
+  console.log(`🎯 Expected validation values: [${validationValues.join(', ')}]`);
+  
+  // Check if there's an existing data validation rule we can extend
+  const existingValidation = findExistingDataValidation(sheet, validationValues);
+  
+  if (existingValidation) {
+    console.log(`✅ Found existing compatible validation rule in column ${existingValidation.column}`);
+  } else {
+    console.log(`❌ No existing compatible validation rule found`);
+  }
+  
+  validationRanges.forEach((rangeInfo, index) => {
+    console.log(`\n📋 Processing range ${index + 1}/${validationRanges.length}:`);
+    console.log(`   Column: ${rangeInfo.column}, Header: "${rangeInfo.header}", IsExisting: ${rangeInfo.isExisting}`);
+    
+    try {
+      if (rangeInfo.isExisting && existingValidation) {
+        // Extend existing validation rule
+        console.log(`🔄 Extending existing data validation for column ${rangeInfo.column} (${rangeInfo.header})`);
+        extendExistingValidation(sheet, rangeInfo.column, existingValidation);
+      } else {
+        // Create new validation rule
+        const reason = !rangeInfo.isExisting ? 'new column' : 'no compatible existing validation';
+        console.log(`➕ Creating new data validation for column ${rangeInfo.column} (${rangeInfo.header}) - ${reason}`);
+        createNewValidation(sheet, rangeInfo.column, validationValues);
+      }
+      
+    } catch (error) {
+      console.warn(`⚠️ Could not apply data validation to column ${rangeInfo.column}: ${error.message}`);
+    }
+  });
+}
+
+/**
+ * Find existing data validation rule that matches our requirements
+ * @param {Sheet} sheet - The Practice Availability sheet
+ * @param {Array} expectedValues - Expected validation values
+ * @return {Object|null} Existing validation info or null
+ */
+function findExistingDataValidation(sheet, expectedValues) {
+  console.log('🔍 Searching for existing data validation rules...');
+  console.log(`   Checking columns 2 to ${Math.min(10, sheet.getLastColumn())}`);
+  
+  try {
+    // Check a few columns for existing validation rules
+    for (let col = 2; col <= Math.min(10, sheet.getLastColumn()); col++) {
+      console.log(`   📋 Checking column ${col} for existing validation...`);
+      
+      const range = sheet.getRange(2, col, 1, 1);
+      const validation = range.getDataValidation();
+      
+      if (validation) {
+        console.log(`      ✅ Found validation rule in column ${col}`);
+        const criteria = validation.getCriteriaType();
+        console.log(`      📊 Criteria type: ${criteria}`);
+        
+        if (criteria === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+          console.log(`      📝 It's a VALUE_IN_LIST validation`);
+          const values = validation.getCriteriaValues()[0];
+          console.log(`      🎯 Existing values: [${values ? values.join(', ') : 'null'}]`);
+          console.log(`      🎯 Expected values: [${expectedValues.join(', ')}]`);
+          
+          if (values) {
+            const existingSorted = values.slice().sort();
+            const expectedSorted = expectedValues.slice().sort();
+            console.log(`      🔄 Sorted existing: [${existingSorted.join(', ')}]`);
+            console.log(`      🔄 Sorted expected: [${expectedSorted.join(', ')}]`);
+            
+            if (arraysEqual(existingSorted, expectedSorted)) {
+              console.log(`      ✅ Arrays match! Found compatible existing validation rule in column ${col}`);
+              return {
+                validation: validation,
+                column: col
+              };
+            } else {
+              console.log(`      ❌ Arrays don't match`);
+            }
+          } else {
+            console.log(`      ❌ No values found in validation rule`);
+          }
+        } else {
+          console.log(`      ❌ Not a VALUE_IN_LIST validation`);
+        }
+      } else {
+        console.log(`      ❌ No validation rule found in column ${col}`);
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ Error checking for existing validation:', error.message);
+  }
+  
+  console.log('❌ No compatible existing validation rule found');
+  return null;
+}
+
+/**
+ * Extend existing validation to a new column
+ * @param {Sheet} sheet - The Practice Availability sheet
+ * @param {number} column - Column to apply validation to
+ * @param {Object} existingValidation - Existing validation info
+ */
+function extendExistingValidation(sheet, column, existingValidation) {
+  const validationRange = sheet.getRange(2, column, 1000, 1);
+  validationRange.setDataValidation(existingValidation.validation);
+}
+
+/**
+ * Create new data validation rule
+ * @param {Sheet} sheet - The Practice Availability sheet
+ * @param {number} column - Column to apply validation to
+ * @param {Array} validationValues - Values for validation
+ */
+function createNewValidation(sheet, column, validationValues) {
+  const validationRange = sheet.getRange(2, column, 1000, 1);
+  
+  const validation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(validationValues, true) // true = show dropdown
+    .setAllowInvalid(false)
+    .setHelpText('Select your availability for this practice')
+    .build();
+  
+  validationRange.setDataValidation(validation);
+}
+
+/**
+ * Check if two arrays are equal (order-independent)
+ * @param {Array} arr1 - First array
+ * @param {Array} arr2 - Second array
+ * @return {boolean} True if arrays contain same elements
+ */
+function arraysEqual(arr1, arr2) {
+  if (arr1.length !== arr2.length) return false;
+  
+  for (let i = 0; i < arr1.length; i++) {
+    if (arr1[i] !== arr2[i]) return false;
+  }
+  
+  return true;
+}
+
