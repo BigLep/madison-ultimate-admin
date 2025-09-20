@@ -7,14 +7,14 @@
 const PRACTICE_AVAILABILITY_CONFIG = {
   practiceInfoSheet: '📍Practice Info',
   practiceAvailabilitySheet: 'Practice Availability',
-  // Data validation options for availability responses
+  // Data validation options for availability responses (colors managed separately via conditional formatting)
   validationOptions: [
-    { value: '👍 Planning to be the', color: '#d9ead3' },    // Light green
-    { value: '👎 Can\'t make it', color: '#f4cccc' },        // Light red  
-    { value: '❓ Not sure yet', color: '#efefef' },          // Light gray
-    { value: '💬 Other/comment', color: '#efefef' },        // Light gray
-    { value: 'Was there', color: '#34a853' },               // Green
-    { value: 'Wasn\'t there', color: '#ea4335' }            // Red
+    { value: '👍 Planning to be the' },
+    { value: '👎 Can\'t make it' },
+    { value: '❓ Not sure yet' },
+    { value: '💬 Other/comment' },
+    { value: 'Was there' },
+    { value: 'Wasn\'t there' }
   ]
 };
 
@@ -60,7 +60,7 @@ function buildPracticeAvailability() {
       message += 'No changes needed - all columns already exist.';
     }
     
-    message += '\n\nData validation rules have been applied/extended for availability tracking.';
+    message += '\n\n🎯 Data validation applied only to new columns - existing validation and colors preserved.';
     
     SpreadsheetApp.getUi().alert('Practice Availability Updated!', message, SpreadsheetApp.getUi().ButtonSet.OK);
     
@@ -195,12 +195,21 @@ function buildAvailabilityColumns(ss, practiceDates) {
       console.log(`⏭️ Column "${availabilityHeader}" already exists at column ${existingColumns[availabilityHeader]}`);
       columnsSkipped.push(availabilityHeader);
       
-      // Still track for data validation extension
-      validationRanges.push({
-        column: existingColumns[availabilityHeader],
-        header: availabilityHeader,
-        isExisting: true
-      });
+      // Check if existing column already has data validation
+      const existingColumnIndex = existingColumns[availabilityHeader];
+      const existingValidation = availabilitySheet.getRange(2, existingColumnIndex, 1, 1).getDataValidation();
+      
+      if (existingValidation) {
+        console.log(`✅ Column ${existingColumnIndex} already has data validation - preserving colors`);
+        // Don't add to validation ranges - leave existing validation untouched
+      } else {
+        console.log(`🎯 Column ${existingColumnIndex} needs data validation`);
+        validationRanges.push({
+          column: existingColumnIndex,
+          header: availabilityHeader,
+          isExisting: true
+        });
+      }
     } else {
       // Create new availability column
       console.log(`➕ Creating new column "${availabilityHeader}" at column ${nextColumnIndex} (not found in existing columns)`);
@@ -392,23 +401,38 @@ function findExistingDataValidation(sheet, expectedValues) {
 }
 
 /**
- * Extend existing validation to a new column
+ * Extend existing validation to a new column (preserves custom colors)
  * @param {Sheet} sheet - The Practice Availability sheet
  * @param {number} column - Column to apply validation to
  * @param {Object} existingValidation - Existing validation info
  */
 function extendExistingValidation(sheet, column, existingValidation) {
+  console.log(`🎨 Extending validation to column ${column} while preserving any custom colors`);
   const validationRange = sheet.getRange(2, column, 1000, 1);
-  validationRange.setDataValidation(existingValidation.validation);
+  
+  // Create a new validation rule that matches the existing one
+  // This preserves any custom conditional formatting/colors that may exist
+  const originalValidation = existingValidation.validation;
+  const criteriaValues = originalValidation.getCriteriaValues()[0];
+  
+  const newValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(criteriaValues, true)
+    .setAllowInvalid(originalValidation.getAllowInvalid())
+    .setHelpText(originalValidation.getHelpText() || 'Select your availability for this practice')
+    .build();
+    
+  validationRange.setDataValidation(newValidation);
+  console.log(`✅ Validation extended to column ${column} without overriding colors`);
 }
 
 /**
- * Create new data validation rule
+ * Create new data validation rule (without setting colors - preserves conditional formatting)
  * @param {Sheet} sheet - The Practice Availability sheet
  * @param {number} column - Column to apply validation to
  * @param {Array} validationValues - Values for validation
  */
 function createNewValidation(sheet, column, validationValues) {
+  console.log(`🎨 Creating new validation for column ${column} without setting colors`);
   const validationRange = sheet.getRange(2, column, 1000, 1);
   
   const validation = SpreadsheetApp.newDataValidation()
@@ -418,6 +442,7 @@ function createNewValidation(sheet, column, validationValues) {
     .build();
   
   validationRange.setDataValidation(validation);
+  console.log(`✅ New validation created for column ${column} - colors can be set via conditional formatting`);
 }
 
 /**
