@@ -1,6 +1,7 @@
 /**
- * Practice Availability Builder Module
- * Creates availability tracking columns based on practice dates from Practice Info sheet
+ * Availability Builder Module
+ * Creates availability tracking columns based on dates from info sheets
+ * Supports both Practice and Game availability tracking
  */
 
 // Configuration for Practice Availability feature
@@ -8,6 +9,21 @@ const PRACTICE_AVAILABILITY_CONFIG = {
   practiceInfoSheet: '📍Practice Info',
   practiceAvailabilitySheet: 'Practice Availability',
   // Data validation options for availability responses (colors managed separately via conditional formatting)
+  validationOptions: [
+    { value: '👍 Planning to be the' },
+    { value: '👎 Can\'t make it' },
+    { value: '❓ Not sure yet' },
+    { value: '💬 Other/comment' },
+    { value: 'Was there' },
+    { value: 'Wasn\'t there' }
+  ]
+};
+
+// Configuration for Game Availability feature
+const GAME_AVAILABILITY_CONFIG = {
+  gameInfoSheet: '📍Game Info',
+  gameAvailabilitySheet: 'Game Availability',
+  // Data validation options for game availability responses (colors managed separately via conditional formatting)
   validationOptions: [
     { value: '👍 Planning to be the' },
     { value: '👎 Can\'t make it' },
@@ -41,7 +57,7 @@ function buildPracticeAvailability() {
     }
     
     // Build availability columns in Practice Availability sheet
-    const result = buildAvailabilityColumns(ss, practiceDates);
+    const result = buildAvailabilityColumns(ss, practiceDates, PRACTICE_AVAILABILITY_CONFIG);
     
     console.log('✅ Practice Availability build complete');
     
@@ -67,6 +83,58 @@ function buildPracticeAvailability() {
   } catch (error) {
     console.error('Error building Practice Availability:', error);
     SpreadsheetApp.getUi().alert('Error', `Failed to build Practice Availability: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * Main function to build game availability columns
+ * Called from the menu
+ */
+function buildGameAvailability() {
+  console.log('🎮 Starting Build Game Availability...');
+  
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Get game dates from Game Info sheet
+    const gameDates = getGameDatesFromInfo(ss);
+    
+    if (gameDates.length === 0) {
+      SpreadsheetApp.getUi().alert(
+        'No Game Dates Found',
+        `No game dates found in "${GAME_AVAILABILITY_CONFIG.gameInfoSheet}" sheet. Please ensure the sheet exists and contains game date information.`,
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+      return;
+    }
+    
+    // Build availability columns in Game Availability sheet
+    const result = buildAvailabilityColumns(ss, gameDates, GAME_AVAILABILITY_CONFIG);
+    
+    console.log('✅ Game Availability build complete');
+    
+    let message = `Successfully processed Game Availability sheet for ${gameDates.length} game dates.\n\n`;
+    
+    if (result.columnsCreated > 0) {
+      message += `📊 ${result.columnSummary}`;
+    }
+    
+    if (result.columnsSkipped > 0) {
+      if (result.columnsCreated > 0) message += '\n\n';
+      message += `⏭️ ${result.skippedSummary}`;
+    }
+    
+    if (result.columnsCreated === 0 && result.columnsSkipped === 0) {
+      message += 'No changes needed - all columns already exist.';
+    }
+    
+    message += '\n\n🎯 Data validation applied only to new columns - existing validation and colors preserved.';
+    
+    SpreadsheetApp.getUi().alert('Game Availability Updated!', message, SpreadsheetApp.getUi().ButtonSet.OK);
+    
+  } catch (error) {
+    console.error('Error building Game Availability:', error);
+    SpreadsheetApp.getUi().alert('Error', `Failed to build Game Availability: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
@@ -141,6 +209,76 @@ function getPracticeDatesFromInfo(ss) {
 }
 
 /**
+ * Extract game dates from the Game Info sheet
+ * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
+ * @return {Array} Array of game date objects: {date, formattedDate}
+ */
+function getGameDatesFromInfo(ss) {
+  const gameInfoSheet = ss.getSheetByName(GAME_AVAILABILITY_CONFIG.gameInfoSheet);
+  
+  if (!gameInfoSheet) {
+    throw new Error(`Game Info sheet "${GAME_AVAILABILITY_CONFIG.gameInfoSheet}" not found`);
+  }
+  
+  console.log(`📅 Reading game dates from "${GAME_AVAILABILITY_CONFIG.gameInfoSheet}"`);
+  
+  // Look for a Date column in the Game Info sheet
+  const headerRow = gameInfoSheet.getRange(1, 1, 1, gameInfoSheet.getLastColumn()).getValues()[0];
+  const dateColumnIndex = headerRow.findIndex(header => 
+    header && header.toString().toLowerCase().includes('date')
+  );
+  
+  if (dateColumnIndex === -1) {
+    throw new Error(`No date column found in "${GAME_AVAILABILITY_CONFIG.gameInfoSheet}" sheet. Please ensure there is a column with "date" in the header.`);
+  }
+  
+  console.log(`📍 Found date column at index ${dateColumnIndex + 1}`);
+  
+  // Get all dates from the date column (skip header row)
+  const lastRow = gameInfoSheet.getLastRow();
+  if (lastRow <= 1) {
+    console.log('⚠️ No game data found in Game Info sheet');
+    return [];
+  }
+  
+  const dateData = gameInfoSheet.getRange(2, dateColumnIndex + 1, lastRow - 1, 1).getValues();
+  const gameDates = [];
+  
+  dateData.forEach((row, index) => {
+    const dateValue = row[0];
+    if (dateValue && dateValue !== '') {
+      try {
+        // Handle both Date objects and date strings
+        let gameDate;
+        if (dateValue instanceof Date) {
+          gameDate = dateValue;
+        } else {
+          gameDate = new Date(dateValue);
+        }
+        
+        // Validate that it's a valid date
+        if (!isNaN(gameDate.getTime())) {
+          const formattedDate = formatDateForColumn(gameDate);
+          gameDates.push({
+            date: gameDate,
+            formattedDate: formattedDate,
+            rowIndex: index + 2 // +2 for 1-based indexing and header row
+          });
+          console.log(`🎮 Found game date: ${formattedDate} (row ${index + 2})`);
+        } else {
+          console.warn(`⚠️ Invalid date in row ${index + 2}: "${dateValue}"`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error parsing date in row ${index + 2}: "${dateValue}" - ${error.message}`);
+      }
+    }
+  });
+  
+  console.log(`🎯 Found ${gameDates.length} valid game dates`);
+  return gameDates;
+}
+
+/**
  * Format a date for use in column headers (e.g., "9/26")
  * @param {Date} date - The date to format
  * @return {string} Formatted date string
@@ -152,25 +290,28 @@ function formatDateForColumn(date) {
 }
 
 /**
- * Build availability columns in the Practice Availability sheet
+ * Build availability columns in the specified availability sheet (shared function for practice/game)
  * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
- * @param {Array} practiceDates - Array of practice date objects
+ * @param {Array} dates - Array of date objects (practice or game dates)
+ * @param {Object} config - Configuration object (PRACTICE_AVAILABILITY_CONFIG or GAME_AVAILABILITY_CONFIG)
  * @return {Object} Result object with statistics
  */
-function buildAvailabilityColumns(ss, practiceDates) {
-  let availabilitySheet = ss.getSheetByName(PRACTICE_AVAILABILITY_CONFIG.practiceAvailabilitySheet);
+function buildAvailabilityColumns(ss, dates, config) {
+  let availabilitySheet = ss.getSheetByName(config.practiceAvailabilitySheet || config.gameAvailabilitySheet);
   
   // Create the sheet if it doesn't exist
   if (!availabilitySheet) {
-    console.log(`📋 Creating new "${PRACTICE_AVAILABILITY_CONFIG.practiceAvailabilitySheet}" sheet`);
-    availabilitySheet = ss.insertSheet(PRACTICE_AVAILABILITY_CONFIG.practiceAvailabilitySheet);
+    const sheetName = config.practiceAvailabilitySheet || config.gameAvailabilitySheet;
+    console.log(`📋 Creating new "${sheetName}" sheet`);
+    availabilitySheet = ss.insertSheet(sheetName);
     
     // Set up basic structure with Full Name column
     availabilitySheet.getRange(1, 1).setValue('Full Name');
     availabilitySheet.getRange(1, 1).setFontWeight('bold');
   }
   
-  console.log(`📊 Building availability columns in "${PRACTICE_AVAILABILITY_CONFIG.practiceAvailabilitySheet}"`);
+  const sheetName = config.practiceAvailabilitySheet || config.gameAvailabilitySheet;
+  console.log(`📊 Building availability columns in "${sheetName}"`);
   
   // Get existing columns to check what already exists
   const existingColumns = getExistingColumns(availabilitySheet);
@@ -183,9 +324,9 @@ function buildAvailabilityColumns(ss, practiceDates) {
   // Find where to start adding new columns (after existing columns)
   let nextColumnIndex = Math.max(2, availabilitySheet.getLastColumn() + 1);
   
-  // Process each practice date
-  practiceDates.forEach((practiceInfo, index) => {
-    const dateString = practiceInfo.formattedDate;
+  // Process each date (practice or game)
+  dates.forEach((dateInfo, index) => {
+    const dateString = dateInfo.formattedDate;
     const availabilityHeader = dateString;
     const notesHeader = `${dateString} Note`;
     
@@ -243,7 +384,7 @@ function buildAvailabilityColumns(ss, practiceDates) {
   });
   
   // Apply or extend data validation to availability columns
-  extendOrCreateDataValidation(availabilitySheet, validationRanges);
+  extendOrCreateDataValidation(availabilitySheet, validationRanges, config);
   
   // Apply Format Spruce Up silently (no modal)
   console.log('✨ Applying Format Spruce Up formatting...');
@@ -296,15 +437,16 @@ function getExistingColumns(sheet) {
 
 /**
  * Apply or extend data validation to availability columns
- * @param {Sheet} sheet - The Practice Availability sheet
+ * @param {Sheet} sheet - The availability sheet (practice or game)
  * @param {Array} validationRanges - Array of column info for validation
+ * @param {Object} config - Configuration object (PRACTICE_AVAILABILITY_CONFIG or GAME_AVAILABILITY_CONFIG)
  */
-function extendOrCreateDataValidation(sheet, validationRanges) {
+function extendOrCreateDataValidation(sheet, validationRanges, config) {
   console.log('🎯 Applying or extending data validation to availability columns...');
   console.log(`📊 Processing ${validationRanges.length} validation ranges`);
   
   // Create validation options from config
-  const validationValues = PRACTICE_AVAILABILITY_CONFIG.validationOptions.map(option => option.value);
+  const validationValues = config.validationOptions.map(option => option.value);
   console.log(`🎯 Expected validation values: [${validationValues.join(', ')}]`);
   
   // Check if there's an existing data validation rule we can extend
@@ -418,7 +560,7 @@ function extendExistingValidation(sheet, column, existingValidation) {
   const newValidation = SpreadsheetApp.newDataValidation()
     .requireValueInList(criteriaValues, true)
     .setAllowInvalid(originalValidation.getAllowInvalid())
-    .setHelpText(originalValidation.getHelpText() || 'Select your availability for this practice')
+    .setHelpText(originalValidation.getHelpText() || 'Select your availability')
     .build();
     
   validationRange.setDataValidation(newValidation);
@@ -438,7 +580,7 @@ function createNewValidation(sheet, column, validationValues) {
   const validation = SpreadsheetApp.newDataValidation()
     .requireValueInList(validationValues, true) // true = show dropdown
     .setAllowInvalid(false)
-    .setHelpText('Select your availability for this practice')
+    .setHelpText('Select your availability')
     .build();
   
   validationRange.setDataValidation(validation);

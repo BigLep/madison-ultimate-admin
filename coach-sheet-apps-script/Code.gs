@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '72';
+const SCRIPT_VERSION = '73';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -37,6 +37,18 @@ const CONFIG = {
   },
   attendance: {
     sheetName: '🏃 Attendance'
+  },
+  practiceInfo: {
+    sheetName: '📍Practice Info'
+  },
+  gameInfo: {
+    sheetName: '📍Game Info'
+  },
+  practiceAvailability: {
+    sheetName: 'Practice Availability'
+  },
+  gameAvailability: {
+    sheetName: 'Game Availability'
   }
 };
 
@@ -608,6 +620,7 @@ function createCustomMenu() {
     .addItem('🏗️ Build Custom Sheet', 'buildCustomSheet')
     .addItem('🎨 Format Spruce Up', 'formatSpruceUp')
     .addItem('🏃 Build Practice Availability', 'buildPracticeAvailability')
+    .addItem('🎮 Build Game Availability', 'buildGameAvailability')
     .addSeparator()
     .addItem('📈 Show Statistics', 'showStatistics')
     .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')
