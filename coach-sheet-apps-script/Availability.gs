@@ -4,64 +4,62 @@
  * Supports both Practice and Game availability tracking
  */
 
+// Shared validation options for all availability tracking (colors managed separately via conditional formatting)
+const AVAILABILITY_VALIDATION_OPTIONS = [
+  { value: '👍 Planning to be there' },
+  { value: '👎 Can\'t make it' },
+  { value: '❓ Not sure yet' },
+  { value: 'Was there' },
+  { value: 'Wasn\'t there' }
+];
+
 // Configuration for Practice Availability feature
 const PRACTICE_AVAILABILITY_CONFIG = {
-  practiceInfoSheet: '📍Practice Info',
-  practiceAvailabilitySheet: 'Practice Availability',
-  // Data validation options for availability responses (colors managed separately via conditional formatting)
-  validationOptions: [
-    { value: '👍 Planning to be the' },
-    { value: '👎 Can\'t make it' },
-    { value: '❓ Not sure yet' },
-    { value: '💬 Other/comment' },
-    { value: 'Was there' },
-    { value: 'Wasn\'t there' }
-  ]
+  type: 'practice',
+  emoji: '🏃',
+  infoSheet: '📍Practice Info',
+  availabilitySheet: 'Practice Availability',
+  validationOptions: AVAILABILITY_VALIDATION_OPTIONS
 };
 
 // Configuration for Game Availability feature
 const GAME_AVAILABILITY_CONFIG = {
-  gameInfoSheet: '📍Game Info',
-  gameAvailabilitySheet: 'Game Availability',
-  // Data validation options for game availability responses (colors managed separately via conditional formatting)
-  validationOptions: [
-    { value: '👍 Planning to be the' },
-    { value: '👎 Can\'t make it' },
-    { value: '❓ Not sure yet' },
-    { value: '💬 Other/comment' },
-    { value: 'Was there' },
-    { value: 'Wasn\'t there' }
-  ]
+  type: 'game',
+  emoji: '🎮',
+  infoSheet: '📍Game Info',
+  availabilitySheet: 'Game Availability',
+  validationOptions: AVAILABILITY_VALIDATION_OPTIONS
 };
 
 /**
- * Main function to build practice availability columns
- * Called from the menu
+ * Shared function to build availability columns for practice or game
+ * @param {Object} config - Configuration object (PRACTICE_AVAILABILITY_CONFIG or GAME_AVAILABILITY_CONFIG)
  */
-function buildPracticeAvailability() {
-  console.log('🏃 Starting Build Practice Availability...');
+function buildAvailability(config) {
+  const typeCapitalized = config.type.charAt(0).toUpperCase() + config.type.slice(1);
+  console.log(`${config.emoji} Starting Build ${typeCapitalized} Availability...`);
   
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     
-    // Get practice dates from Practice Info sheet
-    const practiceDates = getPracticeDatesFromInfo(ss);
+    // Get dates from the appropriate info sheet
+    const dates = getDatesFromInfoSheet(ss, config);
     
-    if (practiceDates.length === 0) {
+    if (dates.length === 0) {
       SpreadsheetApp.getUi().alert(
-        'No Practice Dates Found',
-        `No practice dates found in "${PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet}" sheet. Please ensure the sheet exists and contains practice date information.`,
+        `No ${typeCapitalized} Dates Found`,
+        `No ${config.type} dates found in "${config.infoSheet}" sheet. Please ensure the sheet exists and contains ${config.type} date information.`,
         SpreadsheetApp.getUi().ButtonSet.OK
       );
       return;
     }
     
-    // Build availability columns in Practice Availability sheet
-    const result = buildAvailabilityColumns(ss, practiceDates, PRACTICE_AVAILABILITY_CONFIG);
+    // Build availability columns in the appropriate availability sheet
+    const result = buildAvailabilityColumns(ss, dates, config);
     
-    console.log('✅ Practice Availability build complete');
+    console.log(`✅ ${typeCapitalized} Availability build complete`);
     
-    let message = `Successfully processed Practice Availability sheet for ${practiceDates.length} practice dates.\n\n`;
+    let message = `Successfully processed ${config.availabilitySheet} sheet for ${dates.length} ${config.type} dates.\n\n`;
     
     if (result.columnsCreated > 0) {
       message += `📊 ${result.columnSummary}`;
@@ -78,12 +76,20 @@ function buildPracticeAvailability() {
     
     message += '\n\n🎯 Data validation applied only to new columns - existing validation and colors preserved.';
     
-    SpreadsheetApp.getUi().alert('Practice Availability Updated!', message, SpreadsheetApp.getUi().ButtonSet.OK);
+    SpreadsheetApp.getUi().alert(`${typeCapitalized} Availability Updated!`, message, SpreadsheetApp.getUi().ButtonSet.OK);
     
   } catch (error) {
-    console.error('Error building Practice Availability:', error);
-    SpreadsheetApp.getUi().alert('Error', `Failed to build Practice Availability: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
+    console.error(`Error building ${typeCapitalized} Availability:`, error);
+    SpreadsheetApp.getUi().alert('Error', `Failed to build ${typeCapitalized} Availability: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
   }
+}
+
+/**
+ * Main function to build practice availability columns
+ * Called from the menu
+ */
+function buildPracticeAvailability() {
+  buildAvailability(PRACTICE_AVAILABILITY_CONFIG);
 }
 
 /**
@@ -91,110 +97,67 @@ function buildPracticeAvailability() {
  * Called from the menu
  */
 function buildGameAvailability() {
-  console.log('🎮 Starting Build Game Availability...');
-  
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Get game dates from Game Info sheet
-    const gameDates = getGameDatesFromInfo(ss);
-    
-    if (gameDates.length === 0) {
-      SpreadsheetApp.getUi().alert(
-        'No Game Dates Found',
-        `No game dates found in "${GAME_AVAILABILITY_CONFIG.gameInfoSheet}" sheet. Please ensure the sheet exists and contains game date information.`,
-        SpreadsheetApp.getUi().ButtonSet.OK
-      );
-      return;
-    }
-    
-    // Build availability columns in Game Availability sheet
-    const result = buildAvailabilityColumns(ss, gameDates, GAME_AVAILABILITY_CONFIG);
-    
-    console.log('✅ Game Availability build complete');
-    
-    let message = `Successfully processed Game Availability sheet for ${gameDates.length} game dates.\n\n`;
-    
-    if (result.columnsCreated > 0) {
-      message += `📊 ${result.columnSummary}`;
-    }
-    
-    if (result.columnsSkipped > 0) {
-      if (result.columnsCreated > 0) message += '\n\n';
-      message += `⏭️ ${result.skippedSummary}`;
-    }
-    
-    if (result.columnsCreated === 0 && result.columnsSkipped === 0) {
-      message += 'No changes needed - all columns already exist.';
-    }
-    
-    message += '\n\n🎯 Data validation applied only to new columns - existing validation and colors preserved.';
-    
-    SpreadsheetApp.getUi().alert('Game Availability Updated!', message, SpreadsheetApp.getUi().ButtonSet.OK);
-    
-  } catch (error) {
-    console.error('Error building Game Availability:', error);
-    SpreadsheetApp.getUi().alert('Error', `Failed to build Game Availability: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
+  buildAvailability(GAME_AVAILABILITY_CONFIG);
 }
 
 /**
- * Extract practice dates from the Practice Info sheet
+ * Shared function to extract dates from an info sheet
  * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
- * @return {Array} Array of practice date objects: {date, formattedDate}
+ * @param {Object} config - Configuration object (PRACTICE_AVAILABILITY_CONFIG or GAME_AVAILABILITY_CONFIG)
+ * @return {Array} Array of date objects: {date, formattedDate}
  */
-function getPracticeDatesFromInfo(ss) {
-  const practiceInfoSheet = ss.getSheetByName(PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet);
+function getDatesFromInfoSheet(ss, config) {
+  const infoSheet = ss.getSheetByName(config.infoSheet);
   
-  if (!practiceInfoSheet) {
-    throw new Error(`Practice Info sheet "${PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet}" not found`);
+  if (!infoSheet) {
+    throw new Error(`${config.type.charAt(0).toUpperCase() + config.type.slice(1)} Info sheet "${config.infoSheet}" not found`);
   }
   
-  console.log(`📅 Reading practice dates from "${PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet}"`);
+  console.log(`📅 Reading ${config.type} dates from "${config.infoSheet}"`);
   
-  // Look for a Date column in the Practice Info sheet
-  const headerRow = practiceInfoSheet.getRange(1, 1, 1, practiceInfoSheet.getLastColumn()).getValues()[0];
+  // Look for a Date column in the info sheet
+  const headerRow = infoSheet.getRange(1, 1, 1, infoSheet.getLastColumn()).getValues()[0];
   const dateColumnIndex = headerRow.findIndex(header => 
     header && header.toString().toLowerCase().includes('date')
   );
   
   if (dateColumnIndex === -1) {
-    throw new Error(`No date column found in "${PRACTICE_AVAILABILITY_CONFIG.practiceInfoSheet}" sheet. Please ensure there is a column with "date" in the header.`);
+    throw new Error(`No date column found in "${config.infoSheet}" sheet. Please ensure there is a column with "date" in the header.`);
   }
   
   console.log(`📍 Found date column at index ${dateColumnIndex + 1}`);
   
   // Get all dates from the date column (skip header row)
-  const lastRow = practiceInfoSheet.getLastRow();
+  const lastRow = infoSheet.getLastRow();
   if (lastRow <= 1) {
-    console.log('⚠️ No practice data found in Practice Info sheet');
+    console.log(`⚠️ No ${config.type} data found in ${config.infoSheet} sheet`);
     return [];
   }
   
-  const dateData = practiceInfoSheet.getRange(2, dateColumnIndex + 1, lastRow - 1, 1).getValues();
-  const practiceDates = [];
+  const dateData = infoSheet.getRange(2, dateColumnIndex + 1, lastRow - 1, 1).getValues();
+  const dates = [];
   
   dateData.forEach((row, index) => {
     const dateValue = row[0];
     if (dateValue && dateValue !== '') {
       try {
         // Handle both Date objects and date strings
-        let practiceDate;
+        let dateObj;
         if (dateValue instanceof Date) {
-          practiceDate = dateValue;
+          dateObj = dateValue;
         } else {
-          practiceDate = new Date(dateValue);
+          dateObj = new Date(dateValue);
         }
         
         // Validate that it's a valid date
-        if (!isNaN(practiceDate.getTime())) {
-          const formattedDate = formatDateForColumn(practiceDate);
-          practiceDates.push({
-            date: practiceDate,
+        if (!isNaN(dateObj.getTime())) {
+          const formattedDate = formatDateForColumn(dateObj);
+          dates.push({
+            date: dateObj,
             formattedDate: formattedDate,
             rowIndex: index + 2 // +2 for 1-based indexing and header row
           });
-          console.log(`📅 Found practice date: ${formattedDate} (row ${index + 2})`);
+          console.log(`${config.emoji} Found ${config.type} date: ${formattedDate} (row ${index + 2})`);
         } else {
           console.warn(`⚠️ Invalid date in row ${index + 2}: "${dateValue}"`);
         }
@@ -204,78 +167,8 @@ function getPracticeDatesFromInfo(ss) {
     }
   });
   
-  console.log(`🎯 Found ${practiceDates.length} valid practice dates`);
-  return practiceDates;
-}
-
-/**
- * Extract game dates from the Game Info sheet
- * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
- * @return {Array} Array of game date objects: {date, formattedDate}
- */
-function getGameDatesFromInfo(ss) {
-  const gameInfoSheet = ss.getSheetByName(GAME_AVAILABILITY_CONFIG.gameInfoSheet);
-  
-  if (!gameInfoSheet) {
-    throw new Error(`Game Info sheet "${GAME_AVAILABILITY_CONFIG.gameInfoSheet}" not found`);
-  }
-  
-  console.log(`📅 Reading game dates from "${GAME_AVAILABILITY_CONFIG.gameInfoSheet}"`);
-  
-  // Look for a Date column in the Game Info sheet
-  const headerRow = gameInfoSheet.getRange(1, 1, 1, gameInfoSheet.getLastColumn()).getValues()[0];
-  const dateColumnIndex = headerRow.findIndex(header => 
-    header && header.toString().toLowerCase().includes('date')
-  );
-  
-  if (dateColumnIndex === -1) {
-    throw new Error(`No date column found in "${GAME_AVAILABILITY_CONFIG.gameInfoSheet}" sheet. Please ensure there is a column with "date" in the header.`);
-  }
-  
-  console.log(`📍 Found date column at index ${dateColumnIndex + 1}`);
-  
-  // Get all dates from the date column (skip header row)
-  const lastRow = gameInfoSheet.getLastRow();
-  if (lastRow <= 1) {
-    console.log('⚠️ No game data found in Game Info sheet');
-    return [];
-  }
-  
-  const dateData = gameInfoSheet.getRange(2, dateColumnIndex + 1, lastRow - 1, 1).getValues();
-  const gameDates = [];
-  
-  dateData.forEach((row, index) => {
-    const dateValue = row[0];
-    if (dateValue && dateValue !== '') {
-      try {
-        // Handle both Date objects and date strings
-        let gameDate;
-        if (dateValue instanceof Date) {
-          gameDate = dateValue;
-        } else {
-          gameDate = new Date(dateValue);
-        }
-        
-        // Validate that it's a valid date
-        if (!isNaN(gameDate.getTime())) {
-          const formattedDate = formatDateForColumn(gameDate);
-          gameDates.push({
-            date: gameDate,
-            formattedDate: formattedDate,
-            rowIndex: index + 2 // +2 for 1-based indexing and header row
-          });
-          console.log(`🎮 Found game date: ${formattedDate} (row ${index + 2})`);
-        } else {
-          console.warn(`⚠️ Invalid date in row ${index + 2}: "${dateValue}"`);
-        }
-      } catch (error) {
-        console.warn(`⚠️ Error parsing date in row ${index + 2}: "${dateValue}" - ${error.message}`);
-      }
-    }
-  });
-  
-  console.log(`🎯 Found ${gameDates.length} valid game dates`);
-  return gameDates;
+  console.log(`🎯 Found ${dates.length} valid ${config.type} dates`);
+  return dates;
 }
 
 /**
@@ -297,21 +190,19 @@ function formatDateForColumn(date) {
  * @return {Object} Result object with statistics
  */
 function buildAvailabilityColumns(ss, dates, config) {
-  let availabilitySheet = ss.getSheetByName(config.practiceAvailabilitySheet || config.gameAvailabilitySheet);
+  let availabilitySheet = ss.getSheetByName(config.availabilitySheet);
   
   // Create the sheet if it doesn't exist
   if (!availabilitySheet) {
-    const sheetName = config.practiceAvailabilitySheet || config.gameAvailabilitySheet;
-    console.log(`📋 Creating new "${sheetName}" sheet`);
-    availabilitySheet = ss.insertSheet(sheetName);
+    console.log(`📋 Creating new "${config.availabilitySheet}" sheet`);
+    availabilitySheet = ss.insertSheet(config.availabilitySheet);
     
     // Set up basic structure with Full Name column
     availabilitySheet.getRange(1, 1).setValue('Full Name');
     availabilitySheet.getRange(1, 1).setFontWeight('bold');
   }
   
-  const sheetName = config.practiceAvailabilitySheet || config.gameAvailabilitySheet;
-  console.log(`📊 Building availability columns in "${sheetName}"`);
+  console.log(`📊 Building availability columns in "${config.availabilitySheet}"`);
   
   // Get existing columns to check what already exists
   const existingColumns = getExistingColumns(availabilitySheet);
