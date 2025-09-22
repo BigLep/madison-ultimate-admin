@@ -285,6 +285,7 @@ function createColumnSelectionHtml(rosterColumns, attendanceColumns) {
         
         <div class="buttons">
           <button class="btn btn-primary" onclick="createSheet()">Create Sheet</button>
+          <button class="btn btn-secondary" onclick="deselectAll()">Deselect All</button>
           <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
         </div>
         
@@ -354,13 +355,26 @@ function createColumnSelectionHtml(rosterColumns, attendanceColumns) {
             saveCurrentSelections();
             
             // Show progress overlay
-            showProgress('Creating Sheet...', 'Preparing your custom sheet');
+            showProgress('Checking sheet name...', 'Validating your sheet name');
             
-            // Call server-side function
+            // First check if sheet name already exists
             google.script.run
-              .withSuccessHandler(onSuccess)
+              .withSuccessHandler(function(isDuplicate) {
+                if (isDuplicate) {
+                  hideProgress();
+                  alert('Sheet name "' + sheetName + '" already exists. Please choose a different name.');
+                  return;
+                }
+                
+                // If not duplicate, proceed with creation
+                showProgress('Creating Sheet...', 'Preparing your custom sheet');
+                google.script.run
+                  .withSuccessHandler(onSuccess)
+                  .withFailureHandler(onFailure)
+                  .processSheetCreationWithProgress(sheetName, selectedColumns);
+              })
               .withFailureHandler(onFailure)
-              .processSheetCreationWithProgress(sheetName, selectedColumns);
+              .isSheetNameDuplicate(sheetName);
           }
           
           function showProgress(title, detail) {
@@ -386,6 +400,13 @@ function createColumnSelectionHtml(rosterColumns, attendanceColumns) {
           function onFailure(error) {
             hideProgress();
             alert('Error: ' + error.message);
+          }
+          
+          function deselectAll() {
+            const checkboxes = document.querySelectorAll('input[name="columns"]');
+            checkboxes.forEach(checkbox => {
+              checkbox.checked = false;
+            });
           }
         </script>
       </body>
@@ -742,5 +763,30 @@ function copyConditionalFormattingFromRoster(newSheet, rosterSheet, headers, ros
     
   } catch (error) {
     console.warn('Could not copy conditional formatting:', error);
+  }
+}
+
+/**
+ * Check if a sheet name already exists in the spreadsheet
+ * @param {string} sheetName - The proposed sheet name
+ * @return {boolean} True if the sheet name already exists, false otherwise
+ */
+function isSheetNameDuplicate(sheetName) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const existingSheet = ss.getSheetByName(sheetName);
+    
+    if (existingSheet) {
+      console.log(`⚠️ Sheet name "${sheetName}" already exists`);
+      return true;
+    }
+    
+    console.log(`✅ Sheet name "${sheetName}" is available`);
+    return false;
+    
+  } catch (error) {
+    console.warn('Error checking sheet name:', error);
+    // If there's an error checking, assume it's not duplicate to avoid blocking
+    return false;
   }
 }
