@@ -19,7 +19,12 @@ const PRACTICE_AVAILABILITY_CONFIG = {
   emoji: '🏃',
   infoSheet: '📍Practice Info',
   availabilitySheet: 'Practice Availability',
-  validationOptions: AVAILABILITY_VALIDATION_OPTIONS
+  validationOptions: AVAILABILITY_VALIDATION_OPTIONS,
+  skipConfig: {
+    columnName: 'note',
+    skipCondition: 'startsWith',
+    skipValue: 'Bye'
+  }
 };
 
 // Configuration for Game Availability feature
@@ -28,7 +33,12 @@ const GAME_AVAILABILITY_CONFIG = {
   emoji: '🎮',
   infoSheet: '📍Game Info',
   availabilitySheet: 'Game Availability',
-  validationOptions: AVAILABILITY_VALIDATION_OPTIONS
+  validationOptions: AVAILABILITY_VALIDATION_OPTIONS,
+  skipConfig: {
+    columnName: 'game #',
+    skipCondition: 'equals',
+    skipValue: 'Bye'
+  }
 };
 
 /**
@@ -127,6 +137,20 @@ function getDatesFromInfoSheet(ss, config) {
   
   console.log(`📍 Found date column at index ${dateColumnIndex + 1}`);
   
+  // Look for skip column if configured
+  let skipColumnIndex = -1;
+  if (config.skipConfig) {
+    skipColumnIndex = headerRow.findIndex(header => 
+      header && header.toString().toLowerCase().includes(config.skipConfig.columnName.toLowerCase())
+    );
+    
+    if (skipColumnIndex !== -1) {
+      console.log(`📍 Found skip column "${config.skipConfig.columnName}" at index ${skipColumnIndex + 1}`);
+    } else {
+      console.log(`⚠️ Skip column "${config.skipConfig.columnName}" not found - will not skip any rows`);
+    }
+  }
+  
   // Get all dates from the date column (skip header row)
   const lastRow = infoSheet.getLastRow();
   if (lastRow <= 1) {
@@ -134,11 +158,37 @@ function getDatesFromInfoSheet(ss, config) {
     return [];
   }
   
-  const dateData = infoSheet.getRange(2, dateColumnIndex + 1, lastRow - 1, 1).getValues();
+  // Get all data we need (date column and skip column if applicable)
+  const columnsNeeded = skipColumnIndex !== -1 ? 
+    Math.max(dateColumnIndex + 1, skipColumnIndex + 1) : 
+    dateColumnIndex + 1;
+  const allData = infoSheet.getRange(2, 1, lastRow - 1, columnsNeeded).getValues();
   const dates = [];
   
-  dateData.forEach((row, index) => {
-    const dateValue = row[0];
+  allData.forEach((row, index) => {
+    const dateValue = row[dateColumnIndex];
+    
+    // Check if we should skip this row based on skip configuration
+    if (config.skipConfig && skipColumnIndex !== -1) {
+      const skipValue = row[skipColumnIndex];
+      let shouldSkip = false;
+      
+      if (skipValue && skipValue.toString().trim() !== '') {
+        const skipValueStr = skipValue.toString().trim();
+        
+        if (config.skipConfig.skipCondition === 'startsWith') {
+          shouldSkip = skipValueStr.toLowerCase().startsWith(config.skipConfig.skipValue.toLowerCase());
+        } else if (config.skipConfig.skipCondition === 'equals') {
+          shouldSkip = skipValueStr.toLowerCase() === config.skipConfig.skipValue.toLowerCase();
+        }
+      }
+      
+      if (shouldSkip) {
+        console.log(`⏭️ Skipping row ${index + 2}: ${config.skipConfig.columnName} = "${skipValue}"`);
+        return; // Skip this iteration
+      }
+    }
+    
     if (dateValue && dateValue !== '') {
       try {
         // Handle both Date objects and date strings
