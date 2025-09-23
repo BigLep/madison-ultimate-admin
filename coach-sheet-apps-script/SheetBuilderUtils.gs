@@ -11,6 +11,18 @@
  * @return {Object} Object with fullNameColIndex and rowCount
  */
 function copyFullNameColumn(targetSheet, rosterSheet, startRow = 2) {
+  return copyFullNameColumnToColumn(targetSheet, rosterSheet, startRow, 1);
+}
+
+/**
+ * Copy Full Name column from roster to a specific column in new sheet
+ * @param {Sheet} targetSheet - The sheet to copy Full Name to
+ * @param {Sheet} rosterSheet - The source roster sheet
+ * @param {number} startRow - The row to start copying data
+ * @param {number} targetColumn - The column to copy Full Name to (1-based)
+ * @return {Object} Object with fullNameColIndex and rowCount
+ */
+function copyFullNameColumnToColumn(targetSheet, rosterSheet, startRow, targetColumn) {
   const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
   const fullNameColIndex = rosterHeaderRow.findIndex(name => name === CONFIG.columns.fullName);
   
@@ -27,7 +39,7 @@ function copyFullNameColumn(targetSheet, rosterSheet, startRow = 2) {
     throw new Error('No student data found in roster');
   }
   
-  targetSheet.getRange(startRow, 1, nonEmptyFullNames.length, 1).setValues(nonEmptyFullNames);
+  targetSheet.getRange(startRow, targetColumn, nonEmptyFullNames.length, 1).setValues(nonEmptyFullNames);
   
   return {
     fullNameColIndex: fullNameColIndex,

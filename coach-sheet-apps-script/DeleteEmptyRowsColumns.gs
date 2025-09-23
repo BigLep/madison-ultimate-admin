@@ -54,24 +54,8 @@ function deleteEmptyRowsAndColumns() {
       return;
     }
     
-    // Perform the deletion
-    let deletionsPerformed = 0;
-    
-    // Delete empty rows first (do this before columns to avoid index issues)
-    if (rowsToDelete > 0) {
-      console.log(`🗑️ Deleting ${rowsToDelete} empty rows (from row ${lastRowWithData + 1} onwards)`);
-      sheet.deleteRows(lastRowWithData + 1, rowsToDelete);
-      deletionsPerformed++;
-      console.log(`✅ Deleted ${rowsToDelete} empty rows`);
-    }
-    
-    // Delete empty columns
-    if (columnsToDelete > 0) {
-      console.log(`🗑️ Deleting ${columnsToDelete} empty columns (from column ${lastColumnWithData + 1} onwards)`);
-      sheet.deleteColumns(lastColumnWithData + 1, columnsToDelete);
-      deletionsPerformed++;
-      console.log(`✅ Deleted ${columnsToDelete} empty columns`);
-    }
+    // Perform the deletion using the helper function
+    deleteEmptyRowsAndColumnsForSheet(sheet);
     
     // Show success message
     const successMessage = buildSuccessMessage(sheetName, rowsToDelete, columnsToDelete, sheet.getMaxRows(), sheet.getMaxColumns());
@@ -286,16 +270,35 @@ function buildSuccessMessage(sheetName, rowsDeleted, columnsDeleted, newMaxRows,
 }
 
 /**
- * Convert column number to letter (e.g., 1 = A, 27 = AA)
- * @param {number} columnNumber - 1-based column number
- * @return {string} Column letter(s)
+ * Helper function to delete empty rows and columns from a specific sheet without modals
+ * @param {Sheet} sheet - The sheet to clean up
  */
-function getColumnLetter(columnNumber) {
-  let result = '';
-  while (columnNumber > 0) {
-    columnNumber--; // Convert to 0-based
-    result = String.fromCharCode(65 + (columnNumber % 26)) + result;
-    columnNumber = Math.floor(columnNumber / 26);
+function deleteEmptyRowsAndColumnsForSheet(sheet) {
+  console.log(`🧹 Cleaning up empty rows and columns for sheet: "${sheet.getName()}"`);
+  
+  const maxRows = sheet.getMaxRows();
+  const maxColumns = sheet.getMaxColumns();
+  
+  const lastRowWithData = findLastRowWithData(sheet);
+  const lastColumnWithData = findLastColumnWithData(sheet);
+  
+  const rowsToDelete = maxRows - lastRowWithData;
+  const columnsToDelete = maxColumns - lastColumnWithData;
+  
+  if (rowsToDelete <= 0 && columnsToDelete <= 0) {
+    console.log('No empty rows or columns to delete');
+    return;
   }
-  return result;
+  
+  if (rowsToDelete > 0) {
+    console.log(`🗑️ Deleting ${rowsToDelete} empty rows`);
+    sheet.deleteRows(lastRowWithData + 1, rowsToDelete);
+  }
+  
+  if (columnsToDelete > 0) {
+    console.log(`🗑️ Deleting ${columnsToDelete} empty columns`);
+    sheet.deleteColumns(lastColumnWithData + 1, columnsToDelete);
+  }
+  
+  console.log(`✅ Cleanup complete: ${sheet.getMaxRows()} rows x ${sheet.getMaxColumns()} columns`);
 }

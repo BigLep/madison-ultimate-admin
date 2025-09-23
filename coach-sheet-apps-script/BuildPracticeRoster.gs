@@ -292,8 +292,8 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     const newSheet = ss.insertSheet(sheetName);
     console.log(`✅ Created new sheet: "${sheetName}"`);
     
-    // Define column structure
-    const headers = ['Full Name', 'Grade', 'Gender', 'Team', 'Availability', 'Availability Note'];
+    // Define column structure (# column first, then Full Name)
+    const headers = ['#', 'Full Name', 'Grade', 'Gender', 'Team', 'Availability', 'Availability Note'];
     
     // Set up headers
     const headerRange = newSheet.getRange(1, 1, 1, headers.length);
@@ -325,8 +325,8 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     
     console.log(`📍 Found availability columns: ${availColumns.availabilityColumn} and ${availColumns.noteColumn || 'none'}`);
     
-    // Copy Full Name column from roster using shared utility
-    const fullNameInfo = copyFullNameColumn(newSheet, rosterSheet, 2);
+    // Copy Full Name column to column B (column 2) from roster using shared utility
+    const fullNameInfo = copyFullNameColumnToColumn(newSheet, rosterSheet, 2, 2); // startRow=2, targetColumn=2
     console.log(`📊 Copied ${fullNameInfo.rowCount} students from roster`);
     
     const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
@@ -360,7 +360,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
       
       if (availColIndex > 0) {
         copyDataValidation(newSheet, practiceAvailabilitySheet, 
-          [{sourceColumn: practiceDate, targetColumn: 5}], fullNameInfo.rowCount);
+          [{sourceColumn: practiceDate, targetColumn: 6}], fullNameInfo.rowCount);
       }
     }
     
@@ -372,8 +372,34 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
       sortPracticeRoster(newSheet, fullNameInfo.rowCount, headers.length);
     }
     
+    // Populate # column AFTER sorting (so the formula references are correct)
+    if (fullNameInfo.rowCount > 0) {
+      populateNumberColumn(newSheet, fullNameInfo.rowCount);
+      
+      // Force calculation of # column formulas before adding borders
+      SpreadsheetApp.flush();
+      
+      // Add borders at group changes (where # = 1)
+      addGroupBorders(newSheet, fullNameInfo.rowCount);
+    }
+    
+    // Delete empty rows and columns to clean up the sheet
+    console.log('🧹 Cleaning up empty rows and columns...');
+    deleteEmptyRowsAndColumnsForSheet(newSheet);
+    
+    // Auto-resize specific columns
+    console.log('📏 Auto-resizing columns...');
+    newSheet.autoResizeColumn(1); // # column
+    newSheet.autoResizeColumn(6); // Availability column
+    
+    // Enable text wrapping for Availability Note column (column 7)
+    console.log('📝 Enabling text wrap for Availability Note column...');
+    const noteColumnRange = newSheet.getRange(2, 7, fullNameInfo.rowCount, 1);
+    noteColumnRange.setWrap(true);
+    
     console.log(`✅ Practice roster "${sheetName}" created successfully`);
     
+    // Show success alert AFTER all processing is complete
     SpreadsheetApp.getUi().alert(
       'Practice Roster Created!',
       `Successfully created practice roster for ${practiceDate} with ${fullNameInfo.rowCount} students.`,
@@ -463,7 +489,7 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
   const rosterSheetName = CONFIG.roster.sheetName;
   const practiceAvailSheetName = 'Practice Availability';
   
-  // Find "Full Name" column for XLOOKUP key (column A in the practice roster)
+  // Find "Full Name" column for XLOOKUP key (column B in the practice roster)
   const rosterFullNameColIndex = rosterHeaderRow.indexOf(CONFIG.columns.fullName) + 1;
   if (rosterFullNameColIndex === 0) {
     throw new Error(`${CONFIG.columns.fullName} column not found in Roster sheet`);
@@ -471,70 +497,128 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
   const rosterFullNameCol = getColumnLetter(rosterFullNameColIndex);
   console.log(`📍 Using ${CONFIG.columns.fullName} column ${rosterFullNameCol} for XLOOKUP key`);
   
-  // Column 2: Grade
+  // Column 3: Grade
   const gradeColIndex = rosterHeaderRow.indexOf(CONFIG.columns.grade) + 1;
   if (gradeColIndex > 0) {
     const gradeCol = getColumnLetter(gradeColIndex);
-    const formula = `=IFERROR(XLOOKUP(A2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${gradeCol}:${gradeCol}),"")`;
-    newSheet.getRange(2, 2).setFormula(formula);
+    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${gradeCol}:${gradeCol}),"")`;
+    newSheet.getRange(2, 3).setFormula(formula);
     if (numRows > 1) {
-      newSheet.getRange(2, 2).copyTo(newSheet.getRange(3, 2, numRows - 1, 1));
+      newSheet.getRange(2, 3).copyTo(newSheet.getRange(3, 3, numRows - 1, 1));
     }
     console.log(`✅ Populated Grade column with XLOOKUP`);
   }
   
-  // Column 3: Gender (from "Gender Identification")
+  // Column 4: Gender (from "Gender Identification")
   const genderColIndex = rosterHeaderRow.indexOf(CONFIG.columns.genderIdentification) + 1;
   if (genderColIndex > 0) {
     const genderCol = getColumnLetter(genderColIndex);
-    const formula = `=IFERROR(XLOOKUP(A2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${genderCol}:${genderCol}),"")`;
-    newSheet.getRange(2, 3).setFormula(formula);
+    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${genderCol}:${genderCol}),"")`;
+    newSheet.getRange(2, 4).setFormula(formula);
     if (numRows > 1) {
-      newSheet.getRange(2, 3).copyTo(newSheet.getRange(3, 3, numRows - 1, 1));
+      newSheet.getRange(2, 4).copyTo(newSheet.getRange(3, 4, numRows - 1, 1));
     }
     console.log(`✅ Populated Gender column with XLOOKUP from column ${genderCol}`);
   } else {
     console.warn(`⚠️ Gender Identification column not found in Roster sheet - available columns: ${rosterHeaderRow.join(', ')}`);
   }
   
-  // Column 4: Team
+  // Column 5: Team
   const teamColIndex = rosterHeaderRow.indexOf(CONFIG.columns.team) + 1;
   if (teamColIndex > 0) {
     const teamCol = getColumnLetter(teamColIndex);
-    const formula = `=IFERROR(XLOOKUP(A2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`;
-    newSheet.getRange(2, 4).setFormula(formula);
+    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`;
+    newSheet.getRange(2, 5).setFormula(formula);
     if (numRows > 1) {
-      newSheet.getRange(2, 4).copyTo(newSheet.getRange(3, 4, numRows - 1, 1));
+      newSheet.getRange(2, 5).copyTo(newSheet.getRange(3, 5, numRows - 1, 1));
     }
     console.log(`✅ Populated Team column with XLOOKUP from column ${teamCol}`);
   } else {
     console.warn(`⚠️ Team column not found in Roster sheet - available columns: ${rosterHeaderRow.join(', ')}`);
   }
   
-  // Column 5: Availability
+  // Column 6: Availability
   if (availColumns.availabilityColumn) {
-    const formula = `=IFERROR(XLOOKUP(A2,'${practiceAvailSheetName}'!A:A,'${practiceAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
-    newSheet.getRange(2, 5).setFormula(formula);
+    const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!A:A,'${practiceAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
+    newSheet.getRange(2, 6).setFormula(formula);
     if (numRows > 1) {
-      newSheet.getRange(2, 5).copyTo(newSheet.getRange(3, 5, numRows - 1, 1));
+      newSheet.getRange(2, 6).copyTo(newSheet.getRange(3, 6, numRows - 1, 1));
     }
     console.log(`✅ Populated Availability column with XLOOKUP`);
   }
   
-  // Column 6: Availability Note
+  // Column 7: Availability Note
   if (availColumns.noteColumn) {
-    const formula = `=IFERROR(XLOOKUP(A2,'${practiceAvailSheetName}'!A:A,'${practiceAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
-    newSheet.getRange(2, 6).setFormula(formula);
+    const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!A:A,'${practiceAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
+    newSheet.getRange(2, 7).setFormula(formula);
     if (numRows > 1) {
-      newSheet.getRange(2, 6).copyTo(newSheet.getRange(3, 6, numRows - 1, 1));
+      newSheet.getRange(2, 7).copyTo(newSheet.getRange(3, 7, numRows - 1, 1));
     }
     console.log(`✅ Populated Availability Note column with XLOOKUP`);
   }
 }
 
 /**
+ * Populate the # column with formulas that reset when Team or Gender changes
+ * This must be called AFTER sorting to ensure correct formula references
+ * @param {Sheet} sheet - The practice roster sheet
+ * @param {number} numRows - Number of data rows
+ */
+function populateNumberColumn(sheet, numRows) {
+  console.log(`🔢 Populating # column with reset formulas...`);
+  
+  // All rows get the formula: =IF(OR(D1<>D2,E1<>E2),1,A1+1)
+  // If Team (col E) or Gender (col D) changes, reset to 1, otherwise increment
+  const numberFormula = '=IF(OR(D1<>D2,E1<>E2),1,A1+1)';
+  sheet.getRange(2, 1).setFormula(numberFormula);
+  
+  if (numRows > 1) {
+    sheet.getRange(2, 1).copyTo(sheet.getRange(3, 1, numRows - 1, 1));
+  }
+  
+  console.log(`✅ Populated # column with reset formula for ${numRows} rows`);
+}
+
+/**
+ * Add black borders at the top of rows where groups change (# = 1)
+ * @param {Sheet} sheet - The practice roster sheet
+ * @param {number} numRows - Number of data rows
+ */
+function addGroupBorders(sheet, numRows) {
+  console.log(`🎨 Adding group borders...`);
+  
+  // Get all values from the # column (already flushed before calling this function)
+  const numberColumnValues = sheet.getRange(2, 1, numRows, 1).getValues();
+  
+  // Find rows where # = 1 (group starts)
+  const groupStartRows = [];
+  numberColumnValues.forEach((row, index) => {
+    if (row[0] === 1) {
+      groupStartRows.push(index + 2); // +2 because array is 0-based and data starts at row 2
+    }
+  });
+  
+  console.log(`Found ${groupStartRows.length} group starts at rows: ${groupStartRows.join(', ')}`);
+  
+  // Apply top border to each group start row (entire row)
+  const numColumns = sheet.getLastColumn();
+  groupStartRows.forEach(rowNum => {
+    const range = sheet.getRange(rowNum, 1, 1, numColumns);
+    range.setBorder(
+      true, null, null, null,  // top border only
+      null, null,              // no vertical borders
+      'black',                 // color
+      SpreadsheetApp.BorderStyle.SOLID // style
+    );
+  });
+  
+  console.log(`✅ Applied top borders to ${groupStartRows.length} group starts`);
+}
+
+/**
  * Sort the practice roster by Team, Gender, Full Name
  * Within each team, sorted by gender, and within each gender, sorted by name
+ * Note: # column will automatically update after sort due to formula
  * @param {Sheet} sheet - The practice roster sheet
  * @param {number} numRows - Number of data rows
  * @param {number} numColumns - Number of columns
@@ -545,9 +629,9 @@ function sortPracticeRoster(sheet, numRows, numColumns) {
   const dataRange = sheet.getRange(2, 1, numRows, numColumns);
   
   dataRange.sort([
-    {column: 4, ascending: true},  // Team (primary sort)
-    {column: 3, ascending: true},  // Gender (secondary sort)
-    {column: 1, ascending: true}   // Full Name (tertiary sort)
+    {column: 5, ascending: true},  // Team (column E - primary sort)
+    {column: 4, ascending: true},  // Gender (column D - secondary sort)
+    {column: 2, ascending: true}   // Full Name (column B - tertiary sort)
   ]);
   
   console.log('✅ Sorting complete');
