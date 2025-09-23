@@ -8,6 +8,7 @@
     "FormatSpruceUp.gs",
     "FullNameDiff.gs",
     "Availability.gs",
-    "OrganizeSheets.gs"
+    "OrganizeSheets.gs",
+    "DeleteEmptyRowsColumns.gs"
   ]
 }
