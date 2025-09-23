@@ -90,15 +90,15 @@ function analyzeAdditionalInfoResponses() {
  */
 function getRosterDataForMatching(rosterSheet) {
   const headers = rosterSheet.getRange(1, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
-  const fullNameCol = headers.indexOf('Full Name') + 1;
-  const lastNameCol = headers.indexOf('Last Name') + 1;
+  const fullNameCol = headers.indexOf(CONFIG.columns.fullName) + 1;
+  const lastNameCol = headers.indexOf(CONFIG.columns.lastName) + 1;
 
   if (!fullNameCol) {
-    throw new Error('Could not find "Full Name" column in roster');
+    throw new Error(`Could not find "${CONFIG.columns.fullName}" column in roster`);
   }
 
   if (!lastNameCol) {
-    throw new Error('Could not find "Last Name" column in roster');
+    throw new Error(`Could not find "${CONFIG.columns.lastName}" column in roster`);
   }
 
   const rosterLastRow = rosterSheet.getLastRow();

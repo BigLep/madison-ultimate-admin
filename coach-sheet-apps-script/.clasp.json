@@ -9,6 +9,7 @@
     "FullNameDiff.gs",
     "Availability.gs",
     "OrganizeSheets.gs",
-    "DeleteEmptyRowsColumns.gs"
+    "DeleteEmptyRowsColumns.gs",
+    "BuildPracticeRoster.gs"
   ]
 }

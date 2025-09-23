@@ -89,7 +89,7 @@ function discoverAttendanceColumns() {
     console.log(`Column ${index + 1} "${columnName}": formula="${formula}", hasXlookup=${hasXlookup}`);
     
     // Only include columns that don't have XLOOKUP formulas in row 2 and aren't Full Name
-    if (!hasXlookup && columnName.trim() !== '' && columnName !== 'Full Name') {
+    if (!hasXlookup && columnName.trim() !== '' && columnName !== CONFIG.columns.fullName) {
       nativeAttendanceColumns.push(columnName);
     }
   });
@@ -122,7 +122,7 @@ function showColumnSelectionDialog(rosterColumns, attendanceColumns) {
 function createColumnSelectionHtml(rosterColumns, attendanceColumns) {
   // Create checkboxes for Roster columns (exclude Full Name as it's always included)
   const rosterCheckboxes = rosterColumns
-    .filter(name => name !== 'Full Name')
+    .filter(name => name !== CONFIG.columns.fullName)
     .map(name => `
       <div class="checkbox-item">
         <label>
@@ -272,7 +272,7 @@ function createColumnSelectionHtml(rosterColumns, attendanceColumns) {
         </div>
         
         <div class="auto-included">
-          ✓ <strong>Full Name</strong> column will be automatically included (used for lookups)
+          ✓ <strong>${CONFIG.columns.fullName}</strong> column will be automatically included (used for lookups)
         </div>
         
         <div class="form-group">
@@ -471,8 +471,8 @@ function processSheetCreation(sheetName, selectedColumns) {
   // Return success message
   const totalColumns = rosterColumns.length + attendanceColumns.length;
   const message = totalColumns === 0 
-    ? `Created "${sheetName}" with only the Full Name column.`
-    : `Created "${sheetName}" with Full Name + ${totalColumns} additional columns (${rosterColumns.length} from Roster, ${attendanceColumns.length} from Attendance).`;
+    ? `Created "${sheetName}" with only the ${CONFIG.columns.fullName} column.`
+    : `Created "${sheetName}" with ${CONFIG.columns.fullName} + ${totalColumns} additional columns (${rosterColumns.length} from Roster, ${attendanceColumns.length} from Attendance).`;
     
   return message;
 }
@@ -491,10 +491,10 @@ function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumn
     
     // Find Full Name column in roster
     const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
-    const fullNameColIndex = rosterHeaderRow.findIndex(name => name === 'Full Name');
+    const fullNameColIndex = rosterHeaderRow.findIndex(name => name === CONFIG.columns.fullName);
     
     if (fullNameColIndex === -1) {
-      throw new Error('Full Name column not found in roster sheet');
+      throw new Error(`${CONFIG.columns.fullName} column not found in roster sheet`);
     }
     
     // Get attendance sheet info if we have attendance columns
@@ -511,13 +511,13 @@ function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumn
     // Set up headers: Full Name + roster columns + attendance columns
     console.log('📋 Setting up headers...');
     const allSelectedColumns = [...rosterColumns, ...attendanceColumns];
-    const headers = ['Full Name', ...allSelectedColumns];
+    const headers = [CONFIG.columns.fullName, ...allSelectedColumns];
     
     // Set headers with direct cell references for column names
     const headerFormulas = headers.map((columnName, index) => {
       if (index === 0) {
         // First column is always Full Name
-        return 'Full Name';
+        return CONFIG.columns.fullName;
       } else {
         // Check if this is a roster column or attendance column
         const isRosterColumn = rosterColumns.includes(columnName);
@@ -542,27 +542,14 @@ function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumn
     
     newSheet.getRange(1, 1, 1, headers.length).setValues([headerFormulas]);
     
-    // Style the header row
-    const headerRange = newSheet.getRange(1, 1, 1, headers.length);
-    headerRange.setFontWeight('bold');
-    headerRange.setBackground('#4285f4');
-    headerRange.setFontColor('white');
+    // Style the header row using shared utility
+    styleHeaderRow(newSheet, headers.length);
     
-    // Get Full Name values from roster (data rows only)
-    const rosterDataRange = rosterSheet.getRange(FIRST_DATA_ROW, fullNameColIndex + 1, rosterSheet.getLastRow() - FIRST_DATA_ROW + 1, 1);
-    const fullNameValues = rosterDataRange.getValues();
-    
-    // Filter out empty rows
-    const nonEmptyFullNames = fullNameValues.filter(row => row[0] && row[0].toString().trim() !== '');
-    
-    if (nonEmptyFullNames.length === 0) {
-      throw new Error('No student data found in roster');
-    }
-    
-    // Copy Full Name values to new sheet
+    // Copy Full Name column using shared utility
     console.log('👥 Copying student names...');
     const newSheetDataStartRow = 2;
-    newSheet.getRange(newSheetDataStartRow, 1, nonEmptyFullNames.length, 1).setValues(nonEmptyFullNames);
+    const fullNameInfo = copyFullNameColumn(newSheet, rosterSheet, newSheetDataStartRow);
+    const nonEmptyFullNames = {length: fullNameInfo.rowCount}; // For backward compatibility
     
     // Create XLOOKUP formulas for roster columns
     console.log('🔗 Creating XLOOKUP formulas for roster columns...');
@@ -629,23 +616,21 @@ function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumn
       }
     }
     
-    // Copy column formatting from roster sheet
+    // Copy column formatting from roster sheet using shared utility
     console.log('🎨 Copying column formatting...');
-    copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, rosterHeaderRow);
+    copyColumnFormatting(newSheet, rosterSheet, headers, rosterHeaderRow);
     
     // Apply Format Spruce Up formatting (alternating colors, filtering, vertical centering)
     console.log('✨ Applying Format Spruce Up formatting...');
     applySpruceUpFormatting(newSheet);
     
-    // Ensure header row styling is preserved (after Format Spruce Up)
-    headerRange.setFontWeight('bold');
-    headerRange.setBackground('#4285f4');
-    headerRange.setFontColor('white');
+    // Ensure header row styling is preserved (after Format Spruce Up) using shared utility
+    styleHeaderRow(newSheet, headers.length);
     
-    // Copy conditional formatting from roster sheet
+    // Copy conditional formatting from roster sheet using shared utility
     console.log('🎨 Copying conditional formatting...');
     const totalRows = nonEmptyFullNames.length + 1; // +1 for header row
-    copyConditionalFormattingFromRoster(newSheet, rosterSheet, headers, rosterHeaderRow, totalRows);
+    copyConditionalFormatting(newSheet, rosterSheet, totalRows, headers.length);
     
     // Activate the new sheet
     console.log('🎯 Activating new sheet...');
@@ -662,109 +647,6 @@ function createCustomSheetWithColumns(sheetName, rosterColumns, attendanceColumn
   }
 }
 
-/**
- * Copy column formatting from roster sheet to new custom sheet
- * Includes column widths, number formats, text wrapping, and alignment
- */
-function copyColumnFormattingFromRoster(newSheet, rosterSheet, headers, rosterHeaderRow) {
-  headers.forEach((columnName, newColumnIndex) => {
-    // Find the column in the roster sheet
-    const rosterColumnIndex = rosterHeaderRow.findIndex(name => name === columnName);
-    
-    if (rosterColumnIndex === -1) {
-      console.warn(`Column "${columnName}" not found in roster sheet for formatting`);
-      return;
-    }
-    
-    const newColumn = newColumnIndex + 1; // Convert to 1-based
-    const rosterColumn = rosterColumnIndex + 1; // Convert to 1-based
-    
-    try {
-      // Copy column width
-      const rosterColumnWidth = rosterSheet.getColumnWidth(rosterColumn);
-      newSheet.setColumnWidth(newColumn, rosterColumnWidth);
-      
-      // Copy formatting from a data cell in the roster (row 6 = first data row)
-      const rosterFormatCell = rosterSheet.getRange(FIRST_DATA_ROW, rosterColumn);
-      const newFormatCell = newSheet.getRange(2, newColumn); // Row 2 = first data row in new sheet
-      
-      // Copy number format
-      const numberFormat = rosterFormatCell.getNumberFormat();
-      if (numberFormat) {
-        const newColumnRange = newSheet.getRange(2, newColumn, newSheet.getMaxRows() - 1, 1);
-        newColumnRange.setNumberFormat(numberFormat);
-      }
-      
-      // Copy text wrapping
-      const textWrapping = rosterFormatCell.getWrap();
-      const newColumnRange = newSheet.getRange(2, newColumn, newSheet.getMaxRows() - 1, 1);
-      newColumnRange.setWrap(textWrapping);
-      
-      // Copy horizontal alignment
-      const horizontalAlignment = rosterFormatCell.getHorizontalAlignment();
-      newColumnRange.setHorizontalAlignment(horizontalAlignment);
-      
-      // Copy vertical alignment
-      const verticalAlignment = rosterFormatCell.getVerticalAlignment();
-      newColumnRange.setVerticalAlignment(verticalAlignment);
-      
-      // Copy font family and size (but not color/weight as that might interfere with banding)
-      const fontFamily = rosterFormatCell.getFontFamily();
-      const fontSize = rosterFormatCell.getFontSize();
-      newColumnRange.setFontFamily(fontFamily);
-      newColumnRange.setFontSize(fontSize);
-      
-      console.log(`✅ Copied formatting for column "${columnName}" (width: ${rosterColumnWidth}px)`);
-      
-    } catch (error) {
-      console.warn(`Could not copy formatting for column "${columnName}":`, error);
-    }
-  });
-}
-
-/**
- * Copy conditional formatting rules from roster sheet to new custom sheet
- * Applies all rules to the entire new sheet range (simple approach)
- */
-function copyConditionalFormattingFromRoster(newSheet, rosterSheet, headers, rosterHeaderRow, totalRows) {
-  try {
-    // Get all conditional formatting rules from the roster sheet
-    const rosterRules = rosterSheet.getConditionalFormatRules();
-    
-    if (rosterRules.length === 0) {
-      console.log('No conditional formatting rules found in roster sheet');
-      return;
-    }
-    
-    console.log(`Found ${rosterRules.length} conditional formatting rules in roster sheet`);
-    
-    // Apply all rules to the entire new sheet range
-    const entireSheetRange = newSheet.getRange(1, 1, totalRows, headers.length);
-    const newRules = [];
-    
-    rosterRules.forEach((rule, ruleIndex) => {
-      try {
-        // Clone the rule and apply it to the entire new sheet
-        const newRule = rule.copy().setRanges([entireSheetRange]);
-        newRules.push(newRule);
-        
-        console.log(`✅ Applied conditional formatting rule ${ruleIndex + 1} to entire new sheet`);
-        
-      } catch (ruleError) {
-        console.warn(`Could not copy conditional formatting rule ${ruleIndex + 1}:`, ruleError);
-      }
-    });
-    
-    // Set all rules on the new sheet
-    if (newRules.length > 0) {
-      newSheet.setConditionalFormatRules(newRules);
-      console.log(`✅ Applied ${newRules.length} conditional formatting rules to new sheet`);
-    }
-    
-  } catch (error) {
-    console.warn('Could not copy conditional formatting:', error);
-  }
-}
 
 /**
  * Check if a sheet name already exists in the spreadsheet

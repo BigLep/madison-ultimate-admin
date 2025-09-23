@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '82';
+const SCRIPT_VERSION = '93';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -49,6 +49,33 @@ const CONFIG = {
   },
   gameAvailability: {
     sheetName: 'Game Availability'
+  },
+  
+  // Column name constants - centralized for easy updates
+  columns: {
+    fullName: 'Full Name',
+    firstName: 'First Name',
+    lastName: 'Last Name',
+    studentId: 'StudentID',
+    grade: 'Grade',
+    gender: 'Gender',
+    genderIdentification: 'Gender Identification',
+    team: 'Team',
+    dateOfBirth: 'Date of Birth',
+    studentSpsEmail: 'Student SPS Email',
+    studentPersonalEmail: 'Student Personal Email',
+    parent1Email: 'Parent 1 Email',
+    parent2Email: 'Parent 2 Email',
+    parent1FirstName: 'Parent 1 First Name',
+    parent1LastName: 'Parent 1 Last Name',
+    parent2FirstName: 'Parent 2 First Name',
+    parent2LastName: 'Parent 2 Last Name',
+    areAllFormsParentSigned: 'Are All Forms Parent Signed',
+    areAllFormsStudentSigned: 'Are All Forms Student Signed',
+    physicalCleared: 'Physical Cleared',
+    parent1EmailOnMailingList: 'Parent 1 Email On Mailing List?',
+    parent2EmailOnMailingList: 'Parent 2 Email On Mailing List?',
+    studentPersonalEmailOnMailingList: 'Student Personal Email On Mailing List?'
   }
 };
 
@@ -618,6 +645,7 @@ function createCustomMenu() {
     .addItem('📧 Update Mailing List', 'updateMailingList')
     .addSeparator()
     .addItem('🏗️ Build Custom Sheet', 'buildCustomSheet')
+    .addItem('🏅 Build Practice Roster', 'buildPracticeRoster')
     .addItem('🎨 Format Spruce Up', 'formatSpruceUp')
     .addItem('🧹 Delete Empty Rows & Columns', 'deleteEmptyRowsAndColumns')
     .addItem('🏃 Build Practice Availability', 'buildPracticeAvailability')
