@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '99';
+const SCRIPT_VERSION = '102';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -650,6 +650,7 @@ function createCustomMenu() {
     .addItem('🧹 Delete Empty Rows & Columns', 'deleteEmptyRowsAndColumns')
     .addItem('🏃 Build Practice Availability', 'buildPracticeAvailability')
     .addItem('🎮 Build Game Availability', 'buildGameAvailability')
+    .addItem('✅ Convert to Actual Attendance', 'convertToActualAttendance')
     .addItem('📋 Organize Sheets', 'organizeSheets')
     .addSeparator()
     .addItem('📈 Show Statistics', 'showStatistics')
