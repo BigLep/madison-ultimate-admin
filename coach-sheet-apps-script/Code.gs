@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '108';
+const SCRIPT_VERSION = '112';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
@@ -76,6 +76,17 @@ const CONFIG = {
     parent1EmailOnMailingList: 'Parent 1 Email On Mailing List?',
     parent2EmailOnMailingList: 'Parent 2 Email On Mailing List?',
     studentPersonalEmailOnMailingList: 'Student Personal Email On Mailing List?'
+  },
+
+  // Shared base column structure for roster printouts (Practice Roster and Game Roster Prep)
+  rosterPrintoutBaseColumns: {
+    // Base columns (always present) - # | Full Name | Team | Gender | Grade
+    number: { name: '#', index: 1 },
+    fullName: { name: 'Full Name', index: 2 },
+    team: { name: 'Team', index: 3 },
+    gender: { name: 'Gender', index: 4 },
+    grade: { name: 'Grade', index: 5 }
+    // Additional columns (availability, notes) are added dynamically after these base columns
   }
 };
 
@@ -646,6 +657,7 @@ function createCustomMenu() {
     .addSeparator()
     .addItem('🏗️ Build Custom Sheet', 'buildCustomSheet')
     .addItem('🏅 Build Practice Roster', 'buildPracticeRoster')
+    .addItem('🏆 Build Game Roster Prep Sheet', 'buildGameRosterPrepSheet')
     .addItem('🎨 Format Spruce Up', 'formatSpruceUp')
     .addItem('🧹 Delete Empty Rows & Columns', 'deleteEmptyRowsAndColumns')
     .addItem('🏃 Build Practice Availability', 'buildPracticeAvailability')
