@@ -292,21 +292,10 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     const newSheet = ss.insertSheet(sheetName);
     console.log(`✅ Created new sheet: "${sheetName}"`);
     
-    // Define column structure (# column first, then Full Name)
-    const headers = ['#', 'Full Name', 'Grade', 'Gender', 'Team', 'Availability', 'Availability Note'];
-    
-    // Set up headers
-    const headerRange = newSheet.getRange(1, 1, 1, headers.length);
-    headerRange.setValues([headers]);
-    headerRange.setFontWeight('bold');
-    headerRange.setBackground('#4285f4');
-    headerRange.setFontColor('white');
-    
-    console.log(`📝 Set up ${headers.length} column headers`);
-    
     // Get source sheets
     const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
     const practiceAvailabilitySheet = ss.getSheetByName('Practice Availability');
+    const gameAvailabilitySheet = ss.getSheetByName('Game Availability');
     
     if (!rosterSheet) {
       throw new Error('Roster sheet not found');
@@ -323,6 +312,33 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
       throw new Error(`Practice date "${practiceDate}" not found in Practice Availability sheet`);
     }
     
+    // Find the next game date after this practice
+    const nextGameInfo = findNextGameAfterPractice(ss, practiceDate);
+    
+    // Define column structure with dynamic names
+    const headers = ['#', 'Full Name', 'Grade', 'Gender', 'Team', practiceDate, `${practiceDate} Note`];
+    
+    // Add next game columns if found
+    if (nextGameInfo) {
+      headers.push(nextGameInfo.formattedDate);
+      headers.push(`${nextGameInfo.formattedDate} Note`);
+    }
+    
+    // Set up headers
+    const headerRange = newSheet.getRange(1, 1, 1, headers.length);
+    headerRange.setValues([headers]);
+    headerRange.setFontWeight('bold');
+    headerRange.setBackground('#4285f4');
+    headerRange.setFontColor('white');
+    
+    console.log(`📝 Set up ${headers.length} column headers: ${headers.join(', ')}`);
+    
+    if (nextGameInfo) {
+      console.log(`🎮 Next game found: ${nextGameInfo.formattedDate}`);
+    } else {
+      console.log('🎮 No next game found after this practice');
+    }
+    
     console.log(`📍 Found availability columns: ${availColumns.availabilityColumn} and ${availColumns.noteColumn || 'none'}`);
     
     // Copy Full Name column to column B (column 2) from roster using shared utility
@@ -333,7 +349,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     const nonEmptyFullNames = {length: fullNameInfo.rowCount}; // For backward compatibility
     
     // Populate other columns with XLOOKUP formulas
-    populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, practiceAvailabilitySheet, availColumns, fullNameInfo.rowCount);
+    populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, practiceAvailabilitySheet, availColumns, fullNameInfo.rowCount, gameAvailabilitySheet, nextGameInfo);
     
     // Copy formatting from roster using shared utility
     console.log('🎨 Copying column formatting...');
@@ -390,12 +406,26 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     // Auto-resize specific columns
     console.log('📏 Auto-resizing columns...');
     newSheet.autoResizeColumn(1); // # column
-    newSheet.autoResizeColumn(6); // Availability column
+    newSheet.autoResizeColumn(6); // Practice availability column
+    if (nextGameInfo) {
+      newSheet.autoResizeColumn(8); // Next game availability column
+    }
     
-    // Enable text wrapping for Availability Note column (column 7)
-    console.log('📝 Enabling text wrap for Availability Note column...');
-    const noteColumnRange = newSheet.getRange(2, 7, fullNameInfo.rowCount, 1);
-    noteColumnRange.setWrap(true);
+    // Enable text wrapping for note columns
+    console.log('📝 Enabling text wrap for note columns...');
+    // Practice note column (column 7)
+    const practiceNoteRange = newSheet.getRange(2, 7, fullNameInfo.rowCount, 1);
+    practiceNoteRange.setWrap(true);
+    
+    // Next game note column (column 9) if it exists
+    if (nextGameInfo) {
+      const gameNoteRange = newSheet.getRange(2, 9, fullNameInfo.rowCount, 1);
+      gameNoteRange.setWrap(true);
+    }
+    
+    // Set print settings
+    console.log('🖨️ Configuring print settings...');
+    configurePrintSettings(newSheet);
     
     console.log(`✅ Practice roster "${sheetName}" created successfully`);
     
@@ -421,57 +451,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
  * @return {Object} Object with availabilityColumn and noteColumn letters
  */
 function findPracticeAvailabilityColumns(practiceAvailabilitySheet, practiceDate) {
-  const headerRow = practiceAvailabilitySheet.getRange(1, 1, 1, practiceAvailabilitySheet.getLastColumn()).getValues()[0];
-  
-  let availabilityColumn = null;
-  let noteColumn = null;
-  
-  console.log(`🔍 Looking for practice date "${practiceDate}" in Practice Availability headers...`);
-  
-  headerRow.forEach((header, index) => {
-    let headerStr = '';
-    
-    // Handle both Date objects and strings
-    if (header instanceof Date) {
-      // Convert Date object to M/D format
-      const month = header.getMonth() + 1;
-      const day = header.getDate();
-      headerStr = `${month}/${day}`;
-      console.log(`📅 Column ${index + 1}: Date object converted to "${headerStr}"`);
-    } else {
-      headerStr = header.toString().trim();
-      console.log(`📅 Column ${index + 1}: "${headerStr}"`);
-    }
-    
-    // Check for exact match with practice date
-    if (headerStr === practiceDate) {
-      availabilityColumn = getColumnLetter(index + 1);
-      console.log(`✅ Found availability column: ${availabilityColumn} (${headerStr})`);
-    }
-    
-    // Check for note column (date + " Note")
-    if (headerStr === `${practiceDate} Note`) {
-      noteColumn = getColumnLetter(index + 1);
-      console.log(`✅ Found note column: ${noteColumn} (${headerStr})`);
-    }
-  });
-  
-  if (!availabilityColumn) {
-    console.error(`❌ Practice date "${practiceDate}" not found in Practice Availability sheet`);
-    console.log(`Available headers: ${headerRow.map((h, i) => {
-      if (h instanceof Date) {
-        const m = h.getMonth() + 1;
-        const d = h.getDate();
-        return `${m}/${d}`;
-      }
-      return h.toString().trim();
-    }).join(', ')}`);
-  }
-  
-  return {
-    availabilityColumn: availabilityColumn,
-    noteColumn: noteColumn
-  };
+  return findAvailabilityColumns(practiceAvailabilitySheet, practiceDate, 'Practice Availability');
 }
 
 /**
@@ -482,8 +462,10 @@ function findPracticeAvailabilityColumns(practiceAvailabilitySheet, practiceDate
  * @param {Sheet} practiceAvailabilitySheet - The practice availability sheet
  * @param {Object} availColumns - Availability column letters
  * @param {number} numRows - Number of data rows
+ * @param {Sheet} gameAvailabilitySheet - The game availability sheet (optional)
+ * @param {Object} nextGameInfo - Next game information (optional)
  */
-function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, practiceAvailabilitySheet, availColumns, numRows) {
+function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, practiceAvailabilitySheet, availColumns, numRows, gameAvailabilitySheet = null, nextGameInfo = null) {
   if (numRows === 0) return;
   
   const rosterSheetName = CONFIG.roster.sheetName;
@@ -547,14 +529,40 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
     console.log(`✅ Populated Availability column with XLOOKUP`);
   }
   
-  // Column 7: Availability Note
+  // Column 7: Practice Availability Note
   if (availColumns.noteColumn) {
     const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!A:A,'${practiceAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
     newSheet.getRange(2, 7).setFormula(formula);
     if (numRows > 1) {
       newSheet.getRange(2, 7).copyTo(newSheet.getRange(3, 7, numRows - 1, 1));
     }
-    console.log(`✅ Populated Availability Note column with XLOOKUP`);
+    console.log(`✅ Populated Practice Availability Note column with XLOOKUP`);
+  }
+  
+  // Add next game columns if available
+  if (nextGameInfo && gameAvailabilitySheet) {
+    const gameAvailSheetName = 'Game Availability';
+    const nextGameColumns = findGameAvailabilityColumns(gameAvailabilitySheet, nextGameInfo.formattedDate);
+    
+    // Column 8: Next Game Availability
+    if (nextGameColumns.availabilityColumn) {
+      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${nextGameColumns.availabilityColumn}:${nextGameColumns.availabilityColumn}),"")`;
+      newSheet.getRange(2, 8).setFormula(formula);
+      if (numRows > 1) {
+        newSheet.getRange(2, 8).copyTo(newSheet.getRange(3, 8, numRows - 1, 1));
+      }
+      console.log(`✅ Populated Next Game Availability column (${nextGameInfo.formattedDate}) with XLOOKUP`);
+    }
+    
+    // Column 9: Next Game Availability Note
+    if (nextGameColumns.noteColumn) {
+      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${nextGameColumns.noteColumn}:${nextGameColumns.noteColumn}),"")`;
+      newSheet.getRange(2, 9).setFormula(formula);
+      if (numRows > 1) {
+        newSheet.getRange(2, 9).copyTo(newSheet.getRange(3, 9, numRows - 1, 1));
+      }
+      console.log(`✅ Populated Next Game Availability Note column (${nextGameInfo.formattedDate} Note) with XLOOKUP`);
+    }
   }
 }
 
@@ -635,5 +643,143 @@ function sortPracticeRoster(sheet, numRows, numColumns) {
   ]);
   
   console.log('✅ Sorting complete');
+}
+
+/**
+ * Find the next game date after a given practice date
+ * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
+ * @param {string} practiceDate - Practice date in format "M/D"
+ * @return {Object|null} Next game info object or null if not found
+ */
+function findNextGameAfterPractice(ss, practiceDate) {
+  try {
+    // Get game dates from Game Info sheet
+    const gameDates = getDatesFromInfoSheet(ss, GAME_AVAILABILITY_CONFIG);
+    
+    if (gameDates.length === 0) {
+      console.log('No game dates found in Game Info sheet');
+      return null;
+    }
+    
+    // Parse practice date
+    const practiceDateParts = practiceDate.split('/');
+    const practiceMonth = parseInt(practiceDateParts[0]);
+    const practiceDay = parseInt(practiceDateParts[1]);
+    
+    // Create practice date object (assume current year)
+    const currentYear = new Date().getFullYear();
+    const practiceDateTime = new Date(currentYear, practiceMonth - 1, practiceDay);
+    
+    // Find the next game after this practice
+    for (const gameDate of gameDates) {
+      if (gameDate.date > practiceDateTime) {
+        console.log(`Found next game: ${gameDate.formattedDate} after practice ${practiceDate}`);
+        return gameDate;
+      }
+    }
+    
+    console.log(`No game found after practice ${practiceDate}`);
+    return null;
+    
+  } catch (error) {
+    console.error('Error finding next game after practice:', error);
+    return null;
+  }
+}
+
+/**
+ * Find the availability columns in Game Availability sheet for a specific date
+ * @param {Sheet} gameAvailabilitySheet - The Game Availability sheet
+ * @param {string} gameDate - Game date in format "M/D"
+ * @return {Object} Object with availabilityColumn and noteColumn letters
+ */
+function findGameAvailabilityColumns(gameAvailabilitySheet, gameDate) {
+  return findAvailabilityColumns(gameAvailabilitySheet, gameDate, 'Game Availability');
+}
+
+/**
+ * Shared function to find availability columns in any availability sheet for a specific date
+ * @param {Sheet} availabilitySheet - The availability sheet to search
+ * @param {string} dateString - Date in format "M/D"
+ * @param {string} sheetType - Type of sheet for logging (e.g., 'Practice Availability', 'Game Availability')
+ * @return {Object} Object with availabilityColumn and noteColumn letters
+ */
+function findAvailabilityColumns(availabilitySheet, dateString, sheetType) {
+  const headerRow = availabilitySheet.getRange(1, 1, 1, availabilitySheet.getLastColumn()).getValues()[0];
+  
+  let availabilityColumn = null;
+  let noteColumn = null;
+  
+  console.log(`🔍 Looking for date "${dateString}" in ${sheetType} headers...`);
+  
+  headerRow.forEach((header, index) => {
+    let headerStr = '';
+    
+    // Handle both Date objects and strings
+    if (header instanceof Date) {
+      // Convert Date object to M/D format
+      const month = header.getMonth() + 1;
+      const day = header.getDate();
+      headerStr = `${month}/${day}`;
+      console.log(`📅 Column ${index + 1}: Date object converted to "${headerStr}"`);
+    } else {
+      headerStr = header.toString().trim();
+      console.log(`📅 Column ${index + 1}: "${headerStr}"`);
+    }
+    
+    // Check for exact match with date
+    if (headerStr === dateString) {
+      availabilityColumn = getColumnLetter(index + 1);
+      console.log(`✅ Found availability column: ${availabilityColumn} (${headerStr})`);
+    }
+    
+    // Check for note column (date + " Note")
+    if (headerStr === `${dateString} Note`) {
+      noteColumn = getColumnLetter(index + 1);
+      console.log(`✅ Found note column: ${noteColumn} (${headerStr})`);
+    }
+  });
+  
+  if (!availabilityColumn) {
+    console.error(`❌ Date "${dateString}" not found in ${sheetType} sheet`);
+    console.log(`Available headers: ${headerRow.map((h, i) => {
+      if (h instanceof Date) {
+        const m = h.getMonth() + 1;
+        const d = h.getDate();
+        return `${m}/${d}`;
+      }
+      return h.toString().trim();
+    }).join(', ')}`);
+  }
+  
+  return {
+    availabilityColumn: availabilityColumn,
+    noteColumn: noteColumn
+  };
+}
+
+/**
+ * Configure print settings for practice roster sheets
+ * @param {Sheet} sheet - The practice roster sheet to configure
+ */
+function configurePrintSettings(sheet) {
+  try {
+    // Set print margins (in inches)
+    sheet.setMargins(
+      0.75,  // top margin
+      0.25,  // bottom margin
+      0.25,  // left margin
+      0.25   // right margin
+    );
+    
+    console.log('✅ Print margins configured: top=0.75", bottom=0.25", left=0.25", right=0.25"');
+    
+    // Note: Page orientation, scale, and alignment settings require manual configuration
+    // in Google Sheets UI (File > Page setup) as they are not available via Apps Script API
+    console.log('ℹ️ For optimal printing, manually set: Portrait orientation, Fit to height, Left/Top alignment');
+    
+  } catch (error) {
+    console.warn('Could not configure print settings:', error);
+  }
 }
 
