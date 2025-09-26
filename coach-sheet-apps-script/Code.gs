@@ -11,8 +11,8 @@
  * 6. Grant permissions when prompted
  */
 
-// Script Version - Increment this number when making changes  
-const SCRIPT_VERSION = '105';
+// Script Version - Increment this number when making changes
+const SCRIPT_VERSION = '108';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)

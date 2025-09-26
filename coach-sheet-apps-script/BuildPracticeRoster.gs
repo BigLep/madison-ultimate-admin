@@ -84,7 +84,7 @@ function showPracticeDateSelectionDialog(practiceDates, defaultIndex) {
 function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
   const defaultDate = practiceDates[defaultIndex].formattedDate;
   const defaultSheetName = `${defaultDate} Roster`;
-  
+
   // Create dropdown options
   const dateOptions = practiceDates.map((pd, index) => {
     const selected = index === defaultIndex ? 'selected' : '';
@@ -112,13 +112,20 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             color: #202124;
             font-size: 14px;
           }
-          select, input[type="text"] {
-            width: 100%;
+          select, input[type="text"], input[type="radio"] {
             padding: 10px;
             border: 1px solid #dadce0;
             border-radius: 4px;
             font-size: 14px;
             box-sizing: border-box;
+          }
+          select, input[type="text"] {
+            width: 100%;
+          }
+          input[type="radio"] {
+            width: auto;
+            margin-right: 8px;
+            padding: 0;
           }
           select:focus, input[type="text"]:focus {
             outline: none;
@@ -128,6 +135,15 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             font-size: 12px;
             color: #5f6368;
             margin-top: 5px;
+          }
+          .radio-group {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+          }
+          .radio-option {
+            display: flex;
+            align-items: center;
           }
           .buttons {
             display: flex;
@@ -191,67 +207,189 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
           }
+          .hidden {
+            display: none;
+          }
         </style>
       </head>
       <body>
         <div class="form-group">
           <label for="practiceDate">Select Practice Date:</label>
-          <select id="practiceDate" onchange="updateSheetName()">
+          <select id="practiceDate" onchange="updateTargetSheet()">
             ${dateOptions}
           </select>
           <div class="note">Choose the practice date for this roster</div>
         </div>
-        
+
         <div class="form-group">
+          <label>Action:</label>
+          <div class="radio-group">
+            <div class="radio-option">
+              <input type="radio" id="actionCreate" name="action" value="create" checked onchange="toggleActionFields()">
+              <label for="actionCreate" style="margin-bottom: 0;">Create New Sheet</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="actionUpdate" name="action" value="update" onchange="toggleActionFields()">
+              <label for="actionUpdate" style="margin-bottom: 0;">Update Existing Sheet</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" id="newSheetGroup">
           <label for="sheetName">Sheet Name:</label>
           <input type="text" id="sheetName" value="${defaultSheetName}">
           <div class="note">Name for the new practice roster sheet</div>
         </div>
-        
+
+        <div class="form-group hidden" id="existingSheetGroup">
+          <label for="existingSheet">Select Sheet to Update:</label>
+          <select id="existingSheet">
+            <option value="">Loading sheets...</option>
+          </select>
+          <div class="note">Choose an existing sheet to update with new data</div>
+        </div>
+
         <div class="buttons">
-          <button class="btn btn-primary" onclick="createRoster()">Create Roster</button>
+          <button class="btn btn-primary" onclick="processRoster()" id="actionButton">Create Roster</button>
           <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
         </div>
-        
+
         <div class="progress-overlay" id="progressOverlay">
           <div class="progress-content">
             <div class="spinner"></div>
-            <div style="font-size: 16px; font-weight: bold; color: #333;">
+            <div style="font-size: 16px; font-weight: bold; color: #333;" id="progressTitle">
               Building Practice Roster...
             </div>
-            <div style="font-size: 14px; color: #666; margin-top: 8px;">
+            <div style="font-size: 14px; color: #666; margin-top: 8px;" id="progressMessage">
               Please wait while we create your roster
             </div>
           </div>
         </div>
-        
+
         <script>
-          function updateSheetName() {
+          let activeSheetName = '';
+
+          // Load existing sheets and restore last selection on page load
+          window.onload = function() {
+            loadActiveSheetName();
+            loadExistingSheets();
+            restoreLastSelection();
+          };
+
+          function loadActiveSheetName() {
+            google.script.run
+              .withSuccessHandler(function(sheetName) {
+                activeSheetName = sheetName;
+                console.log('Active sheet:', activeSheetName);
+              })
+              .withFailureHandler(function(error) {
+                console.error('Failed to get active sheet name:', error);
+              })
+              .getActiveSheetName();
+          }
+
+          function loadExistingSheets() {
+            google.script.run
+              .withSuccessHandler(function(sheets) {
+                const select = document.getElementById('existingSheet');
+                select.innerHTML = '<option value="">Select a sheet...</option>';
+                sheets.forEach(sheet => {
+                  const option = document.createElement('option');
+                  option.value = sheet;
+                  option.textContent = sheet;
+                  select.appendChild(option);
+                });
+              })
+              .withFailureHandler(function(error) {
+                console.error('Failed to load sheets:', error);
+                document.getElementById('existingSheet').innerHTML = '<option value="">Error loading sheets</option>';
+              })
+              .getPracticeRosterSheets();
+          }
+
+          function restoreLastSelection() {
+            const lastSheet = localStorage.getItem('lastPracticeRosterSheet');
+            const lastAction = localStorage.getItem('lastPracticeRosterAction');
+
+            if (lastAction === 'update') {
+              document.getElementById('actionUpdate').checked = true;
+              toggleActionFields();
+
+              if (lastSheet) {
+                // Wait a bit for sheets to load, then select
+                setTimeout(() => {
+                  const select = document.getElementById('existingSheet');
+                  if (select.querySelector(\`option[value="\${lastSheet}"]\`)) {
+                    select.value = lastSheet;
+                  }
+                }, 500);
+              }
+            }
+          }
+
+          function toggleActionFields() {
+            const isCreate = document.getElementById('actionCreate').checked;
+            const newSheetGroup = document.getElementById('newSheetGroup');
+            const existingSheetGroup = document.getElementById('existingSheetGroup');
+            const actionButton = document.getElementById('actionButton');
+
+            if (isCreate) {
+              newSheetGroup.classList.remove('hidden');
+              existingSheetGroup.classList.add('hidden');
+              actionButton.textContent = 'Create Roster';
+            } else {
+              newSheetGroup.classList.add('hidden');
+              existingSheetGroup.classList.remove('hidden');
+              actionButton.textContent = 'Update Roster';
+
+              // When switching to update mode, default to active sheet if available
+              const select = document.getElementById('existingSheet');
+              if (activeSheetName && select.querySelector(\`option[value="\${activeSheetName}"]\`)) {
+                select.value = activeSheetName;
+              }
+            }
+          }
+
+          function updateTargetSheet() {
             const practiceDate = document.getElementById('practiceDate').value;
             document.getElementById('sheetName').value = practiceDate + ' Roster';
           }
-          
-          function createRoster() {
+
+          function processRoster() {
             const practiceDate = document.getElementById('practiceDate').value;
+            const isCreate = document.getElementById('actionCreate').checked;
+
+            if (isCreate) {
+              createNewRoster(practiceDate);
+            } else {
+              updateExistingRoster(practiceDate);
+            }
+          }
+
+          function createNewRoster(practiceDate) {
             const sheetName = document.getElementById('sheetName').value.trim();
-            
+
             if (!sheetName) {
               alert('Please enter a sheet name');
               return;
             }
-            
+
             // Show progress
-            document.getElementById('progressOverlay').style.display = 'block';
-            
+            showProgress('Creating Practice Roster...', 'Please wait while we create your roster');
+
+            // Save action to localStorage
+            localStorage.setItem('lastPracticeRosterAction', 'create');
+            localStorage.setItem('lastPracticeRosterSheet', sheetName);
+
             // Check for duplicate sheet name first
             google.script.run
               .withSuccessHandler(function(isDuplicate) {
                 if (isDuplicate) {
-                  document.getElementById('progressOverlay').style.display = 'none';
+                  hideProgress();
                   alert('Sheet name "' + sheetName + '" already exists. Please choose a different name.');
                   return;
                 }
-                
+
                 // If not duplicate, create the roster
                 google.script.run
                   .withSuccessHandler(onSuccess)
@@ -261,20 +399,197 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
               .withFailureHandler(onFailure)
               .isSheetNameDuplicate(sheetName);
           }
-          
-          function onSuccess(message) {
+
+          function updateExistingRoster(practiceDate) {
+            const existingSheet = document.getElementById('existingSheet').value;
+
+            if (!existingSheet) {
+              alert('Please select a sheet to update');
+              return;
+            }
+
+            // Show progress
+            showProgress('Updating Practice Roster...', 'Please wait while we update your roster');
+
+            // Save action and sheet to localStorage
+            localStorage.setItem('lastPracticeRosterAction', 'update');
+            localStorage.setItem('lastPracticeRosterSheet', existingSheet);
+
+            // Update the existing roster
+            google.script.run
+              .withSuccessHandler(onSuccess)
+              .withFailureHandler(onFailure)
+              .updatePracticeRosterSheet(existingSheet, practiceDate);
+          }
+
+          function showProgress(title, message) {
+            document.getElementById('progressTitle').textContent = title;
+            document.getElementById('progressMessage').textContent = message;
+            document.getElementById('progressOverlay').style.display = 'block';
+          }
+
+          function hideProgress() {
             document.getElementById('progressOverlay').style.display = 'none';
+          }
+
+          function onSuccess(message) {
+            hideProgress();
             google.script.host.close();
           }
-          
+
           function onFailure(error) {
-            document.getElementById('progressOverlay').style.display = 'none';
+            hideProgress();
             alert('Error: ' + error.message);
           }
         </script>
       </body>
     </html>
   `;
+}
+
+/**
+ * Get all existing practice roster sheets for the dropdown
+ * @return {Array} Array of sheet names that look like practice rosters
+ */
+function getPracticeRosterSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+
+  // Filter for sheets that look like practice rosters (contain "Roster" in name)
+  const practiceRosterSheets = sheets
+    .map(sheet => sheet.getName())
+    .filter(name => name.toLowerCase().includes('roster'))
+    .sort();
+
+  console.log(`Found ${practiceRosterSheets.length} potential practice roster sheets`);
+  return practiceRosterSheets;
+}
+
+/**
+ * Get the name of the currently active sheet
+ * @return {string} Name of the active sheet
+ */
+function getActiveSheetName() {
+  const activeSheet = SpreadsheetApp.getActiveSheet();
+  return activeSheet.getName();
+}
+
+/**
+ * Update an existing practice roster sheet with new data (content only, preserve formatting)
+ * @param {string} sheetName - Name of the existing sheet to update
+ * @param {string} practiceDate - Practice date in format "M/D"
+ */
+function updatePracticeRosterSheet(sheetName, practiceDate) {
+  console.log(`🔄 Updating existing practice roster sheet: "${sheetName}" for date: ${practiceDate}`);
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const existingSheet = ss.getSheetByName(sheetName);
+
+    if (!existingSheet) {
+      throw new Error(`Sheet "${sheetName}" not found`);
+    }
+
+    // Get source sheets
+    const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+    const practiceAvailabilitySheet = ss.getSheetByName('Practice Availability');
+    const gameAvailabilitySheet = ss.getSheetByName('Game Availability');
+
+    if (!rosterSheet) {
+      throw new Error('Roster sheet not found');
+    }
+
+    if (!practiceAvailabilitySheet) {
+      throw new Error('Practice Availability sheet not found');
+    }
+
+    // Find the availability columns for this practice date
+    const availColumns = findPracticeAvailabilityColumns(practiceAvailabilitySheet, practiceDate);
+
+    if (!availColumns.availabilityColumn) {
+      throw new Error(`Practice date "${practiceDate}" not found in Practice Availability sheet`);
+    }
+
+    // Find the next game date after this practice
+    const nextGameInfo = findNextGameAfterPractice(ss, practiceDate);
+
+    // Clear content from data area only (preserve headers and formatting)
+    console.log('🧹 Clearing existing content while preserving formatting...');
+    const lastRow = existingSheet.getLastRow();
+    const lastColumn = existingSheet.getLastColumn();
+
+    if (lastRow > 1 && lastColumn > 0) {
+      // Clear content starting from row 2 (preserve header row)
+      const dataRange = existingSheet.getRange(2, 1, lastRow - 1, lastColumn);
+      dataRange.clearContent();
+
+      // Clear borders from data area (but preserve other formatting)
+      console.log('🧹 Clearing existing borders...');
+      dataRange.setBorder(false, false, false, false, false, false);
+    }
+
+    // Update headers with new dates (in case the practice date changed)
+    const headers = ['#', 'Full Name', 'Grade', 'Gender', 'Team', practiceDate, `${practiceDate} Note`];
+
+    // Add next game columns if found
+    if (nextGameInfo) {
+      headers.push(nextGameInfo.formattedDate);
+      headers.push(`${nextGameInfo.formattedDate} Note`);
+    }
+
+    // Update header row (preserve formatting but update text)
+    const headerRange = existingSheet.getRange(1, 1, 1, headers.length);
+    headerRange.setValues([headers]);
+
+    console.log(`📝 Updated ${headers.length} column headers: ${headers.join(', ')}`);
+
+    if (nextGameInfo) {
+      console.log(`🎮 Next game found: ${nextGameInfo.formattedDate}`);
+    } else {
+      console.log('🎮 No next game found after this practice');
+    }
+
+    // Populate with fresh data using existing functions
+    const fullNameInfo = copyFullNameColumnToColumn(existingSheet, rosterSheet, 2, 2);
+    console.log(`📊 Copied ${fullNameInfo.rowCount} students from roster`);
+
+    if (fullNameInfo.rowCount > 0) {
+      const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
+
+      // Populate other columns with XLOOKUP formulas
+      populatePracticeRosterData(existingSheet, rosterSheet, rosterHeaderRow, practiceAvailabilitySheet, availColumns, fullNameInfo.rowCount, gameAvailabilitySheet, nextGameInfo);
+
+      // Force recalculation to ensure formulas are evaluated before sorting
+      SpreadsheetApp.flush();
+
+      // Sort the data AFTER formulas have been calculated
+      sortPracticeRoster(existingSheet, fullNameInfo.rowCount, headers.length);
+
+      // Populate # column AFTER sorting (so the formula references are correct)
+      populateNumberColumn(existingSheet, fullNameInfo.rowCount);
+
+      // Force calculation of # column formulas before adding borders
+      SpreadsheetApp.flush();
+
+      // Add borders at group changes (where # = 1)
+      addGroupBorders(existingSheet, fullNameInfo.rowCount);
+    }
+
+    console.log(`✅ Practice roster "${sheetName}" updated successfully`);
+
+    // Show success alert
+    SpreadsheetApp.getUi().alert(
+      'Practice Roster Updated!',
+      `Successfully updated practice roster "${sheetName}" for ${practiceDate} with ${fullNameInfo.rowCount} students.\n\nFormatting and layout preserved.`,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+
+    return 'Success';
+
+  } catch (error) {
+    console.error('Error updating practice roster sheet:', error);
+    throw new Error(`Failed to update practice roster: ${error.message}`);
+  }
 }
 
 /**
