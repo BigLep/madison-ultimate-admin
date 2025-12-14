@@ -25,22 +25,22 @@ function copyFullNameColumn(targetSheet, rosterSheet, startRow = 2) {
 function copyFullNameColumnToColumn(targetSheet, rosterSheet, startRow, targetColumn) {
   const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
   const fullNameColIndex = rosterHeaderRow.findIndex(name => name === CONFIG.columns.fullName);
-  
+
   if (fullNameColIndex === -1) {
     throw new Error(`${CONFIG.columns.fullName} column not found in roster sheet`);
   }
-  
+
   const rosterDataRange = rosterSheet.getRange(FIRST_DATA_ROW, fullNameColIndex + 1, rosterSheet.getLastRow() - FIRST_DATA_ROW + 1, 1);
   const fullNameValues = rosterDataRange.getValues();
-  
+
   const nonEmptyFullNames = fullNameValues.filter(row => row[0] && row[0].toString().trim() !== '');
-  
+
   if (nonEmptyFullNames.length === 0) {
     throw new Error('No student data found in roster');
   }
-  
+
   targetSheet.getRange(startRow, targetColumn, nonEmptyFullNames.length, 1).setValues(nonEmptyFullNames);
-  
+
   return {
     fullNameColIndex: fullNameColIndex,
     rowCount: nonEmptyFullNames.length

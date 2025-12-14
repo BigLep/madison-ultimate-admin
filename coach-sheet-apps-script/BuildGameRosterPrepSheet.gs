@@ -773,21 +773,21 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
       console.log('✅ Sorting complete');
     }
 
-    // Apply filter to hide Practice Squad
-    console.log('🔍 Applying filter to hide Practice Squad...');
+    // Apply filter to hide Practice Squad and Dropped
+    console.log('🔍 Applying filter to hide Practice Squad and Dropped...');
     const fullDataRange = newSheet.getRange(1, 1, fullNameInfo.rowCount + 1, 3);
 
     // Create filter
     const filter = fullDataRange.createFilter();
 
-    // Create criteria to hide "Practice Squad"
+    // Create criteria to hide "Practice Squad" and "Dropped"
     const criteria = SpreadsheetApp.newFilterCriteria()
-      .setHiddenValues(['Practice Squad'])
+      .setHiddenValues(['Practice Squad', 'Dropped'])
       .build();
 
     // Apply the criteria to the Team column (column 3)
     filter.setColumnFilterCriteria(3, criteria);
-    console.log('✅ Filter applied - Practice Squad hidden');
+    console.log('✅ Filter applied - Practice Squad and Dropped hidden');
 
     // Apply conditional formatting for availability column
     if (fullNameInfo.rowCount > 0) {
@@ -813,7 +813,7 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
     // Show success alert
     SpreadsheetApp.getUi().alert(
       'Parent Game Roster Created!',
-      `Successfully created parent game roster for ${gameDate} with ${fullNameInfo.rowCount} students.\n\nSorted alphabetically by name with color-coded availability.\nPractice Squad players are hidden (filter applied).`,
+      `Successfully created parent game roster for ${gameDate} with ${fullNameInfo.rowCount} students.\n\nSorted alphabetically by name with color-coded availability.\nPractice Squad and Dropped players are hidden (filter applied).`,
       SpreadsheetApp.getUi().ButtonSet.OK
     );
 
