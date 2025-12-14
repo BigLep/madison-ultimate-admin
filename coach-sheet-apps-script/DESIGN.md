@@ -1,7 +1,9 @@
 # Madison Middle School Ultimate Frisbee Roster System - Design Document
 
 ## Project Overview
-This is a Google Sheets-based roster management system for the Madison Middle School Ultimate Frisbee team (Fall 2025 season). The system combines data from multiple sources to create a comprehensive team roster with 50-100 players in grades 6-8.
+This is a Google Sheets-based roster management system for the Madison Middle School Ultimate Frisbee team. The system combines data from multiple sources to create a comprehensive team roster with 50-100 players in grades 6-8.
+
+**Seasons:** Fall 2025 (initial development), ready for future seasons
 
 ## Key Stakeholder
 - **Coach/Admin**: Manages the team roster, experienced in software engineering but not proficient in pandas/spreadsheets
@@ -104,23 +106,61 @@ This is a Google Sheets-based roster management system for the Madison Middle Sc
 
 ## Technical Implementation
 
-### Google Apps Script Functions
+### Google Apps Script Files
 
-#### Core Functions
-- **`generateRoster()`** - Main function to build/rebuild the roster with all formulas
-- **`clearRosterData()`** - Clears rows 6+ while preserving metadata
-- **`clearRosterFormatting()`** - Removes all formatting, conditional formatting, etc.
+The script is organized into multiple `.gs` files:
+- **`Code.gs`** - Main entry point, menu creation, core roster functions
+- **`Availability.gs`** - Practice and game availability sheet builders
+- **`BuildPracticeRoster.gs`** - Practice roster sheet generation
+- **`BuildGameRosterPrepSheet.gs`** - Game day roster preparation sheets
+- **`BuildEmailList.gs`** - Email list generation for parent communication
+- **`SheetBuilder.gs`** - Custom sheet builder utility
+- **`SheetBuilderUtils.gs`** - Shared utilities for sheet builders
+- **`AdditionalInfoAnalysis.gs`** - Analysis of questionnaire responses
+- **`ConvertToAttendance.gs`** - Convert availability to actual attendance
+- **`FormatSpruceUp.gs`** - Sheet formatting utilities
+- **`DeleteEmptyRowsColumns.gs`** - Cleanup utilities
+- **`OrganizeSheets.gs`** - Sheet tab organization
+- **`FullNameDiff.gs`** - Name matching analysis
 
-#### Data Update Functions
-- **`updateFinalForms()`** - Refreshes Final Forms CSV import
-- **`updateMailingList()`** - Refreshes Mailing List CSV import
-- **`refreshAllData()`** - Updates both CSV sources (Additional Info auto-updates via IMPORTRANGE)
+### Menu Functions (🥏 Madison Ultimate)
 
-#### Utility Functions
-- **`showStatistics()`** - Displays roster completion statistics
-- **`getColumnLetter(columnNumber)`** - Converts column number to letter(s) for formulas
-- **`createCustomMenu()`** - Creates the "🥏 Madison Ultimate" menu
-- **`onOpen()`** - Auto-creates menu when sheet opens
+#### Roster Management
+- **`generateRoster()`** - Build/rebuild roster with XLOOKUP formulas
+- **`clearRosterData()`** - Clear data rows while preserving metadata and Manual/Formula columns
+- **`refreshAllData()`** - Update all CSV data sources
+
+#### Data Import
+- **`updateFinalForms()`** - Import latest Final Forms CSV (auto-discovers most recent file)
+- **`updateMailingList()`** - Import latest Mailing List CSV (auto-discovers most recent file)
+
+#### Sheet Builders
+- **`buildCustomSheet()`** - Interactive custom sheet builder
+- **`buildPracticeRoster()`** - Create/update practice roster with availability
+- **`buildGameRosterPrepSheet()`** - Create game day roster (coach or parent view)
+- **`buildEmailList()`** - Generate email lists for parent communication
+- **`buildPracticeAvailability()`** - Create practice availability tracking sheet
+- **`buildGameAvailability()`** - Create game availability tracking sheet
+
+#### Analysis & Utilities
+- **`showStatistics()`** - Display roster completion statistics
+- **`findMissingEmails()`** - Find emails not on mailing list
+- **`findPendingParents()`** - Find parents who haven't joined mailing list
+- **`analyzeAdditionalInfoResponses()`** - Analyze questionnaire response matching
+- **`fullNameDiff()`** - Compare names across data sources
+
+#### Formatting & Cleanup
+- **`formatSpruceUp()`** - Apply consistent formatting
+- **`deleteEmptyRowsAndColumns()`** - Remove empty rows/columns
+- **`convertToActualAttendance()`** - Convert availability to attendance
+- **`organizeSheets()`** - Organize sheet tab order
+
+#### Internal Utilities
+- **`getColumnLetter(columnNumber)`** - Convert column number to letter(s)
+- **`createCustomMenu()`** - Create the menu
+- **`onOpen()`** - Auto-create menu on sheet open
+- **`validateRosterMetadata()`** - Validate script/sheet metadata sync
+- **`findMostRecentCsvFile()`** - Find latest CSV in a Drive folder
 
 ### Key Design Features
 
@@ -131,18 +171,12 @@ This is a Google Sheets-based roster management system for the Madison Middle Sc
 - New columns can be added anywhere
 
 #### 2. Join Logic
-- **Primary Key**: Player full name (First + Last)
-- **Fuzzy Matching**: Not implemented in sheets (would need Apps Script enhancement)
-- **Email Matching**: Used as fallback for Additional Info form
+- **Primary Key for Final Forms**: Student ID (XLOOKUP-based formulas)
+- **Primary Key for Additional Info**: Full Name column (manually maintained join key)
 - **Parent Email Exclusion**: Student personal email must not match parent emails
 
-#### 3. Boolean Logic for Mailing List
-```javascript
-IF(AND(
-  COUNTIF('Mailing List'!A:A, email) > 0,  // Email exists in list
-  INDEX('Mailing List'!F:F, MATCH(email, 'Mailing List'!A:A, 0)) = "allowed"  // Has posting permission
-), TRUE, FALSE)
-```
+#### 3. Mailing List Status
+Uses VLOOKUP to check membership status (returns "member", "invited", "not a member", etc.)
 
 #### 4. Gender Simplification
 - "Girl-Matching/Gx/Non-binary" → "Gx"
@@ -150,49 +184,89 @@ IF(AND(
 
 ### Formula Patterns
 
-#### Basic Field Import
+#### XLOOKUP with Student ID (Primary Pattern for Final Forms)
 ```javascript
-=IF(ROW()<6,"",IFERROR(INDEX('Final Forms'!D:D,ROW()-4),""))
+=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!D:D),"")
+// A6 = Student ID column (dynamically replaced at runtime)
 ```
 
 #### Conditional Field (SPS Email)
 ```javascript
-=IF(ROW()<6,"",IFERROR(IF(REGEXMATCH(INDEX('Final Forms'!F:F,ROW()-4),"@seattleschools\\.org"),INDEX('Final Forms'!F:F,ROW()-4),""),""))
+=IFERROR(IF(REGEXMATCH(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),"@seattleschools\\.org"),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),""),"")
 ```
 
-#### Lookup from Additional Info
+#### Lookup from Additional Info (using Full Name)
 ```javascript
-=IF(ROW()<6,"",IFERROR(INDEX('Additional Info'!C:C,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),""))
+=IFERROR(INDEX('Additional Info'!C:C,MATCH(E6,'Additional Info'!B:B,0)),"")
+// E6 = Full Name column (dynamically replaced at runtime)
 ```
+
+#### Mailing List Status Check
+```javascript
+=IFERROR(VLOOKUP(email,'Mailing List'!$A$3:$C,3,FALSE),"not a member")
+```
+
+**Note:** All column references (A6, E6, etc.) are placeholders that get replaced with actual column letters at runtime based on dynamic column discovery.
 
 ## Current File Structure
 
-### Local Files (in Claude's environment)
-- `/home/claude/madison_roster_final.gs` - The main Apps Script file
-- `/mnt/user-data/outputs/madison_roster_final.gs` - Copy for download
+### Repository Structure
+```
+madison-ultimate-admin/
+├── coach-sheet-apps-script/     # Google Apps Script files
+│   ├── Code.gs                  # Main script with core functions
+│   ├── Availability.gs          # Practice/game availability builders
+│   ├── BuildPracticeRoster.gs   # Practice roster generation
+│   ├── BuildGameRosterPrepSheet.gs # Game roster generation
+│   ├── BuildEmailList.gs        # Email list generation
+│   ├── SheetBuilder.gs          # Custom sheet builder
+│   ├── SheetBuilderUtils.gs     # Shared utilities
+│   ├── AdditionalInfoAnalysis.gs # Response analysis
+│   ├── ConvertToAttendance.gs   # Attendance conversion
+│   ├── FormatSpruceUp.gs        # Formatting utilities
+│   ├── DeleteEmptyRowsColumns.gs # Cleanup utilities
+│   ├── OrganizeSheets.gs        # Sheet organization
+│   ├── FullNameDiff.gs          # Name matching
+│   ├── appsscript.json          # Apps Script manifest
+│   ├── .clasp.json              # Clasp deployment config
+│   ├── CLAUDE.md                # Claude Code instructions
+│   ├── README.md                # Quick reference
+│   ├── DESIGN.md                # This document
+│   └── Initial Requirements.md  # Original requirements
+└── photo-mapper/                # Photo-to-player mapping tool
+    ├── frontend/                # NextJS React app
+    └── backend/                 # Flask Python API
+```
 
-### Related Documentation
-- `Roster_Columns.xlsx` - Original column specification from client
-- `2025_Fall_Coach_Sheets.xlsx` - Sample of generated roster for testing
+### Deployment
+Uses `clasp` for deployment to Google Apps Script:
+```bash
+clasp push  # Deploy changes (remember to increment SCRIPT_VERSION in Code.gs)
+```
 
 ## Known Issues and Limitations
 
-1. **No Fuzzy Matching** - Exact name matches only (could add Levenshtein distance in Apps Script)
+1. **No Fuzzy Matching** - Exact name matches only for Additional Info lookups
 2. **Manual Column Updates** - If new columns are added to source data, script needs updating
-3. **CSV File IDs** - Must manually update when new exports are created
-4. **Performance** - Large rosters (>150 students) may be slow to regenerate
+3. **Performance** - Large rosters (>150 students) may be slow to regenerate
+
+## Completed Enhancements (Fall 2025)
+
+- ✅ Automatic CSV file discovery (finds latest file by timestamp)
+- ✅ XLOOKUP-based formulas with Student ID as primary key
+- ✅ Practice and game availability tracking
+- ✅ Practice and game roster builders with multiple view options
+- ✅ Email list generation for parent communication
+- ✅ Mailing list status tracking (member/invited/not a member)
+- ✅ Additional Info response analysis
+- ✅ Sheet organization and formatting utilities
 
 ## Future Enhancements
 
-### High Priority
-1. Implement fuzzy name matching for better join accuracy
-2. Add automatic CSV file discovery (find latest by timestamp)
-3. Create a configuration sheet for easier maintenance
-
 ### Medium Priority
-1. Add data validation rules for manual entry fields
-2. Implement automatic archiving of old rosters
-3. Add email notification when roster is incomplete
+1. Implement fuzzy name matching for better Additional Info join accuracy
+2. Add data validation rules for manual entry fields
+3. Create a configuration sheet for easier maintenance
 
 ### Low Priority
 1. Create a dashboard sheet with charts
@@ -203,73 +277,80 @@ IF(AND(
 
 When modifying the system, verify:
 - [ ] Roster generates without errors
-- [ ] All 34 standard columns populate correctly
-- [ ] Boolean fields show TRUE/FALSE (not Yes/No)
-- [ ] Mailing list status shows TRUE for valid emails
-- [ ] Column reordering doesn't break formulas
-- [ ] Additional custom columns are preserved
+- [ ] Student ID column populates from Final Forms
+- [ ] XLOOKUP formulas pull correct data from Final Forms
+- [ ] Additional Info lookups work via Full Name
+- [ ] Mailing list status shows member/invited/not a member
+- [ ] Column reordering doesn't break formulas (dynamic positioning)
+- [ ] Manual and Formula source columns are preserved during clear
 - [ ] Statistics function shows accurate counts
-- [ ] Clear functions work as expected
+- [ ] Practice/Game roster builders work correctly
 - [ ] Gender identification shows Gx/Bx correctly
 
 ## Development Notes
 
-### Recent Changes (Sept 11, 2025)
-1. Changed from row 7 to row 6 for first data row
-2. Removed "END OF METADATA" marker
-3. Added repeated headers in row 5 for pivot tables
-4. Converted mailing list columns to TRUE/FALSE booleans
-5. Implemented dynamic column positioning
-6. Fixed apostrophe escaping in column names
+### Development History
+- **Sept 2025**: Initial development - basic roster with ROW()-based formulas
+- **Oct-Nov 2025**: XLOOKUP migration, Student ID as primary key, availability tracking
+- **Dec 2025**: Game roster builders, email list generation, parent roster views
 
 ### Key Decisions
 - **Why Google Sheets?** - Client preference, easy sharing, no infrastructure needed
 - **Why Apps Script?** - Native integration, no external dependencies
 - **Why metadata rows?** - Self-documenting, preserves context for future maintainers
 - **Why dynamic columns?** - Flexibility for coach to customize layout
+- **Why XLOOKUP with Student ID?** - Sort-safe formulas that don't break when roster is reordered
+- **Why Full Name as Additional Info join key?** - Google Form doesn't collect Student ID
 
 ## Contact and Context
 - **Team**: Madison Middle School Ultimate Frisbee
-- **Season**: Fall 2025
 - **Size**: 50-100 players
 - **Grades**: 6-8
-- **Previous Season Doc**: https://docs.google.com/document/d/1A2F7ThHtcMm23bxk8-30rMT2svaqT3gMbRWeSR_QXXY
+- **Season Planning Doc**: https://docs.google.com/document/d/1A2F7ThHtcMm23bxk8-30rMT2svaqT3gMbRWeSR_QXXY
 
 ## How to Resume Development
 
-1. **Load the Apps Script**: Copy `madison_roster_final.gs` to Google Apps Script editor
-2. **Test Current State**: Run `generateRoster()` to verify it works
-3. **Review Data Sources**: Check if CSV file IDs need updating
-4. **Check Column Mappings**: Verify all 34 columns still match source data
-5. **Test Your Changes**: Use the testing checklist above
+1. **Clone the repository** and navigate to `coach-sheet-apps-script/`
+2. **Login to clasp**: `clasp login` (if not already authenticated)
+3. **Push to test**: `clasp push` (remember to increment SCRIPT_VERSION in Code.gs)
+4. **Test in Google Sheets**: Open the spreadsheet and use the 🥏 Madison Ultimate menu
+5. **Review data sources**: CSV imports auto-discover the latest file by timestamp
+6. **Use the testing checklist** above to verify functionality
 
 ## Critical Implementation Details
 
-### Column Reference Updates
-When formulas reference other columns (like combining First + Last name), the script:
-1. Finds the current position of each referenced column
-2. Converts position to column letter
-3. Updates formula with actual positions
-
-Example:
+### Student ID as Primary Key
+All Final Forms data uses XLOOKUP with Student ID:
 ```javascript
-const firstNameCol = columnMap.get('First Name') || 1;
-const firstNameLetter = getColumnLetter(firstNameCol);
-formula = formula.replace(/A6/g, firstNameLetter + '6');
+=IFERROR(XLOOKUP(StudentID,'Final Forms'!A:A,'Final Forms'!D:D),"")
+```
+This ensures formulas work correctly regardless of row ordering.
+
+### Full Name as Additional Info Join Key
+Additional Info uses the "Full Name" column (manually maintained) as the join key:
+```javascript
+=IFERROR(INDEX('Additional Info'!C:C,MATCH(FullName,'Additional Info'!B:B,0)),"")
 ```
 
-### Mailing List Validation
-The mailing list check is a two-part validation:
-1. Email exists in column A of Mailing List sheet
-2. Column F (Posting permissions) = "allowed"
+### Dynamic Column Discovery
+All column positions are discovered at runtime by searching headers:
+```javascript
+const columnMap = new Map();
+headers.forEach((header, index) => columnMap.set(header, index + 1));
+const studentIdCol = columnMap.get('StudentID');
+```
 
-Both conditions must be TRUE for the boolean to be TRUE.
+### Mailing List Status
+Uses VLOOKUP to get membership status from column C:
+```javascript
+=IFERROR(VLOOKUP(email,'Mailing List'!$A$3:$C,3,FALSE),"not a member")
+```
+Returns: "member", "invited", or "not a member"
 
-### Service Account
-For potential future automation:
+### Service Account (for photo-mapper)
 - Email: stevel@cedar-scene-471205-t3.iam.gserviceaccount.com
-- Could be used for automated imports if configured
+- Used by photo-mapper tool for Drive/Sheets API access
 
 ---
 
-*This design document captures the complete state of the Madison Ultimate Roster system as of September 11, 2025. Use this to understand the system architecture, make modifications, or hand off development to another engineer.*
+*Last updated: December 2025. Use this to understand the system architecture, make modifications, or hand off development.*
