@@ -1,130 +1,199 @@
-# Madison Ultimate Admin
+# Coach Sheet Apps Script
 
-Tools and scripts for managing the Madison Middle School Ultimate Frisbee team roster and communications.
+Google Apps Script tools for managing the Madison Middle School Ultimate Frisbee team roster spreadsheet.
 
-## Data Integration & Join Keys
+## Purpose
 
-### 🔑 Full Name Column as Join Key
+This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") that automates:
+- Importing and syncing player data from Final Forms registration
+- Tracking mailing list membership status
+- Building practice and game rosters with availability
+- Generating email lists for parent communication
+- Analyzing data quality and missing information
 
-The **"Full Name" column** is the critical join key between the Roster and Additional Info sheets:
+## Prerequisites
 
-- **Formula Column**: "Full Name" is a manual formula column (not in script metadata) 
-- **Join Key**: This column has been manually aligned to match names in the Additional Info sheet
-- **Runtime Discovery**: Script finds this column at runtime by searching headers
-- **Primary Usage**: All Additional Info lookups use "Full Name" as the join key, NOT concatenated First+Last names
-- **Manual Maintenance**: Any name discrepancies between roster and Additional Info should be resolved by updating the "Full Name" formula
+- [Node.js](https://nodejs.org/) (for clasp CLI)
+- [clasp](https://github.com/google/clasp) - Google Apps Script CLI
+- Access to the team's Google Sheet with Editor permissions
 
-**Important**: When adding formulas that reference Additional Info data, always use the "Full Name" column as the lookup key.
+## Installation
 
-## Final Forms Integration & XLOOKUP Pattern
+1. Install clasp globally:
+   ```bash
+   npm install -g @google/clasp
+   ```
 
-### 🔑 Student ID as Primary Key
+2. Login to clasp:
+   ```bash
+   clasp login
+   ```
 
-All **Final Forms data** uses **Student ID** as the primary lookup key via XLOOKUP formulas:
+3. The `.clasp.json` file already points to the correct Apps Script project.
 
-- **Student ID Column**: Required column containing copied values (not formulas) of unique student identifiers
-- **Auto-Population**: Student ID values are automatically copied from Final Forms during import
-- **XLOOKUP Formulas**: All other Final Forms columns use XLOOKUP with Student ID for robust matching
-- **Sort-Safe**: XLOOKUP formulas work regardless of row ordering or sorting
-- **Dynamic References**: Student ID column position is discovered at runtime
+## Deployment
 
-### 📋 Final Forms Formula Pattern
+1. **Increment the version** in `Code.gs`:
+   ```javascript
+   const SCRIPT_VERSION = '122';  // Increment this
+   ```
 
-**✅ Final Forms Formulas (XLOOKUP with Student ID):**
+2. **Push changes**:
+   ```bash
+   clasp push
+   ```
+
+3. **Refresh the Google Sheet** and use the 🥏 Madison Ultimate menu.
+
+## Spreadsheet Structure
+
+### Required Sheets
+
+The script expects these sheets to exist (created manually or via the menu):
+
+| Sheet Name | Purpose |
+|------------|---------|
+| `📋 Roster` | Main roster with player data and formulas |
+| `Final Forms` | Imported CSV data from SPS Final Forms |
+| `Additional Info` | Imported questionnaire responses (via IMPORTRANGE) |
+| `Mailing List` | Imported CSV of Google Groups membership |
+| `Practice Availability` | Player availability for practices |
+| `Game Availability` | Player availability for games |
+
+### Roster Metadata Rows (1-5)
+
+The roster sheet uses 5 metadata rows before player data:
+
+| Row | Purpose | Example |
+|-----|---------|---------|
+| 1 | Column headers | "First Name", "Grade", etc. |
+| 2 | Data type | "String", "Email", "Boolean" |
+| 3 | Data source | "Final Forms", "Manual", "Formula" |
+| 4 | Notes | Implementation details |
+| 5 | Repeat headers | For pivot table compatibility |
+
+**Row 6+** contains player data.
+
+### Column Source Types
+
+The `source` row (row 3) controls how columns are handled:
+
+| Source | Behavior |
+|--------|----------|
+| `Final Forms` | Populated by XLOOKUP formulas from Final Forms sheet |
+| `Additional Info` | Populated by INDEX/MATCH from questionnaire data |
+| `Mailing List` | Populated by VLOOKUP from mailing list |
+| `Manual` | User-entered data, preserved during roster regeneration |
+| `Formula` | Custom formulas, preserved during roster regeneration |
+| (empty) | Preserved during roster regeneration |
+
+## Data Sources
+
+### Final Forms (SPS Registration)
+
+- **Source**: CSV exports from SPS Final Forms system
+- **Location**: Google Drive folder (configured in `CONFIG.finalForms.folderId`)
+- **Import**: Menu → "Update Final Forms" (auto-discovers most recent CSV)
+- **Join Key**: Student ID (column A)
+
+### Additional Info Questionnaire
+
+- **Source**: Google Form responses
+- **Location**: Linked spreadsheet (configured in `CONFIG.additionalInfo.spreadsheetId`)
+- **Import**: Auto-updates via IMPORTRANGE
+- **Join Key**: Full Name (must match roster's "Full Name" column exactly)
+
+### Mailing List (Google Groups)
+
+- **Source**: CSV export from Google Groups
+- **Location**: Google Drive folder (configured in `CONFIG.mailingList.folderId`)
+- **Import**: Menu → "Update Mailing List" (auto-discovers most recent CSV)
+- **Lookup**: Email address → membership status ("member", "invited", "not a member")
+
+## Menu Functions
+
+### Roster Management
+- **Generate Fresh Roster** - Rebuild all formulas (preserves Manual/Formula columns)
+- **Clear Roster Data** - Clear data rows, keep metadata and Manual/Formula columns
+- **Refresh All Data** - Update Final Forms and Mailing List imports
+
+### Data Import
+- **Update Final Forms** - Import latest Final Forms CSV
+- **Update Mailing List** - Import latest mailing list CSV
+
+### Sheet Builders
+- **Build Practice Roster** - Create roster with practice availability columns
+- **Build Game Roster Prep Sheet** - Create game day roster (coach or parent view)
+- **Build Email List** - Generate email lists for parent communication
+- **Build Practice/Game Availability** - Create availability tracking sheets
+- **Build Custom Sheet** - Interactive builder for custom column selection
+
+### Analysis Tools
+- **Show Statistics** - Display roster completion stats
+- **Find Emails Not on Mailing List** - Identify missing mailing list signups
+- **Parents Not Members of Mailing List** - Find parents who haven't joined
+- **Analyze Additional Info Responses** - Check questionnaire matching
+- **Full Name Diff** - Compare names across data sources
+
+### Utilities
+- **Format Spruce Up** - Apply consistent formatting
+- **Delete Empty Rows & Columns** - Clean up empty space
+- **Convert to Actual Attendance** - Convert availability to attendance records
+- **Organize Sheets** - Reorder sheet tabs
+
+## Key Concepts
+
+### Dynamic Column Positioning
+
+Columns are discovered by header name at runtime, not by position. This means:
+- Users can reorder columns freely
+- Formulas adapt to current column positions
+- New columns can be added anywhere
+
+### Student ID as Primary Key
+
+All Final Forms data uses XLOOKUP with Student ID:
 ```javascript
-formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!D:D),"")` // Template
-// A6 gets replaced with actual Student ID column at runtime
-// Final result: =IFERROR(XLOOKUP(B6,'Final Forms'!A:A,'Final Forms'!D:D),"")
+=IFERROR(XLOOKUP(StudentID,'Final Forms'!A:A,'Final Forms'!D:D),"")
 ```
+This ensures formulas work correctly regardless of row sorting.
 
-**❌ Old Pattern (ROW()-based - DEPRECATED):**
-```javascript
-formula: `=IFERROR(INDEX('Final Forms'!D:D,ROW()-4),"")` // BREAKS when sorted
-```
+### Full Name as Additional Info Join Key
 
-## Dynamic Column Positioning
+The "Full Name" column is a manually-maintained join key for Additional Info lookups. It must match the name format in the questionnaire responses exactly.
 
-### 🚫 No Hardcoded Column References
+## File Structure
 
-The Google Apps Script is designed to be **completely position-independent**:
+| File | Purpose |
+|------|---------|
+| `Code.gs` | Main entry point, menu, core roster functions |
+| `Availability.gs` | Practice/game availability sheet builders |
+| `BuildPracticeRoster.gs` | Practice roster generation |
+| `BuildGameRosterPrepSheet.gs` | Game day roster generation |
+| `BuildEmailList.gs` | Email list generation |
+| `SheetBuilder.gs` | Custom sheet builder |
+| `SheetBuilderUtils.gs` | Shared utilities |
+| `AdditionalInfoAnalysis.gs` | Questionnaire analysis |
+| `ConvertToAttendance.gs` | Attendance conversion |
+| `FormatSpruceUp.gs` | Formatting utilities |
+| `DeleteEmptyRowsColumns.gs` | Cleanup utilities |
+| `OrganizeSheets.gs` | Sheet organization |
+| `FullNameDiff.gs` | Name matching analysis |
 
-- **Runtime Discovery**: All column positions are discovered dynamically by searching headers
-- **No Hardcoded References**: Script never assumes columns are in specific positions (A, B, C, etc.)
-- **Error on Missing Columns**: Script throws clear errors if required columns are not found
-- **Flexible Rearrangement**: Users can reorder columns freely without breaking functionality
+## Troubleshooting
 
-### 🔧 Implementation Pattern
+### "Column not found" errors
+The script requires specific column headers. Check that the required column exists in row 1 of the roster sheet.
 
-**❌ Wrong (Hardcoded):**
-```javascript
-const emailCol = columnMap.get('Student Personal Email') || 5; // BAD: Assumes column E
-formula = `=VLOOKUP(E6,'Mailing List'!A:C,3,FALSE)`;           // BAD: Hardcoded E6
-```
+### Formulas showing errors
+- Ensure Final Forms and Mailing List sheets have data
+- Run "Update Final Forms" and "Update Mailing List" to refresh imports
+- Check that Student ID column has values (populated during "Generate Fresh Roster")
 
-**✅ Correct (Dynamic):**
-```javascript
-const emailCol = columnMap.get('Student Personal Email');       // Dynamic lookup
-if (!emailCol) throw new Error('Column not found');             // Clear error
-const emailLetter = getColumnLetter(emailCol);                  // Convert to letter
-formula = `=VLOOKUP(${emailLetter}6,'Mailing List'!A:C,3,FALSE)`;  // Dynamic reference
-```
+### Additional Info not matching
+The "Full Name" column must exactly match names in the questionnaire. Use "Full Name Diff" to identify mismatches.
 
-### 📋 Design Principles
+## See Also
 
-1. **Sheet Layout Freedom**: Users control column order through the Google Sheet interface
-2. **Runtime Column Discovery**: Script finds columns by name, not position
-3. **Explicit Error Handling**: Missing columns cause clear, actionable error messages
-4. **Formula Generation**: All cell references in formulas are generated dynamically
-5. **No Position Assumptions**: Script works regardless of how columns are arranged
-
-## Metadata Management
-
-The Google Apps Script respects the **sheet as the source of truth** for metadata configuration. The script validates metadata but never overwrites it.
-
-### 📊 Sheet Structure
-
-The roster sheet uses 5 metadata rows:
-- **Row 1**: Column Name (header)
-- **Row 2**: Type (String, Email, Boolean, etc.)
-- **Row 3**: Data Source (Final Forms, Additional Info, Manual, Formula, etc.)
-- **Row 4**: Additional Note (description/instructions)
-- **Row 5**: Repeat Column Name (for pivot table compatibility)
-
-### 🔄 Expected Workflow
-
-#### Adding New Columns:
-1. **Manually add column** in the Google Sheet with proper metadata in rows 1-5
-2. **Update the script** to include the new column definition in `rosterColumns` array
-3. **Test the script** - validation will ensure everything matches
-
-#### Modifying Existing Columns:
-1. **Edit metadata directly** in the Google Sheet (rows 1-5)
-2. **Update script definitions** in `Code.gs` to match your changes
-3. **Run the script** - validation will catch any mismatches
-
-#### Script Validation:
-- ✅ **Validates** that each column defined in the script exists in the sheet
-- ✅ **Compares** metadata between sheet and script definitions
-- 🚨 **Throws detailed error** if there are mismatches
-- 🔒 **Never overwrites** metadata - sheet always wins
-
-#### Error Resolution:
-When validation fails, you have two options:
-1. **Update the script** - modify `Code.gs` to match what's in the sheet
-2. **Fix the sheet** - adjust metadata rows to match script expectations
-
-### 🛡️ Protection Features
-
-- **Metadata rows (1-5) are never modified** by the script
-- **Manual/Formula columns** are preserved during data clearing
-- **Sheet controls all column definitions** - script follows sheet design
-- **Validation ensures consistency** between sheet and script
-
-## Commit Convention
-
-This project uses **Conventional Commits**. Format: `type(scope): description`
-
-Examples:
-- `feat(roster): add menu option to find missing emails`
-- `fix(mailing-list): correct formula range to start at row 3`
-- `refactor(clear): eliminate code duplication`
+- [DESIGN.md](./DESIGN.md) - Detailed architecture and design decisions
+- [Initial Requirements.md](./Initial%20Requirements.md) - Original project requirements
