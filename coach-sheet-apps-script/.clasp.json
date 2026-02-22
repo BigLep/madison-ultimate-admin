@@ -10,6 +10,7 @@
     "Availability.gs",
     "OrganizeSheets.gs",
     "DeleteEmptyRowsColumns.gs",
-    "BuildPracticeRoster.gs"
+    "BuildPracticeRoster.gs",
+    "CreatePracticeCalendarEvents.gs"
   ]
 }

@@ -158,6 +158,7 @@ The `source` row (row 3) controls how columns are handled:
 - **Delete Empty Rows & Columns** - Clean up empty space
 - **Convert to Actual Attendance** - Convert availability to attendance records
 - **Organize Sheets** - Reorder sheet tabs
+- **Sync Practice Info to Calendar** - Syncs "🏃 Practice" events from the Practice Info sheet to the MadDogs 2026 Spring calendar (create/update/delete to match sheet)
 
 ## Key Concepts
 
@@ -196,6 +197,7 @@ The "Full Name" column is a manually-maintained join key for Additional Info loo
 | `FormatSpruceUp.gs` | Formatting utilities |
 | `DeleteEmptyRowsColumns.gs` | Cleanup utilities |
 | `OrganizeSheets.gs` | Sheet organization |
+| `CreatePracticeCalendarEvents.gs` | Sync Practice Info to MadDogs calendar |
 | `FullNameDiff.gs` | Name matching analysis |
 
 ## Troubleshooting
