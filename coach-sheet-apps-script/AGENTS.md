@@ -12,6 +12,10 @@ Use version format `2.x`; increment x for each release (e.g. `'2.0'` → `'2.1'`
 2. Run `clasp push` to deploy changes
 3. Test the deployed functionality
 
+## Commits
+
+**All changes** to this project must be committed using [Conventional Commits](https://www.conventionalcommits.org/): use a type and optional scope (e.g. `feat(menu): add X`, `fix(roster): correct Y`, `chore(coach-sheet): Z`), and add a short body when it helps.
+
 ## Notes
 
 - Do NOT modify the version field in `appsscript.json` - use `SCRIPT_VERSION` in `Code.gs` instead
