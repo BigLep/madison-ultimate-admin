@@ -1,10 +1,10 @@
-# Claude Instructions for Apps Script Deployment
+# Agent Instructions for Apps Script Deployment
 
 ## Before Deploying
 
 **ALWAYS** increment the `SCRIPT_VERSION` constant in `Code.gs` before running `clasp push`.
 
-The version number should be incremented as a string (e.g., '53' → '54').
+Use version format `2.x`; increment x for each release (e.g. `'2.0'` → `'2.1'`).
 
 ## Deployment Process
 

@@ -229,7 +229,7 @@ madison-ultimate-admin/
 │   ├── FullNameDiff.gs          # Name matching
 │   ├── appsscript.json          # Apps Script manifest
 │   ├── .clasp.json              # Clasp deployment config
-│   ├── CLAUDE.md                # Claude Code instructions
+│   ├── AGENTS.md                # Agent instructions for deployment
 │   ├── README.md                # Quick reference
 │   ├── DESIGN.md                # This document
 │   └── Initial Requirements.md  # Original requirements
@@ -241,7 +241,7 @@ madison-ultimate-admin/
 ### Deployment
 Uses `clasp` for deployment to Google Apps Script:
 ```bash
-clasp push  # Deploy changes (remember to increment SCRIPT_VERSION in Code.gs)
+clasp push  # Deploy changes (remember to increment 2.x in SCRIPT_VERSION, Code.gs)
 ```
 
 ## Known Issues and Limitations
@@ -312,7 +312,7 @@ When modifying the system, verify:
 
 1. **Clone the repository** and navigate to `coach-sheet-apps-script/`
 2. **Login to clasp**: `clasp login` (if not already authenticated)
-3. **Push to test**: `clasp push` (remember to increment SCRIPT_VERSION in Code.gs)
+3. **Push to test**: `clasp push` (remember to increment 2.x in SCRIPT_VERSION, Code.gs)
 4. **Test in Google Sheets**: Open the spreadsheet and use the 🥏 Madison Ultimate menu
 5. **Review data sources**: CSV imports auto-discover the latest file by timestamp
 6. **Use the testing checklist** above to verify functionality

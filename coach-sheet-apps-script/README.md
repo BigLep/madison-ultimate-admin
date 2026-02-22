@@ -2,6 +2,8 @@
 
 Google Apps Script tools for managing the Madison Middle School Ultimate Frisbee team roster spreadsheet.
 
+**Season note:** This README and the `main` branch apply to the **Spring 2026** season. For the 2025 fall season, see the `fall-2025` branch.
+
 ## Purpose
 
 This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") that automates:
@@ -33,9 +35,9 @@ This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") th
 
 ## Deployment
 
-1. **Increment the version** in `Code.gs`:
+1. **Increment the version** in `Code.gs` (use format `2.x`, increment x):
    ```javascript
-   const SCRIPT_VERSION = '122';  // Increment this
+   const SCRIPT_VERSION = '2.1';  // Increment x for each release
    ```
 
 2. **Push changes**:
@@ -44,6 +46,22 @@ This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") th
    ```
 
 3. **Refresh the Google Sheet** and use the 🥏 Madison Ultimate menu.
+
+### Deploy to a new season's spreadsheet (e.g. Spring 2026)
+
+To bind this script to a **new** spreadsheet (the script must be created from the sheet):
+
+1. Open the season's spreadsheet (e.g. [Spring 2026](https://docs.google.com/spreadsheets/d/1kV3Y_GST_Y-X9PZFXu9yFkCzGWvhk9f7G24Y8QNuayU/edit)).
+2. **Extensions → Apps Script**. This opens the script editor and creates a new Apps Script project bound to that sheet.
+3. In the script editor, open **Project settings** (gear icon) and copy the **Script ID**.
+4. In this repo, update `coach-sheet-apps-script/.clasp.json`: set `"scriptId"` to that Script ID (leave `rootDir` and `filePushOrder` as-is).
+5. From `coach-sheet-apps-script/` run:
+   ```bash
+   clasp push
+   ```
+6. Back in the spreadsheet, refresh the page; the 🥏 Madison Ultimate menu should appear.
+
+Note: `.clasp.json` currently points at the Spring 2026 script. After you deploy to a new sheet, switch the `scriptId` in `.clasp.json` depending on which season you’re editing.
 
 ## Spreadsheet Structure
 
