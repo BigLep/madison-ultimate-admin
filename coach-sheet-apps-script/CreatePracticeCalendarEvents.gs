@@ -5,7 +5,7 @@
 
 // Calendar and event title - change per season or calendar as needed
 const PRACTICE_CALENDAR_ID = '21081b4ccff3c7ad50dc835ce259ff76a09e0f05d1a66d727fafff195a7af612@group.calendar.google.com';
-const PRACTICE_EVENT_TITLE = '🏃 Practice';
+const PRACTICE_EVENT_TITLE = '🥏🏃 Practice';
 
 // Match tolerance in ms (2 minutes) when matching sheet row to existing calendar event
 const START_TIME_MATCH_MS = 2 * 60 * 1000;

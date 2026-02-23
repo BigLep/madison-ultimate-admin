@@ -158,7 +158,7 @@ The `source` row (row 3) controls how columns are handled:
 - **Delete Empty Rows & Columns** - Clean up empty space
 - **Convert to Actual Attendance** - Convert availability to attendance records
 - **Organize Sheets** - Reorder sheet tabs
-- **Sync Practice Info to Calendar** - Syncs "🏃 Practice" events from the Practice Info sheet to the MadDogs 2026 Spring calendar (create/update/delete to match sheet)
+- **Sync Practice Info to Calendar** - Syncs "🥏🏃 Practice" events from the Practice Info sheet to the MadDogs 2026 Spring calendar (create/update/delete to match sheet)
 
 ## Key Concepts
 
