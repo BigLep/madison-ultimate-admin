@@ -2,9 +2,9 @@
 
 ## Before Deploying
 
-**ALWAYS** increment the `SCRIPT_VERSION` constant in `Code.gs` before running `clasp push`.
+**ALWAYS** increment the `SCRIPT_VERSION` constant in `Code.gs` before running `clasp push`. With every change you deploy, increment the minor version (x in `2.x`) first (e.g. `'2.1'` → `'2.2'`).
 
-Use version format `2.x`; increment x for each release (e.g. `'2.0'` → `'2.1'`).
+Use version format `2.x`; increment x for each release.
 
 ## Deployment Process
 

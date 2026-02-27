@@ -27,6 +27,13 @@ const PRACTICE_AVAILABILITY_CONFIG = {
   }
 };
 
+// Game Activation Status (game availability only): dropdown + background colors
+const GAME_ACTIVATION_STATUS_OPTIONS = [
+  { value: 'Active', backgroundColor: '#d9ead3' },   // light green
+  { value: 'Inactive', backgroundColor: '#f4cccc' }, // light red
+  { value: 'TBD', backgroundColor: '#efefef' }      // light grey / white
+];
+
 // Configuration for Game Availability feature
 const GAME_AVAILABILITY_CONFIG = {
   type: 'game',
@@ -38,7 +45,13 @@ const GAME_AVAILABILITY_CONFIG = {
     columnName: 'game #',
     skipCondition: 'equals',
     skipValue: 'Bye'
-  }
+  },
+  // Game-only: three columns per date — $date Availability, $date Activation Status, $date Note (free text)
+  columnsPerDate: [
+    { suffix: ' Availability', useAvailabilityValidation: true },
+    { suffix: ' Activation Status', useAvailabilityValidation: false, useActivationStatusValidation: true },
+    { suffix: ' Note', useAvailabilityValidation: false, isFreeText: true }
+  ]
 };
 
 /**
@@ -260,73 +273,111 @@ function buildAvailabilityColumns(ss, dates, config) {
   
   const columnsCreated = [];
   const columnsSkipped = [];
-  let validationRanges = []; // Track ranges that need data validation
-  
+  let validationRanges = []; // Track ranges that need availability dropdown
+  let activationStatusColumns = []; // Game only: columns that need Activation Status dropdown + colors
+  let noteColumns = []; // Game only: Note columns (free text — clear any validation)
+
   // Find where to start adding new columns (after existing columns)
   let nextColumnIndex = Math.max(2, availabilitySheet.getLastColumn() + 1);
-  
+
+  const isGame = config.type === 'game' && config.columnsPerDate;
+
   // Process each date (practice or game)
   dates.forEach((dateInfo, index) => {
     const dateString = dateInfo.formattedDate;
-    const availabilityHeader = dateString;
-    const notesHeader = `${dateString} Note`;
-    
-    // Check if availability column already exists
-    console.log(`🔍 Looking for availability column: "${availabilityHeader}"`);
-    if (existingColumns[availabilityHeader]) {
-      console.log(`⏭️ Column "${availabilityHeader}" already exists at column ${existingColumns[availabilityHeader]}`);
-      columnsSkipped.push(availabilityHeader);
-      
-      // Check if existing column already has data validation
-      const existingColumnIndex = existingColumns[availabilityHeader];
-      const existingValidation = availabilitySheet.getRange(2, existingColumnIndex, 1, 1).getDataValidation();
-      
-      if (existingValidation) {
-        console.log(`✅ Column ${existingColumnIndex} already has data validation - preserving colors`);
-        // Don't add to validation ranges - leave existing validation untouched
-      } else {
-        console.log(`🎯 Column ${existingColumnIndex} needs data validation`);
-        validationRanges.push({
-          column: existingColumnIndex,
-          header: availabilityHeader,
-          isExisting: true
-        });
-      }
-    } else {
-      // Create new availability column
-      console.log(`➕ Creating new column "${availabilityHeader}" at column ${nextColumnIndex} (not found in existing columns)`);
-      availabilitySheet.getRange(1, nextColumnIndex).setValue(availabilityHeader);
-      availabilitySheet.getRange(1, nextColumnIndex).setFontWeight('bold');
-      
-      validationRanges.push({
-        column: nextColumnIndex,
-        header: availabilityHeader,
-        isExisting: false
+
+    if (isGame) {
+      // Game: three columns per date — $date Availability, $date Activation Status, $date Note (free text)
+      config.columnsPerDate.forEach((colDef) => {
+        const header = dateString + colDef.suffix;
+        const existingCol = existingColumns[header];
+
+        if (existingCol) {
+          console.log(`⏭️ Column "${header}" already exists at column ${existingCol}`);
+          columnsSkipped.push(header);
+          if (colDef.useAvailabilityValidation) {
+            const existingValidation = availabilitySheet.getRange(2, existingCol, 1, 1).getDataValidation();
+            if (!existingValidation) {
+              validationRanges.push({ column: existingCol, header: header, isExisting: true });
+            }
+          } else if (colDef.useActivationStatusValidation) {
+            activationStatusColumns.push({ column: existingCol, header: header });
+          } else if (colDef.isFreeText) {
+            noteColumns.push(existingCol);
+          }
+          return;
+        }
+
+        console.log(`➕ Creating new column "${header}" at column ${nextColumnIndex}`);
+        availabilitySheet.getRange(1, nextColumnIndex).setValue(header);
+        availabilitySheet.getRange(1, nextColumnIndex).setFontWeight('bold');
+        columnsCreated.push(header);
+
+        if (colDef.useAvailabilityValidation) {
+          validationRanges.push({ column: nextColumnIndex, header: header, isExisting: false });
+        } else if (colDef.useActivationStatusValidation) {
+          activationStatusColumns.push({ column: nextColumnIndex, header: header });
+        } else if (colDef.isFreeText) {
+          noteColumns.push(nextColumnIndex);
+        }
+        nextColumnIndex++;
       });
-      
-      columnsCreated.push(availabilityHeader);
-      nextColumnIndex++;
-    }
-    
-    // Check if notes column already exists
-    console.log(`🔍 Looking for notes column: "${notesHeader}"`);
-    if (existingColumns[notesHeader]) {
-      console.log(`⏭️ Column "${notesHeader}" already exists at column ${existingColumns[notesHeader]}`);
-      columnsSkipped.push(notesHeader);
     } else {
-      // Create new notes column
-      console.log(`➕ Creating new column "${notesHeader}" at column ${nextColumnIndex} (not found in existing columns)`);
-      availabilitySheet.getRange(1, nextColumnIndex).setValue(notesHeader);
-      availabilitySheet.getRange(1, nextColumnIndex).setFontWeight('bold');
-      
-      columnsCreated.push(notesHeader);
-      nextColumnIndex++;
+      // Practice: two columns per date — dateString (availability), "$Date Note"
+      const availabilityHeader = dateString;
+      const notesHeader = dateString + ' Note';
+
+      if (existingColumns[availabilityHeader]) {
+        console.log(`⏭️ Column "${availabilityHeader}" already exists at column ${existingColumns[availabilityHeader]}`);
+        columnsSkipped.push(availabilityHeader);
+        const existingColumnIndex = existingColumns[availabilityHeader];
+        const existingValidation = availabilitySheet.getRange(2, existingColumnIndex, 1, 1).getDataValidation();
+        if (!existingValidation) {
+          validationRanges.push({ column: existingColumnIndex, header: availabilityHeader, isExisting: true });
+        }
+      } else {
+        console.log(`➕ Creating new column "${availabilityHeader}" at column ${nextColumnIndex}`);
+        availabilitySheet.getRange(1, nextColumnIndex).setValue(availabilityHeader);
+        availabilitySheet.getRange(1, nextColumnIndex).setFontWeight('bold');
+        validationRanges.push({ column: nextColumnIndex, header: availabilityHeader, isExisting: false });
+        columnsCreated.push(availabilityHeader);
+        nextColumnIndex++;
+      }
+
+      if (existingColumns[notesHeader]) {
+        console.log(`⏭️ Column "${notesHeader}" already exists at column ${existingColumns[notesHeader]}`);
+        columnsSkipped.push(notesHeader);
+      } else {
+        console.log(`➕ Creating new column "${notesHeader}" at column ${nextColumnIndex}`);
+        availabilitySheet.getRange(1, nextColumnIndex).setValue(notesHeader);
+        availabilitySheet.getRange(1, nextColumnIndex).setFontWeight('bold');
+        columnsCreated.push(notesHeader);
+        nextColumnIndex++;
+      }
     }
   });
-  
+
   // Apply or extend data validation to availability columns
   extendOrCreateDataValidation(availabilitySheet, validationRanges, config);
-  
+
+  // Game only: apply Activation Status dropdown + conditional formatting (Active=green, Inactive=red, TBD=grey)
+  if (activationStatusColumns.length > 0) {
+    applyActivationStatusValidationAndFormatting(availabilitySheet, activationStatusColumns);
+  }
+
+  // Game only: ensure Note columns are free text (no dropdown)
+  noteColumns.forEach(function (col) {
+    // getRange(row, column, numRows, numColumns) — 1 column only
+    availabilitySheet.getRange(2, col, 999, 1).clearDataValidations();
+  });
+
+  // Enable text wrapping on the sheet so headers and cells wrap
+  const lastCol = availabilitySheet.getLastColumn();
+  const lastRow = Math.max(availabilitySheet.getLastRow(), 2);
+  if (lastCol >= 1 && lastRow >= 1) {
+    availabilitySheet.getRange(1, 1, lastRow, lastCol).setWrap(true);
+  }
+
   // Apply Format Spruce Up silently (no modal)
   console.log('✨ Applying Format Spruce Up formatting...');
   try {
@@ -334,7 +385,7 @@ function buildAvailabilityColumns(ss, dates, config) {
   } catch (error) {
     console.warn('⚠️ Could not apply Format Spruce Up formatting:', error.message);
   }
-  
+
   return {
     columnsCreated: columnsCreated.length,
     columnsSkipped: columnsSkipped.length,
@@ -526,6 +577,41 @@ function createNewValidation(sheet, column, validationValues) {
   
   validationRange.setDataValidation(validation);
   console.log(`✅ New validation created for column ${column} - colors can be set via conditional formatting`);
+}
+
+/**
+ * Apply Activation Status dropdown (Active / Inactive / TBD) and background colors to game columns.
+ * @param {Sheet} sheet - Game Availability sheet
+ * @param {Array<{column: number, header: string}>} activationStatusColumns - Column indices and headers
+ */
+function applyActivationStatusValidationAndFormatting(sheet, activationStatusColumns) {
+  const values = GAME_ACTIVATION_STATUS_OPTIONS.map(function (o) { return o.value; });
+  const lastRow = Math.max(sheet.getLastRow(), 100);
+  const numRows = lastRow - 1; // rows 2 through lastRow inclusive
+
+  activationStatusColumns.forEach(function (info) {
+    const col = info.column;
+    // getRange(row, column, numRows, numColumns) — use 1 column so we only affect this Activation Status column
+    const range = sheet.getRange(2, col, numRows, 1);
+
+    const validation = SpreadsheetApp.newDataValidation()
+      .requireValueInList(values, true)
+      .setAllowInvalid(false)
+      .setHelpText('Active / Inactive / TBD')
+      .build();
+    range.setDataValidation(validation);
+
+    const rules = sheet.getConditionalFormatRules();
+    GAME_ACTIVATION_STATUS_OPTIONS.forEach(function (opt) {
+      const rule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo(opt.value)
+        .setBackground(opt.backgroundColor)
+        .setRanges([range])
+        .build();
+      rules.push(rule);
+    });
+    sheet.setConditionalFormatRules(rules);
+  });
 }
 
 /**

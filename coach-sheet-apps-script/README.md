@@ -143,7 +143,7 @@ The `source` row (row 3) controls how columns are handled:
 - **Build Practice Roster** - Create roster with practice availability columns
 - **Build Game Roster Prep Sheet** - Create game day roster (coach or parent view)
 - **Build Email List** - Generate email lists for parent communication
-- **Build Practice/Game Availability** - Create availability tracking sheets
+- **Build Practice/Game Availability** - Create availability tracking sheets. For games, each date gets three columns (in order): *$Date* Availability, *$Date* Activation Status (dropdown: Active / Inactive / TBD with green/red/grey backgrounds), and *$Date* Note (free text). Headers and cells use text wrapping.
 - **Build Custom Sheet** - Interactive builder for custom column selection
 
 ### Analysis Tools
