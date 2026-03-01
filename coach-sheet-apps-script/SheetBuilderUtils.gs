@@ -23,14 +23,17 @@ function copyFullNameColumn(targetSheet, rosterSheet, startRow = 2) {
  * @return {Object} Object with fullNameColIndex and rowCount
  */
 function copyFullNameColumnToColumn(targetSheet, rosterSheet, startRow, targetColumn) {
-  const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
+  const rosterHeaderRow = rosterSheet.getRange(ROSTER_HEADER_ROW, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
   const fullNameColIndex = rosterHeaderRow.findIndex(name => name === CONFIG.columns.fullName);
 
   if (fullNameColIndex === -1) {
     throw new Error(`${CONFIG.columns.fullName} column not found in roster sheet`);
   }
 
-  const rosterDataRange = rosterSheet.getRange(FIRST_DATA_ROW, fullNameColIndex + 1, rosterSheet.getLastRow() - FIRST_DATA_ROW + 1, 1);
+  // Use configurable first data row so roster layout (1 header vs 5 metadata rows) can change
+  const lastRow = rosterSheet.getLastRow();
+  const numDataRows = Math.max(0, lastRow - ROSTER_FIRST_DATA_ROW + 1);
+  const rosterDataRange = rosterSheet.getRange(ROSTER_FIRST_DATA_ROW, fullNameColIndex + 1, numDataRows, 1);
   const fullNameValues = rosterDataRange.getValues();
 
   const nonEmptyFullNames = fullNameValues.filter(row => row[0] && row[0].toString().trim() !== '');
@@ -58,7 +61,9 @@ function copyFullNameColumnToColumn(targetSheet, rosterSheet, startRow, targetCo
 function createRosterXlookupFormulas(targetSheet, columnNames, startColumn, rowCount, lookupSheetName = null) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sourceSheet = ss.getSheetByName(lookupSheetName || CONFIG.roster.sheetName);
-  const sourceHeaderRow = sourceSheet.getRange(1, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+  const isRoster = !lookupSheetName || lookupSheetName === CONFIG.roster.sheetName;
+  const headerRowNum = isRoster ? ROSTER_HEADER_ROW : 1;
+  const sourceHeaderRow = sourceSheet.getRange(headerRowNum, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
   
   const fullNameColIndex = sourceHeaderRow.findIndex(name => name === CONFIG.columns.fullName);
   if (fullNameColIndex === -1) {
@@ -113,7 +118,7 @@ function copyColumnFormatting(targetSheet, sourceSheet, headers, sourceHeaderRow
       const sourceColumnWidth = sourceSheet.getColumnWidth(sourceColumn);
       targetSheet.setColumnWidth(newColumn, sourceColumnWidth);
       
-      const sourceFormatCell = sourceSheet.getRange(FIRST_DATA_ROW, sourceColumn);
+      const sourceFormatCell = sourceSheet.getRange(ROSTER_FIRST_DATA_ROW, sourceColumn);
       const newFormatCell = targetSheet.getRange(2, newColumn);
       
       const numberFormat = sourceFormatCell.getNumberFormat();
@@ -203,7 +208,7 @@ function copyDataValidation(targetSheet, sourceSheet, columnMappings, rowCount) 
       return;
     }
     
-    const sourceCell = sourceSheet.getRange(FIRST_DATA_ROW, sourceColIndex);
+    const sourceCell = sourceSheet.getRange(ROSTER_FIRST_DATA_ROW, sourceColIndex);
     const validation = sourceCell.getDataValidation();
     
     if (!validation) {

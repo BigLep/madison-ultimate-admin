@@ -345,14 +345,15 @@ function getFullNamesFromSheet(sheet, sheetName) {
     throw new Error(`Sheet "${sheetName}" does not have a "Full Name" column. Please select sheets that contain a "Full Name" column for comparison.`);
   }
   
-  // Get all values in Full Name column (skip header row)
+  // Get all values in Full Name column (skip header row); use configurable row when reading roster
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) {
+  const firstDataRow = (sheetName === CONFIG.roster.sheetName) ? ROSTER_FIRST_DATA_ROW : 2;
+  if (lastRow < firstDataRow) {
     console.log(`⚠️ Sheet "${sheetName}" has no data rows`);
     return [];
   }
-  
-  const fullNameData = sheet.getRange(2, fullNameColumnIndex + 1, lastRow - 1, 1).getValues();
+  const numDataRows = lastRow - firstDataRow + 1;
+  const fullNameData = sheet.getRange(firstDataRow, fullNameColumnIndex + 1, numDataRows, 1).getValues();
   
   // Use strict string comparison - only filter out truly empty cells
   const strictNames = fullNameData

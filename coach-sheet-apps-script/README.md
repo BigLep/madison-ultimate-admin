@@ -78,9 +78,13 @@ The script expects these sheets to exist (created manually or via the menu):
 | `Practice Availability` | Player availability for practices |
 | `Game Availability` | Player availability for games |
 
+### Roster layout (configurable)
+
+In `Code.gs`, **ROSTER_HEADER_ROW** (default 1) is the row that contains column headers (Full Name, etc.) in the 📋 Roster sheet. **ROSTER_FIRST_DATA_ROW** is the next row (header + 1) and is used when reading the roster for Build Practice Roster, Game Roster, Full Name Diff, and Additional Info analysis. Change these if your roster uses a different layout (e.g. set ROSTER_HEADER_ROW to 5 and ROSTER_FIRST_DATA_ROW to 6 if you use 5 metadata rows).
+
 ### Roster Metadata Rows (1-5)
 
-The roster sheet uses 5 metadata rows before player data:
+The roster sheet can use 5 metadata rows before player data:
 
 | Row | Purpose | Example |
 |-----|---------|---------|

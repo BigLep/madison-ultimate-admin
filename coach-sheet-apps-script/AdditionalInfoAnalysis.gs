@@ -89,7 +89,7 @@ function analyzeAdditionalInfoResponses() {
  * Get roster data for matching purposes
  */
 function getRosterDataForMatching(rosterSheet) {
-  const headers = rosterSheet.getRange(1, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
+  const headers = rosterSheet.getRange(ROSTER_HEADER_ROW, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
   const fullNameCol = headers.indexOf(CONFIG.columns.fullName) + 1;
   const lastNameCol = headers.indexOf(CONFIG.columns.lastName) + 1;
 
@@ -105,7 +105,7 @@ function getRosterDataForMatching(rosterSheet) {
   const rosterNames = new Set();
   const rosterLastNames = new Map(); // Map last names to full names for suggestions
 
-  for (let row = FIRST_DATA_ROW; row <= rosterLastRow; row++) {
+  for (let row = ROSTER_FIRST_DATA_ROW; row <= rosterLastRow; row++) {
     const fullName = rosterSheet.getRange(row, fullNameCol).getValue();
     const lastName = rosterSheet.getRange(row, lastNameCol).getValue();
 

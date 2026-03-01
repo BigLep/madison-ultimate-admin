@@ -12,10 +12,15 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '2.4';
+const SCRIPT_VERSION = '2.6';
 
 // Constants
-const FIRST_DATA_ROW = 6; // First row containing actual student data (after metadata rows 1-5)
+const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
+
+// Roster layout when reading from 📋 Roster (Build Practice Roster, Game Roster, analysis, etc.)
+// Set ROSTER_HEADER_ROW to the row that contains column headers (Full Name, etc.); data starts in the next row.
+const ROSTER_HEADER_ROW = 1;
+const ROSTER_FIRST_DATA_ROW = ROSTER_HEADER_ROW + 1;
 
 // Configuration
 const CONFIG = {
