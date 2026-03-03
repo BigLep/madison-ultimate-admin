@@ -392,20 +392,15 @@ function finalizeGameRosterSheet(sheet, rowCount) {
  * Apply availability data validation to game roster
  * @param {Sheet} newSheet - The sheet to apply validation to
  * @param {Sheet} gameAvailabilitySheet - Source sheet with validation
- * @param {string} gameDate - Game date for validation
+ * @param {Object} availColumns - From findAvailabilityColumns (must include availabilityHeader)
  * @param {number} targetColumn - Column index to apply validation to
  * @param {number} rowCount - Number of data rows
  */
-function applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, gameDate, targetColumn, rowCount) {
+function applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, targetColumn, rowCount) {
   console.log('✅ Copying data validation from Game Availability...');
-  const availColIndex = gameAvailabilitySheet.getRange(1, 1, 1, gameAvailabilitySheet.getLastColumn())
-    .getValues()[0].findIndex(h => h === gameDate ||
-      (h instanceof Date && `${h.getMonth() + 1}/${h.getDate()}` === gameDate)) + 1;
-
-  if (availColIndex > 0) {
-    copyDataValidation(newSheet, gameAvailabilitySheet,
-      [{sourceColumn: gameDate, targetColumn: targetColumn}], rowCount);
-  }
+  if (!availColumns.availabilityHeader) return;
+  copyDataValidation(newSheet, gameAvailabilitySheet,
+    [{ sourceColumn: availColumns.availabilityHeader, targetColumn: targetColumn }], rowCount);
 }
 
 /**
@@ -531,7 +526,7 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     // Copy data validation from Game Availability for the Availability column using shared utility
     if (availColumns.availabilityColumn) {
       const availabilityTargetColumn = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 1;
-      applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, gameDate, availabilityTargetColumn, fullNameInfo.rowCount);
+      applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, availabilityTargetColumn, fullNameInfo.rowCount);
 
       // Apply conditional formatting for availability
       applyAvailabilityConditionalFormatting(newSheet, availabilityTargetColumn, fullNameInfo.rowCount);
@@ -796,7 +791,7 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
 
     // Copy data validation from Game Availability for the Availability column
     if (availColumns.availabilityColumn && fullNameInfo.rowCount > 0) {
-      applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, gameDate, 2, fullNameInfo.rowCount);
+      applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, 2, fullNameInfo.rowCount);
     }
 
     // Common cleanup

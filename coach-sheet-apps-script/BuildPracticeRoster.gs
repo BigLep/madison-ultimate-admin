@@ -1036,26 +1036,26 @@ function findGameAvailabilityColumns(gameAvailabilitySheet, gameDate) {
 }
 
 /**
- * Shared function to find availability columns in any availability sheet for a specific date
+ * Shared function to find availability columns in any availability sheet for a specific date.
+ * Uses getAvailabilityColumnHeaders() so column names stay in sync with Availability.gs config.
  * @param {Sheet} availabilitySheet - The availability sheet to search
  * @param {string} dateString - Date in format "M/D"
  * @param {string} sheetType - Type of sheet for logging (e.g., 'Practice Availability', 'Game Availability')
- * @return {Object} Object with availabilityColumn and noteColumn letters
+ * @return {Object} Object with availabilityColumn, noteColumn (letters), availabilityHeader, noteHeader (exact header strings)
  */
 function findAvailabilityColumns(availabilitySheet, dateString, sheetType) {
   const headerRow = availabilitySheet.getRange(1, 1, 1, availabilitySheet.getLastColumn()).getValues()[0];
-  
+  const expected = getAvailabilityColumnHeaders(dateString, sheetType);
+
   let availabilityColumn = null;
   let noteColumn = null;
-  
-  console.log(`🔍 Looking for date "${dateString}" in ${sheetType} headers...`);
-  
+
+  console.log(`🔍 Looking for date "${dateString}" in ${sheetType} (expect "${expected.availabilityHeader}", "${expected.noteHeader}")...`);
+
   headerRow.forEach((header, index) => {
     let headerStr = '';
-    
-    // Handle both Date objects and strings
+
     if (header instanceof Date) {
-      // Convert Date object to M/D format
       const month = header.getMonth() + 1;
       const day = header.getDate();
       headerStr = `${month}/${day}`;
@@ -1064,35 +1064,32 @@ function findAvailabilityColumns(availabilitySheet, dateString, sheetType) {
       headerStr = header.toString().trim();
       console.log(`📅 Column ${index + 1}: "${headerStr}"`);
     }
-    
-    // Check for exact match with date
-    if (headerStr === dateString) {
+
+    if (headerStr === expected.availabilityHeader) {
       availabilityColumn = getColumnLetter(index + 1);
       console.log(`✅ Found availability column: ${availabilityColumn} (${headerStr})`);
     }
-    
-    // Check for note column (date + " Note")
-    if (headerStr === `${dateString} Note`) {
+    if (headerStr === expected.noteHeader) {
       noteColumn = getColumnLetter(index + 1);
       console.log(`✅ Found note column: ${noteColumn} (${headerStr})`);
     }
   });
-  
+
   if (!availabilityColumn) {
-    console.error(`❌ Date "${dateString}" not found in ${sheetType} sheet`);
-    console.log(`Available headers: ${headerRow.map((h, i) => {
+    console.error(`❌ Availability column "${expected.availabilityHeader}" not found in ${sheetType} sheet`);
+    console.log(`Available headers: ${headerRow.map((h) => {
       if (h instanceof Date) {
-        const m = h.getMonth() + 1;
-        const d = h.getDate();
-        return `${m}/${d}`;
+        return `${h.getMonth() + 1}/${h.getDate()}`;
       }
       return h.toString().trim();
     }).join(', ')}`);
   }
-  
+
   return {
     availabilityColumn: availabilityColumn,
-    noteColumn: noteColumn
+    noteColumn: noteColumn,
+    availabilityHeader: expected.availabilityHeader,
+    noteHeader: expected.noteHeader
   };
 }
 
