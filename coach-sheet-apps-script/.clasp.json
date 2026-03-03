@@ -11,6 +11,7 @@
     "OrganizeSheets.gs",
     "DeleteEmptyRowsColumns.gs",
     "BuildPracticeRoster.gs",
-    "CreatePracticeCalendarEvents.gs"
+    "CreatePracticeCalendarEvents.gs",
+    "CreateGameCalendarEvents.gs"
   ]
 }

@@ -162,7 +162,8 @@ The `source` row (row 3) controls how columns are handled:
 - **Delete Empty Rows & Columns** - Clean up empty space
 - **Convert to Actual Attendance** - Convert availability to attendance records
 - **Organize Sheets** - Reorder sheet tabs
-- **Sync Practice Info to Calendar** - Syncs "🥏🏃 Practice" events from the Practice Info sheet to the MadDogs 2026 Spring calendar (create/update/delete to match sheet)
+- **Sync Practice Info to Calendar** - Syncs "🥏🏃 Practice" events from the Practice Info sheet to the team calendar (create/update/delete to match sheet)
+- **Sync Game Info to Calendar** - Syncs game and warmup events from the Game Info sheet to the team calendar ("🎯 Game vs. X", "🎯 TBD Game", "🥏 Game Warmup"; create/update/delete to match sheet)
 
 ## Key Concepts
 
@@ -201,7 +202,8 @@ The "Full Name" column is a manually-maintained join key for Additional Info loo
 | `FormatSpruceUp.gs` | Formatting utilities |
 | `DeleteEmptyRowsColumns.gs` | Cleanup utilities |
 | `OrganizeSheets.gs` | Sheet organization |
-| `CreatePracticeCalendarEvents.gs` | Sync Practice Info to MadDogs calendar |
+| `CreatePracticeCalendarEvents.gs` | Sync Practice Info to team calendar (shared sync helper) |
+| `CreateGameCalendarEvents.gs` | Sync Game Info to team calendar |
 | `FullNameDiff.gs` | Name matching analysis |
 
 ## Troubleshooting

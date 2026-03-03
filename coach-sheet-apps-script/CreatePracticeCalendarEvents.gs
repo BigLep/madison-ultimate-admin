@@ -3,8 +3,8 @@
  * Creates, updates, and deletes "🏃 Practice" events on the MadDogs calendar to match the sheet.
  */
 
-// Calendar and event title - change per season or calendar as needed
-const PRACTICE_CALENDAR_ID = '21081b4ccff3c7ad50dc835ce259ff76a09e0f05d1a66d727fafff195a7af612@group.calendar.google.com';
+// Shared team calendar for practice and game events - change per season as needed
+const TEAM_CALENDAR_ID = '21081b4ccff3c7ad50dc835ce259ff76a09e0f05d1a66d727fafff195a7af612@group.calendar.google.com';
 const PRACTICE_EVENT_TITLE = '🥏🏃 Practice';
 
 // Match tolerance in ms (2 minutes) when matching sheet row to existing calendar event
@@ -29,50 +29,73 @@ function createPracticeCalendarEvents() {
       return;
     }
 
-    const calendar = CalendarApp.getCalendarById(PRACTICE_CALENDAR_ID);
+    const calendar = CalendarApp.getCalendarById(TEAM_CALENDAR_ID);
     if (!calendar) {
-      ui.alert('Calendar not found', `Could not open calendar. Check that PRACTICE_CALENDAR_ID is correct and you have access.`, ui.ButtonSet.OK);
+      ui.alert('Calendar not found', `Could not open calendar. Check that TEAM_CALENDAR_ID is correct and you have access.`, ui.ButtonSet.OK);
       return;
     }
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const endDate = new Date(startOfToday);
-    endDate.setMonth(endDate.getMonth() + 6);
-    const existingEvents = calendar.getEvents(startOfToday, endDate).filter(function (e) {
+    const eventSpecs = practiceRows.map(function (row) {
+      return {
+        title: PRACTICE_EVENT_TITLE,
+        startTime: row.startTime,
+        endTime: row.endTime,
+        location: row.location || '',
+        description: row.description || '',
+        isAllDay: row.isAllDay
+      };
+    });
+    const result = syncEventsToCalendar(calendar, eventSpecs, function (e) {
       return e.getTitle() === PRACTICE_EVENT_TITLE;
     });
 
-    let created = 0;
-    let updated = 0;
-    const matchedEventIds = {};
-
-    practiceRows.forEach(function (row) {
-      const matched = findMatchingEvent(existingEvents, row.startTime, matchedEventIds);
-      if (matched) {
-        updateCalendarEvent(matched, row);
-        matchedEventIds[matched.getId()] = true;
-        updated++;
-      } else {
-        createCalendarEvent(calendar, row);
-        created++;
-      }
-    });
-
-    let deleted = 0;
-    existingEvents.forEach(function (e) {
-      if (!matchedEventIds[e.getId()]) {
-        e.deleteEvent();
-        deleted++;
-      }
-    });
-
-    const message = 'Created: ' + created + '\nUpdated: ' + updated + '\nDeleted: ' + deleted;
+    const message = 'Created: ' + result.created + '\nUpdated: ' + result.updated + '\nDeleted: ' + result.deleted;
     ui.alert('Calendar synced', message, ui.ButtonSet.OK);
   } catch (err) {
     console.error('createPracticeCalendarEvents', err);
     ui.alert('Error', err.message || String(err), ui.ButtonSet.OK);
   }
+}
+
+/**
+ * Shared sync: create/update/delete calendar events to match the given event specs.
+ * @param {Calendar} calendar - Google Calendar
+ * @param {Array<{title: string, startTime: Date, endTime: Date, location: string, description: string, isAllDay: boolean}>} eventSpecs
+ * @param {function(CalendarEvent): boolean} isEventOurs - returns true if this event is managed by this sync (so it can be updated or deleted)
+ * @return {{created: number, updated: number, deleted: number}}
+ */
+function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endDate = new Date(startOfToday);
+  endDate.setMonth(endDate.getMonth() + 6);
+  const existingEvents = calendar.getEvents(startOfToday, endDate).filter(isEventOurs);
+
+  let created = 0;
+  let updated = 0;
+  const matchedEventIds = {};
+
+  eventSpecs.forEach(function (spec) {
+    const matched = findMatchingEvent(existingEvents, spec.startTime, matchedEventIds);
+    if (matched) {
+      updateCalendarEventFromSpec(matched, spec);
+      matchedEventIds[matched.getId()] = true;
+      updated++;
+    } else {
+      createCalendarEventFromSpec(calendar, spec);
+      created++;
+    }
+  });
+
+  let deleted = 0;
+  existingEvents.forEach(function (e) {
+    if (!matchedEventIds[e.getId()]) {
+      e.deleteEvent();
+      deleted++;
+    }
+  });
+
+  return { created: created, updated: updated, deleted: deleted };
 }
 
 /**
@@ -186,23 +209,28 @@ function findMatchingEvent(events, startTime, alreadyMatched) {
 }
 
 /**
- * Create a new calendar event for a practice row.
+ * Create a new calendar event from a generic event spec.
+ * @param {Calendar} calendar
+ * @param {{title: string, startTime: Date, endTime: Date, location: string, description: string, isAllDay: boolean}} spec
  */
-function createCalendarEvent(calendar, row) {
-  if (row.isAllDay) {
-    calendar.createAllDayEvent(PRACTICE_EVENT_TITLE, row.startTime, row.startTime, { description: row.description || '', location: row.location || '' });
+function createCalendarEventFromSpec(calendar, spec) {
+  if (spec.isAllDay) {
+    calendar.createAllDayEvent(spec.title, spec.startTime, spec.startTime, { description: spec.description || '', location: spec.location || '' });
   } else {
-    calendar.createEvent(PRACTICE_EVENT_TITLE, row.startTime, row.endTime, { description: row.description || '', location: row.location || '' });
+    calendar.createEvent(spec.title, spec.startTime, spec.endTime, { description: spec.description || '', location: spec.location || '' });
   }
 }
 
 /**
- * Update an existing calendar event to match the sheet row.
+ * Update an existing calendar event to match an event spec.
+ * @param {CalendarEvent} event
+ * @param {{title: string, startTime: Date, endTime: Date, location: string, description: string, isAllDay: boolean}} spec
  */
-function updateCalendarEvent(event, row) {
-  event.setLocation(row.location || '');
-  event.setDescription(row.description || '');
-  if (!row.isAllDay) {
-    event.setTime(row.startTime, row.endTime);
+function updateCalendarEventFromSpec(event, spec) {
+  event.setTitle(spec.title);
+  event.setLocation(spec.location || '');
+  event.setDescription(spec.description || '');
+  if (!spec.isAllDay) {
+    event.setTime(spec.startTime, spec.endTime);
   }
 }
