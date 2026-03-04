@@ -761,9 +761,22 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
 
   try {
     const hasTeam = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasTeam;
+    const hasActivation = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasActivationStatus;
 
-    // Headers: Full Name, Availability, [Team if hasTeam]
-    const headers = hasTeam ? ['Full Name', availColumns.availabilityHeader, 'Team'] : ['Full Name', availColumns.availabilityHeader];
+    // Column order: Full Name (1), [Activation Status?], Availability, [Team if hasTeam]
+    const headers = ['Full Name'];
+    const col = { fullName: 1, activation: null, availability: null, team: null };
+    let c = 2;
+    if (hasActivation && availColumns.activationHeader) {
+      headers.push(availColumns.activationHeader);
+      col.activation = c++;
+    }
+    headers.push(availColumns.availabilityHeader);
+    col.availability = c++;
+    if (hasTeam) {
+      headers.push('Team');
+      col.team = c++;
+    }
 
     const headerRange = newSheet.getRange(1, 1, 1, headers.length);
     headerRange.setValues([headers]);
@@ -780,30 +793,32 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
       const gameAvailSheetName = 'Game Availability';
       const rosterSheetName = CONFIG.roster.sheetName;
 
-      // Column 2: Game Availability
-      if (availColumns.availabilityColumn) {
-        const formula = `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
-        newSheet.getRange(2, 2).setFormula(formula);
+      function setFormula(colIndex, formula) {
+        if (!colIndex) return;
+        newSheet.getRange(2, colIndex).setFormula(formula);
         if (fullNameInfo.rowCount > 1) {
-          newSheet.getRange(2, 2).copyTo(newSheet.getRange(3, 2, fullNameInfo.rowCount - 1, 1));
+          newSheet.getRange(2, colIndex).copyTo(newSheet.getRange(3, colIndex, fullNameInfo.rowCount - 1, 1));
         }
+      }
+
+      if (col.activation && availColumns.activationStatusColumn) {
+        setFormula(col.activation, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.activationStatusColumn}:${availColumns.activationStatusColumn}),"")`);
+        console.log(`✅ Populated Activation Status column with XLOOKUP`);
+      }
+
+      if (col.availability && availColumns.availabilityColumn) {
+        setFormula(col.availability, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`);
         console.log(`✅ Populated Game Availability column with XLOOKUP`);
       }
 
-      // Column 3: Team (only if this season has team)
-      if (hasTeam) {
+      if (col.team) {
         const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
         const rosterFullNameColIndex = rosterHeaderRow.indexOf(CONFIG.columns.fullName) + 1;
         const teamColIndex = rosterHeaderRow.indexOf(CONFIG.columns.team) + 1;
-
         if (teamColIndex > 0 && rosterFullNameColIndex > 0) {
           const rosterFullNameCol = getColumnLetter(rosterFullNameColIndex);
           const teamCol = getColumnLetter(teamColIndex);
-          const formula = `=IFERROR(XLOOKUP(A2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`;
-          newSheet.getRange(2, 3).setFormula(formula);
-          if (fullNameInfo.rowCount > 1) {
-            newSheet.getRange(2, 3).copyTo(newSheet.getRange(3, 3, fullNameInfo.rowCount - 1, 1));
-          }
+          setFormula(col.team, `=IFERROR(XLOOKUP(A2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`);
           console.log(`✅ Populated Team column with XLOOKUP`);
         }
       }
@@ -813,44 +828,56 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
 
     const numCols = headers.length;
     if (fullNameInfo.rowCount > 0) {
-      console.log(`🔄 Sorting ${fullNameInfo.rowCount} rows alphabetically by Full Name...`);
+      const sortSpec = col.activation
+        ? [{ column: col.activation, ascending: true }, { column: 1, ascending: true }]
+        : [{ column: 1, ascending: true }];
+      console.log(col.activation
+        ? `🔄 Sorting ${fullNameInfo.rowCount} rows by Activation Status > Player Name...`
+        : `🔄 Sorting ${fullNameInfo.rowCount} rows by player name...`);
       const dataRange = newSheet.getRange(2, 1, fullNameInfo.rowCount, numCols);
-      dataRange.sort([{ column: 1, ascending: true }]);
+      dataRange.sort(sortSpec);
       console.log('✅ Sorting complete');
     }
 
     // Filter to hide Practice Squad and Dropped only when we have a Team column
-    if (hasTeam && fullNameInfo.rowCount > 0) {
+    if (hasTeam && fullNameInfo.rowCount > 0 && col.team) {
       console.log('🔍 Applying filter to hide Practice Squad and Dropped...');
       const fullDataRange = newSheet.getRange(1, 1, fullNameInfo.rowCount + 1, numCols);
       const filter = fullDataRange.createFilter();
       const criteria = SpreadsheetApp.newFilterCriteria()
         .setHiddenValues(['Practice Squad', 'Dropped'])
         .build();
-      filter.setColumnFilterCriteria(3, criteria);
+      filter.setColumnFilterCriteria(col.team, criteria);
       console.log('✅ Filter applied - Practice Squad and Dropped hidden');
     }
 
     if (fullNameInfo.rowCount > 0) {
-      applyAvailabilityConditionalFormatting(newSheet, 2, fullNameInfo.rowCount);
-    }
-
-    if (availColumns.availabilityColumn && fullNameInfo.rowCount > 0) {
-      applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, 2, fullNameInfo.rowCount);
+      if (col.activation) {
+        copyDataValidation(newSheet, gameAvailabilitySheet,
+          [{ sourceColumn: availColumns.activationHeader, targetColumn: col.activation }], fullNameInfo.rowCount);
+        applyActivationStatusConditionalFormatting(newSheet, col.activation, fullNameInfo.rowCount);
+      }
+      if (col.availability) {
+        applyAvailabilityConditionalFormatting(newSheet, col.availability, fullNameInfo.rowCount);
+        if (availColumns.availabilityColumn) {
+          applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, col.availability, fullNameInfo.rowCount);
+        }
+      }
     }
 
     finalizeGameRosterSheet(newSheet, fullNameInfo.rowCount);
 
     console.log('📏 Auto-resizing columns...');
     newSheet.autoResizeColumn(1);
-    newSheet.autoResizeColumn(2);
-    if (hasTeam) newSheet.autoResizeColumn(3);
+    if (col.activation) newSheet.autoResizeColumn(col.activation);
+    if (col.availability) newSheet.autoResizeColumn(col.availability);
+    if (col.team) newSheet.autoResizeColumn(col.team);
 
     console.log(`✅ Parent game roster created successfully`);
 
-    const alertDetail = hasTeam
-      ? 'Sorted alphabetically by name with color-coded availability.\nPractice Squad and Dropped players are hidden (filter applied).'
-      : 'Sorted alphabetically by name with color-coded availability.';
+    const alertDetail = col.activation
+      ? (hasTeam ? 'Sorted by Activation Status > Player Name. Practice Squad and Dropped players are hidden (filter applied).' : 'Sorted by Activation Status > Player Name.')
+      : (hasTeam ? 'Sorted by player name. Practice Squad and Dropped players are hidden (filter applied).' : 'Sorted by player name.');
     SpreadsheetApp.getUi().alert(
       'Parent Game Roster Created!',
       `Successfully created parent game roster for ${gameDate} with ${fullNameInfo.rowCount} students.\n\n${alertDetail}`,
