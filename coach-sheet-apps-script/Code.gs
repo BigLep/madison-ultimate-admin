@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '2.11';
+const SCRIPT_VERSION = '2.12';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -92,6 +92,12 @@ const CONFIG = {
     gender: { name: 'Gender', index: 4 },
     grade: { name: 'Grade', index: 5 }
     // Additional columns (availability, notes) are added dynamically after these base columns
+  },
+
+  // Game Roster Prep sheet: season-specific columns (change per season)
+  gameRosterPrep: {
+    hasTeam: false,           // If true, include Team column; if false, omit it
+    hasActivationStatus: true // If true, include $date Activation Status column and sort by it first
   }
 };
 

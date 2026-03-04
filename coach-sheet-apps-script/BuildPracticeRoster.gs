@@ -902,26 +902,28 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
 
 /**
  * Populate the # column with formulas that reset when Team or Gender changes
- * This must be called AFTER sorting to ensure correct formula references
- * @param {Sheet} sheet - The practice roster sheet
+ * This must be called AFTER sorting to ensure correct formula references.
+ * @param {Sheet} sheet - The roster sheet
  * @param {number} numRows - Number of data rows
+ * @param {Array<number>} [groupByColumns] - Optional 1-based column indices to group by (e.g. [activationStatusCol, genderCol]). If omitted, uses Team and Gender from rosterPrintoutBaseColumns.
  */
-function populateNumberColumn(sheet, numRows) {
+function populateNumberColumn(sheet, numRows, groupByColumns) {
   console.log(`🔢 Populating # column with reset formulas...`);
-  
-  // Get column letters for Team and Gender based on configuration
-  const teamColLetter = getColumnLetter(CONFIG.rosterPrintoutBaseColumns.team.index);
-  const genderColLetter = getColumnLetter(CONFIG.rosterPrintoutBaseColumns.gender.index);
-
-  // All rows get the formula: =IF(OR(C1<>C2,D1<>D2),1,A1+1)
-  // If Team or Gender changes, reset to 1, otherwise increment
-  const numberFormula = `=IF(OR(${teamColLetter}1<>${teamColLetter}2,${genderColLetter}1<>${genderColLetter}2),1,A1+1)`;
+  const cols = groupByColumns || [CONFIG.rosterPrintoutBaseColumns.team.index, CONFIG.rosterPrintoutBaseColumns.gender.index];
+  const colLetters = cols.filter(function (c) { return c; }).map(getColumnLetter);
+  let numberFormula;
+  if (colLetters.length === 0) {
+    numberFormula = '=A1+1';
+  } else if (colLetters.length === 1) {
+    numberFormula = `=IF(${colLetters[0]}1<>${colLetters[0]}2,1,A1+1)`;
+  } else {
+    const orParts = colLetters.map(function (l) { return l + '1<>' + l + '2'; }).join(',');
+    numberFormula = `=IF(OR(${orParts}),1,A1+1)`;
+  }
   sheet.getRange(2, 1).setFormula(numberFormula);
-  
   if (numRows > 1) {
     sheet.getRange(2, 1).copyTo(sheet.getRange(3, 1, numRows - 1, 1));
   }
-  
   console.log(`✅ Populated # column with reset formula for ${numRows} rows`);
 }
 
@@ -1041,7 +1043,7 @@ function findGameAvailabilityColumns(gameAvailabilitySheet, gameDate) {
  * @param {Sheet} availabilitySheet - The availability sheet to search
  * @param {string} dateString - Date in format "M/D"
  * @param {string} sheetType - Type of sheet for logging (e.g., 'Practice Availability', 'Game Availability')
- * @return {Object} Object with availabilityColumn, noteColumn (letters), availabilityHeader, noteHeader (exact header strings)
+ * @return {Object} Object with availabilityColumn, noteColumn, activationStatusColumn (letters), availabilityHeader, noteHeader, activationHeader (exact header strings; activation only for Game Availability)
  */
 function findAvailabilityColumns(availabilitySheet, dateString, sheetType) {
   const headerRow = availabilitySheet.getRange(1, 1, 1, availabilitySheet.getLastColumn()).getValues()[0];
@@ -1049,8 +1051,9 @@ function findAvailabilityColumns(availabilitySheet, dateString, sheetType) {
 
   let availabilityColumn = null;
   let noteColumn = null;
+  let activationStatusColumn = null;
 
-  console.log(`🔍 Looking for date "${dateString}" in ${sheetType} (expect "${expected.availabilityHeader}", "${expected.noteHeader}")...`);
+  console.log(`🔍 Looking for date "${dateString}" in ${sheetType} (expect "${expected.availabilityHeader}", "${expected.noteHeader}"${expected.activationHeader ? ', "' + expected.activationHeader + '"' : ''})...`);
 
   headerRow.forEach((header, index) => {
     let headerStr = '';
@@ -1073,6 +1076,10 @@ function findAvailabilityColumns(availabilitySheet, dateString, sheetType) {
       noteColumn = getColumnLetter(index + 1);
       console.log(`✅ Found note column: ${noteColumn} (${headerStr})`);
     }
+    if (expected.activationHeader && headerStr === expected.activationHeader) {
+      activationStatusColumn = getColumnLetter(index + 1);
+      console.log(`✅ Found activation status column: ${activationStatusColumn} (${headerStr})`);
+    }
   });
 
   if (!availabilityColumn) {
@@ -1085,12 +1092,17 @@ function findAvailabilityColumns(availabilitySheet, dateString, sheetType) {
     }).join(', ')}`);
   }
 
-  return {
+  const result = {
     availabilityColumn: availabilityColumn,
     noteColumn: noteColumn,
     availabilityHeader: expected.availabilityHeader,
     noteHeader: expected.noteHeader
   };
+  if (expected.activationHeader) {
+    result.activationStatusColumn = activationStatusColumn;
+    result.activationHeader = expected.activationHeader;
+  }
+  return result;
 }
 
 /**

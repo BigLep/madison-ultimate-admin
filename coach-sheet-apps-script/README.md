@@ -60,6 +60,9 @@ To bind this script to a **new** spreadsheet (the script must be created from th
    clasp push
    ```
 6. Back in the spreadsheet, refresh the page; the 🥏 Madison Ultimate menu should appear.
+7. **Set season-specific Game Roster Prep options** in `Code.gs` under `CONFIG.gameRosterPrep`:
+   - **`hasTeam`** – `true` if this season uses teams (e.g. A/B squads) and the roster has a Team column; `false` to omit the Team column from coach and parent game roster prep sheets.
+   - **`hasActivationStatus`** – `true` if Game Availability has an Activation Status column per date (Active/Inactive/TBD) and you want it on the coach game roster prep sheet (and sorted first); `false` to omit it.
 
 Note: `.clasp.json` currently points at the Spring 2026 script. After you deploy to a new sheet, switch the `scriptId` in `.clasp.json` depending on which season you’re editing.
 

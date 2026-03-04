@@ -59,15 +59,17 @@ const GAME_AVAILABILITY_CONFIG = {
  * Single source of truth for column naming so Build Game/Practice Roster and Build Game Roster Prep use the same names.
  * @param {string} dateString - Date in format "M/D" (e.g. "3/7")
  * @param {string} sheetType - 'Practice Availability' or 'Game Availability'
- * @return {{ availabilityHeader: string, noteHeader: string }}
+ * @return {{ availabilityHeader: string, noteHeader: string, activationHeader?: string }}
  */
 function getAvailabilityColumnHeaders(dateString, sheetType) {
   if (sheetType === 'Game Availability') {
     const availabilitySuffix = GAME_AVAILABILITY_CONFIG.columnsPerDate.find(function (c) { return c.useAvailabilityValidation; }).suffix;
     const noteSuffix = GAME_AVAILABILITY_CONFIG.columnsPerDate.find(function (c) { return c.isFreeText; }).suffix;
+    const activationSuffix = GAME_AVAILABILITY_CONFIG.columnsPerDate.find(function (c) { return c.useActivationStatusValidation; }).suffix;
     return {
       availabilityHeader: dateString + availabilitySuffix,
-      noteHeader: dateString + noteSuffix
+      noteHeader: dateString + noteSuffix,
+      activationHeader: dateString + activationSuffix
     };
   }
   // Practice Availability: first column is just the date, second is " Note"

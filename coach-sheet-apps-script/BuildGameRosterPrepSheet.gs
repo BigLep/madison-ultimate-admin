@@ -341,6 +341,38 @@ function createGameRosterPrepSheet(sheetName, gameDate, audience = 'coaches') {
 }
 
 /**
+ * Get column layout for coach game roster prep based on CONFIG.gameRosterPrep.
+ * Order: #, Full Name, [Team?], Gender, Grade, [$date Activation Status?], $date Availability, $date Note
+ * @param {string} gameDate - Game date in format "M/D"
+ * @param {Object} availColumns - From findAvailabilityColumns (headers for availability, note, activation)
+ * @return {{ headers: string[], indices: Object }} headers array and 1-based column index for each logical column
+ */
+function getGameRosterPrepColumnLayout(gameDate, availColumns) {
+  const hasTeam = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasTeam;
+  const hasActivation = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasActivationStatus;
+  const headers = [CONFIG.rosterPrintoutBaseColumns.number.name, CONFIG.rosterPrintoutBaseColumns.fullName.name];
+  const indices = { number: 1, fullName: 2, team: null, gender: null, grade: null, activationStatus: null, availability: null, note: null };
+  let col = 3;
+  if (hasTeam) {
+    headers.push(CONFIG.rosterPrintoutBaseColumns.team.name);
+    indices.team = col++;
+  }
+  headers.push(CONFIG.rosterPrintoutBaseColumns.gender.name);
+  indices.gender = col++;
+  headers.push(CONFIG.rosterPrintoutBaseColumns.grade.name);
+  indices.grade = col++;
+  if (hasActivation && availColumns.activationHeader) {
+    headers.push(availColumns.activationHeader);
+    indices.activationStatus = col++;
+  }
+  headers.push(availColumns.availabilityHeader);
+  indices.availability = col++;
+  headers.push(availColumns.noteHeader);
+  indices.note = col++;
+  return { headers: headers, indices: indices };
+}
+
+/**
  * Common setup for game roster sheets
  * @param {string} sheetName - Name for the new sheet
  * @param {string} gameDate - Game date in format "M/D"
@@ -462,6 +494,28 @@ function applyAvailabilityConditionalFormatting(sheet, column, rowCount) {
 }
 
 /**
+ * Apply Activation Status conditional formatting (Active=green, Inactive=red, TBD=grey) to a column.
+ * Uses GAME_ACTIVATION_STATUS_OPTIONS from Availability.gs.
+ * @param {Sheet} sheet - The sheet to format
+ * @param {number} column - 1-based column index
+ * @param {number} rowCount - Number of data rows
+ */
+function applyActivationStatusConditionalFormatting(sheet, column, rowCount) {
+  const range = sheet.getRange(2, column, rowCount, 1);
+  const rules = sheet.getConditionalFormatRules();
+  GAME_ACTIVATION_STATUS_OPTIONS.forEach(function (opt) {
+    const rule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo(opt.value)
+      .setBackground(opt.backgroundColor)
+      .setRanges([range])
+      .build();
+    rules.push(rule);
+  });
+  sheet.setConditionalFormatRules(rules);
+  console.log('✅ Applied Activation Status conditional formatting');
+}
+
+/**
  * Build the coach version of game roster prep sheet
  * @param {Sheet} newSheet - The new sheet to populate
  * @param {Sheet} rosterSheet - The roster sheet
@@ -473,20 +527,9 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
   console.log(`🏆 Building COACH game roster for date: ${gameDate}`);
 
   try {
-
-    // Define column structure with shared base columns + dynamic availability columns
-    const headers = [];
-
-    // Add base columns in order defined by rosterPrintoutBaseColumns
-    Object.keys(CONFIG.rosterPrintoutBaseColumns)
-      .sort((a, b) => CONFIG.rosterPrintoutBaseColumns[a].index - CONFIG.rosterPrintoutBaseColumns[b].index)
-      .forEach(key => {
-        headers.push(CONFIG.rosterPrintoutBaseColumns[key].name);
-      });
-
-    // Add dynamic availability columns
-    headers.push(gameDate);                              // Game availability
-    headers.push(`${gameDate} Note`);                    // Game availability note
+    const layout = getGameRosterPrepColumnLayout(gameDate, availColumns);
+    const headers = layout.headers;
+    const idx = layout.indices;
 
     // Set up headers
     const headerRange = newSheet.getRange(1, 1, 1, headers.length);
@@ -498,14 +541,14 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     console.log(`📝 Set up ${headers.length} column headers: ${headers.join(', ')}`);
     console.log(`📍 Found availability columns: ${availColumns.availabilityColumn} and ${availColumns.noteColumn || 'none'}`);
 
-    // Copy Full Name column to column B (column 2) from roster using shared utility
+    // Copy Full Name column to column 2 from roster using shared utility
     const fullNameInfo = copyFullNameColumnToColumn(newSheet, rosterSheet, 2, 2);
     console.log(`📊 Copied ${fullNameInfo.rowCount} students from roster`);
 
     const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
 
-    // Populate other columns with XLOOKUP formulas
-    populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, gameAvailabilitySheet, availColumns, fullNameInfo.rowCount);
+    // Populate other columns with XLOOKUP formulas (uses layout.indices)
+    populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, gameAvailabilitySheet, availColumns, layout.indices, fullNameInfo.rowCount);
 
     // Copy formatting from roster using shared utility
     console.log('🎨 Copying column formatting...');
@@ -523,26 +566,31 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     const totalRows = fullNameInfo.rowCount + 1;
     copyConditionalFormatting(newSheet, rosterSheet, totalRows, headers.length);
 
-    // Copy data validation from Game Availability for the Availability column using shared utility
-    if (availColumns.availabilityColumn) {
-      const availabilityTargetColumn = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 1;
-      applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, availabilityTargetColumn, fullNameInfo.rowCount);
+    // Copy data validation from Game Availability for the Availability column
+    if (availColumns.availabilityColumn && idx.availability) {
+      applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, idx.availability, fullNameInfo.rowCount);
+      applyAvailabilityConditionalFormatting(newSheet, idx.availability, fullNameInfo.rowCount);
+    }
 
-      // Apply conditional formatting for availability
-      applyAvailabilityConditionalFormatting(newSheet, availabilityTargetColumn, fullNameInfo.rowCount);
+    // Copy Activation Status validation/formatting from Game Availability if this season uses it
+    if (idx.activationStatus && availColumns.activationStatusColumn) {
+      copyDataValidation(newSheet, gameAvailabilitySheet,
+        [{ sourceColumn: availColumns.activationHeader, targetColumn: idx.activationStatus }], fullNameInfo.rowCount);
+      applyActivationStatusConditionalFormatting(newSheet, idx.activationStatus, fullNameInfo.rowCount);
     }
 
     // Force recalculation to ensure formulas are evaluated before sorting
     SpreadsheetApp.flush();
 
-    // Sort the data AFTER formulas have been calculated (Gender > Availability > Name)
+    // Sort: Activation Status (if present) > Gender > Availability > Name
     if (fullNameInfo.rowCount > 0) {
-      sortGameRosterPrep(newSheet, fullNameInfo.rowCount, headers.length);
+      sortGameRosterPrep(newSheet, fullNameInfo.rowCount, headers.length, layout.indices);
     }
 
-    // Populate # column AFTER sorting (so the formula references are correct)
+    // Populate # column AFTER sorting (reset when Activation Status or Gender changes)
     if (fullNameInfo.rowCount > 0) {
-      populateNumberColumn(newSheet, fullNameInfo.rowCount);
+      const groupByCols = [idx.activationStatus, idx.gender].filter(Boolean);
+      populateNumberColumn(newSheet, fullNameInfo.rowCount, groupByCols);
 
       // Force calculation of # column formulas before adding borders
       SpreadsheetApp.flush();
@@ -554,17 +602,18 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     // Common cleanup
     finalizeGameRosterSheet(newSheet, fullNameInfo.rowCount);
 
-    // Auto-resize specific columns
+    // Auto-resize columns
     console.log('📏 Auto-resizing columns...');
-    newSheet.autoResizeColumn(CONFIG.rosterPrintoutBaseColumns.number.index); // # column
-    const gameAvailabilityColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 1;
-    newSheet.autoResizeColumn(gameAvailabilityColumnIndex); // Game availability column
+    newSheet.autoResizeColumn(idx.number);
+    if (idx.availability) newSheet.autoResizeColumn(idx.availability);
+    if (idx.activationStatus) newSheet.autoResizeColumn(idx.activationStatus);
 
     // Enable text wrapping for note column
-    console.log('📝 Enabling text wrap for note column...');
-    const gameNoteColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 2;
-    const noteColumnRange = newSheet.getRange(2, gameNoteColumnIndex, fullNameInfo.rowCount, 1);
-    noteColumnRange.setWrap(true);
+    if (idx.note) {
+      console.log('📝 Enabling text wrap for note column...');
+      const noteColumnRange = newSheet.getRange(2, idx.note, fullNameInfo.rowCount, 1);
+      noteColumnRange.setWrap(true);
+    }
 
     // Set print settings
     console.log('🖨️ Configuring print settings...');
@@ -572,10 +621,12 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
 
     console.log(`✅ Game roster prep sheet created successfully`);
 
-    // Show success alert AFTER all processing is complete
+    const sortDesc = idx.activationStatus
+      ? 'Activation Status > Gender > Availability > Name'
+      : 'Gender > Availability > Name';
     SpreadsheetApp.getUi().alert(
       'Game Roster Prep Sheet Created!',
-      `Successfully created game roster prep sheet for ${gameDate} with ${fullNameInfo.rowCount} students.\n\nSorted by Gender > Availability > Name for optimal team organization.`,
+      `Successfully created game roster prep sheet for ${gameDate} with ${fullNameInfo.rowCount} students.\n\nSorted by ${sortDesc}.`,
       SpreadsheetApp.getUi().ButtonSet.OK
     );
 
@@ -588,21 +639,22 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
 }
 
 /**
- * Populate game roster prep data with XLOOKUP formulas
+ * Populate game roster prep data with XLOOKUP formulas.
+ * Uses indices from getGameRosterPrepColumnLayout (optional Team, optional Activation Status).
  * @param {Sheet} newSheet - The new game roster prep sheet
  * @param {Sheet} rosterSheet - The source roster sheet
  * @param {Array} rosterHeaderRow - Header row from roster sheet
  * @param {Sheet} gameAvailabilitySheet - The game availability sheet
- * @param {Object} availColumns - Availability column letters
+ * @param {Object} availColumns - Availability column letters and headers
+ * @param {Object} indices - 1-based column indices (number, fullName, team?, gender, grade, activationStatus?, availability, note)
  * @param {number} numRows - Number of data rows
  */
-function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, gameAvailabilitySheet, availColumns, numRows) {
+function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, gameAvailabilitySheet, availColumns, indices, numRows) {
   if (numRows === 0) return;
 
   const rosterSheetName = CONFIG.roster.sheetName;
   const gameAvailSheetName = 'Game Availability';
 
-  // Find "Full Name" column for XLOOKUP key (column B in the game roster prep)
   const rosterFullNameColIndex = rosterHeaderRow.indexOf(CONFIG.columns.fullName) + 1;
   if (rosterFullNameColIndex === 0) {
     throw new Error(`${CONFIG.columns.fullName} column not found in Roster sheet`);
@@ -610,89 +662,89 @@ function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, game
   const rosterFullNameCol = getColumnLetter(rosterFullNameColIndex);
   console.log(`📍 Using ${CONFIG.columns.fullName} column ${rosterFullNameCol} for XLOOKUP key`);
 
-  // Column at Team index: Team
-  const teamColIndex = rosterHeaderRow.indexOf(CONFIG.columns.team) + 1;
-  if (teamColIndex > 0) {
-    const teamCol = getColumnLetter(teamColIndex);
-    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`;
-    newSheet.getRange(2, CONFIG.rosterPrintoutBaseColumns.team.index).setFormula(formula);
+  function setFormula(colIndex, formula) {
+    if (!colIndex) return;
+    newSheet.getRange(2, colIndex).setFormula(formula);
     if (numRows > 1) {
-      newSheet.getRange(2, CONFIG.rosterPrintoutBaseColumns.team.index).copyTo(newSheet.getRange(3, CONFIG.rosterPrintoutBaseColumns.team.index, numRows - 1, 1));
+      newSheet.getRange(2, colIndex).copyTo(newSheet.getRange(3, colIndex, numRows - 1, 1));
     }
-    console.log(`✅ Populated Team column with XLOOKUP from column ${teamCol}`);
-  } else {
-    console.warn(`⚠️ Team column not found in Roster sheet - available columns: ${rosterHeaderRow.join(', ')}`);
   }
 
-  // Column at Gender index: Gender (from "Gender Identification")
-  const genderColIndex = rosterHeaderRow.indexOf(CONFIG.columns.genderIdentification) + 1;
-  if (genderColIndex > 0) {
-    const genderCol = getColumnLetter(genderColIndex);
-    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${genderCol}:${genderCol}),"")`;
-    newSheet.getRange(2, CONFIG.rosterPrintoutBaseColumns.gender.index).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, CONFIG.rosterPrintoutBaseColumns.gender.index).copyTo(newSheet.getRange(3, CONFIG.rosterPrintoutBaseColumns.gender.index, numRows - 1, 1));
+  // Team (only if this season has team)
+  if (indices.team) {
+    const teamColIndex = rosterHeaderRow.indexOf(CONFIG.columns.team) + 1;
+    if (teamColIndex > 0) {
+      const teamCol = getColumnLetter(teamColIndex);
+      setFormula(indices.team, `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`);
+      console.log(`✅ Populated Team column with XLOOKUP`);
     }
-    console.log(`✅ Populated Gender column with XLOOKUP from column ${genderCol}`);
-  } else {
-    console.warn(`⚠️ Gender Identification column not found in Roster sheet - available columns: ${rosterHeaderRow.join(', ')}`);
   }
 
-  // Column at Grade index: Grade
-  const gradeColIndex = rosterHeaderRow.indexOf(CONFIG.columns.grade) + 1;
-  if (gradeColIndex > 0) {
-    const gradeCol = getColumnLetter(gradeColIndex);
-    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${gradeCol}:${gradeCol}),"")`;
-    newSheet.getRange(2, CONFIG.rosterPrintoutBaseColumns.grade.index).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, CONFIG.rosterPrintoutBaseColumns.grade.index).copyTo(newSheet.getRange(3, CONFIG.rosterPrintoutBaseColumns.grade.index, numRows - 1, 1));
+  // Gender
+  if (indices.gender) {
+    const genderColIndex = rosterHeaderRow.indexOf(CONFIG.columns.genderIdentification) + 1;
+    if (genderColIndex > 0) {
+      const genderCol = getColumnLetter(genderColIndex);
+      setFormula(indices.gender, `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${genderCol}:${genderCol}),"")`);
+      console.log(`✅ Populated Gender column with XLOOKUP`);
     }
-    console.log(`✅ Populated Grade column with XLOOKUP`);
   }
 
-  // Game Availability column (first column after base columns)
-  const availabilityColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 1;
-  if (availColumns.availabilityColumn) {
+  // Grade
+  if (indices.grade) {
+    const gradeColIndex = rosterHeaderRow.indexOf(CONFIG.columns.grade) + 1;
+    if (gradeColIndex > 0) {
+      const gradeCol = getColumnLetter(gradeColIndex);
+      setFormula(indices.grade, `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${gradeCol}:${gradeCol}),"")`);
+      console.log(`✅ Populated Grade column with XLOOKUP`);
+    }
+  }
+
+  // Activation Status (only if this season has it)
+  if (indices.activationStatus && availColumns.activationStatusColumn) {
+    const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.activationStatusColumn}:${availColumns.activationStatusColumn}),"")`;
+    setFormula(indices.activationStatus, formula);
+    console.log(`✅ Populated Activation Status column with XLOOKUP`);
+  }
+
+  // Game Availability
+  if (indices.availability && availColumns.availabilityColumn) {
     const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
-    newSheet.getRange(2, availabilityColumnIndex).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, availabilityColumnIndex).copyTo(newSheet.getRange(3, availabilityColumnIndex, numRows - 1, 1));
-    }
+    setFormula(indices.availability, formula);
     console.log(`✅ Populated Game Availability column with XLOOKUP`);
   }
 
-  // Game Availability Note column (second column after base columns)
-  const noteColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 2;
-  if (availColumns.noteColumn) {
+  // Game Note
+  if (indices.note && availColumns.noteColumn) {
     const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
-    newSheet.getRange(2, noteColumnIndex).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, noteColumnIndex).copyTo(newSheet.getRange(3, noteColumnIndex, numRows - 1, 1));
-    }
-    console.log(`✅ Populated Game Availability Note column with XLOOKUP`);
+    setFormula(indices.note, formula);
+    console.log(`✅ Populated Game Note column with XLOOKUP`);
   }
 }
 
 /**
- * Sort the game roster prep by Team ASC, Gender ASC, Availability ASC, Name ASC
+ * Sort the game roster prep: Activation Status (if present) > Gender > Availability > Name.
  * @param {Sheet} sheet - The game roster prep sheet
  * @param {number} numRows - Number of data rows
  * @param {number} numColumns - Number of columns
+ * @param {Object} indices - 1-based column indices from getGameRosterPrepColumnLayout
  */
-function sortGameRosterPrep(sheet, numRows, numColumns) {
-  console.log(`🔄 Sorting ${numRows} rows by Team ASC, Gender ASC, Availability ASC, Name ASC...`);
+function sortGameRosterPrep(sheet, numRows, numColumns, indices) {
+  const sortSpec = [];
+  if (indices.activationStatus) {
+    sortSpec.push({ column: indices.activationStatus, ascending: true });
+    console.log(`🔄 Sorting ${numRows} rows by Activation Status > Gender > Availability > Name...`);
+  } else {
+    console.log(`🔄 Sorting ${numRows} rows by Gender > Availability > Name...`);
+  }
+  sortSpec.push({ column: indices.gender, ascending: true });
+  if (indices.availability) {
+    sortSpec.push({ column: indices.availability, ascending: true });
+  }
+  sortSpec.push({ column: indices.fullName, ascending: true });
 
   const dataRange = sheet.getRange(2, 1, numRows, numColumns);
-
-  const availabilityColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 1; // First column after base columns
-
-  dataRange.sort([
-    {column: CONFIG.rosterPrintoutBaseColumns.team.index, ascending: true},       // Team - primary sort
-    {column: CONFIG.rosterPrintoutBaseColumns.gender.index, ascending: true},     // Gender - secondary sort
-    {column: availabilityColumnIndex, ascending: true},                           // Availability - tertiary sort
-    {column: CONFIG.rosterPrintoutBaseColumns.fullName.index, ascending: true}    // Full Name - quaternary sort
-  ]);
-
+  dataRange.sort(sortSpec);
   console.log('✅ Sorting complete');
 }
 
@@ -708,11 +760,11 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
   console.log(`👨‍👩‍👧‍👦 Building PARENT game roster for date: ${gameDate}`);
 
   try {
+    const hasTeam = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasTeam;
 
-    // Headers for parents: Full Name, Availability, Team
-    const headers = ['Full Name', gameDate, 'Team'];
+    // Headers: Full Name, Availability, [Team if hasTeam]
+    const headers = hasTeam ? ['Full Name', availColumns.availabilityHeader, 'Team'] : ['Full Name', availColumns.availabilityHeader];
 
-    // Set up headers
     const headerRange = newSheet.getRange(1, 1, 1, headers.length);
     headerRange.setValues([headers]);
     headerRange.setFontWeight('bold');
@@ -721,11 +773,9 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
 
     console.log(`📝 Set up ${headers.length} column headers: ${headers.join(', ')}`);
 
-    // Copy Full Name column from roster (to column 1, starting at row 2)
     const fullNameInfo = copyFullNameColumnToColumn(newSheet, rosterSheet, 2, 1);
     console.log(`📊 Copied ${fullNameInfo.rowCount} students from roster`);
 
-    // Populate availability and team data
     if (fullNameInfo.rowCount > 0) {
       const gameAvailSheetName = 'Game Availability';
       const rosterSheetName = CONFIG.roster.sheetName;
@@ -740,75 +790,70 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
         console.log(`✅ Populated Game Availability column with XLOOKUP`);
       }
 
-      // Column 3: Team
-      const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
-      const rosterFullNameColIndex = rosterHeaderRow.indexOf(CONFIG.columns.fullName) + 1;
-      const teamColIndex = rosterHeaderRow.indexOf(CONFIG.columns.team) + 1;
+      // Column 3: Team (only if this season has team)
+      if (hasTeam) {
+        const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
+        const rosterFullNameColIndex = rosterHeaderRow.indexOf(CONFIG.columns.fullName) + 1;
+        const teamColIndex = rosterHeaderRow.indexOf(CONFIG.columns.team) + 1;
 
-      if (teamColIndex > 0 && rosterFullNameColIndex > 0) {
-        const rosterFullNameCol = getColumnLetter(rosterFullNameColIndex);
-        const teamCol = getColumnLetter(teamColIndex);
-        const formula = `=IFERROR(XLOOKUP(A2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`;
-        newSheet.getRange(2, 3).setFormula(formula);
-        if (fullNameInfo.rowCount > 1) {
-          newSheet.getRange(2, 3).copyTo(newSheet.getRange(3, 3, fullNameInfo.rowCount - 1, 1));
+        if (teamColIndex > 0 && rosterFullNameColIndex > 0) {
+          const rosterFullNameCol = getColumnLetter(rosterFullNameColIndex);
+          const teamCol = getColumnLetter(teamColIndex);
+          const formula = `=IFERROR(XLOOKUP(A2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`;
+          newSheet.getRange(2, 3).setFormula(formula);
+          if (fullNameInfo.rowCount > 1) {
+            newSheet.getRange(2, 3).copyTo(newSheet.getRange(3, 3, fullNameInfo.rowCount - 1, 1));
+          }
+          console.log(`✅ Populated Team column with XLOOKUP`);
         }
-        console.log(`✅ Populated Team column with XLOOKUP`);
       }
     }
 
-    // Force recalculation to ensure formulas are evaluated before sorting
     SpreadsheetApp.flush();
 
-    // Sort alphabetically by Full Name
+    const numCols = headers.length;
     if (fullNameInfo.rowCount > 0) {
       console.log(`🔄 Sorting ${fullNameInfo.rowCount} rows alphabetically by Full Name...`);
-      const dataRange = newSheet.getRange(2, 1, fullNameInfo.rowCount, 3);
-      dataRange.sort([{column: 1, ascending: true}]);
+      const dataRange = newSheet.getRange(2, 1, fullNameInfo.rowCount, numCols);
+      dataRange.sort([{ column: 1, ascending: true }]);
       console.log('✅ Sorting complete');
     }
 
-    // Apply filter to hide Practice Squad and Dropped
-    console.log('🔍 Applying filter to hide Practice Squad and Dropped...');
-    const fullDataRange = newSheet.getRange(1, 1, fullNameInfo.rowCount + 1, 3);
+    // Filter to hide Practice Squad and Dropped only when we have a Team column
+    if (hasTeam && fullNameInfo.rowCount > 0) {
+      console.log('🔍 Applying filter to hide Practice Squad and Dropped...');
+      const fullDataRange = newSheet.getRange(1, 1, fullNameInfo.rowCount + 1, numCols);
+      const filter = fullDataRange.createFilter();
+      const criteria = SpreadsheetApp.newFilterCriteria()
+        .setHiddenValues(['Practice Squad', 'Dropped'])
+        .build();
+      filter.setColumnFilterCriteria(3, criteria);
+      console.log('✅ Filter applied - Practice Squad and Dropped hidden');
+    }
 
-    // Create filter
-    const filter = fullDataRange.createFilter();
-
-    // Create criteria to hide "Practice Squad" and "Dropped"
-    const criteria = SpreadsheetApp.newFilterCriteria()
-      .setHiddenValues(['Practice Squad', 'Dropped'])
-      .build();
-
-    // Apply the criteria to the Team column (column 3)
-    filter.setColumnFilterCriteria(3, criteria);
-    console.log('✅ Filter applied - Practice Squad and Dropped hidden');
-
-    // Apply conditional formatting for availability column
     if (fullNameInfo.rowCount > 0) {
       applyAvailabilityConditionalFormatting(newSheet, 2, fullNameInfo.rowCount);
     }
 
-    // Copy data validation from Game Availability for the Availability column
     if (availColumns.availabilityColumn && fullNameInfo.rowCount > 0) {
       applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, 2, fullNameInfo.rowCount);
     }
 
-    // Common cleanup
     finalizeGameRosterSheet(newSheet, fullNameInfo.rowCount);
 
-    // Auto-resize columns
     console.log('📏 Auto-resizing columns...');
-    newSheet.autoResizeColumn(1); // Full Name column
-    newSheet.autoResizeColumn(2); // Availability column
-    newSheet.autoResizeColumn(3); // Team column
+    newSheet.autoResizeColumn(1);
+    newSheet.autoResizeColumn(2);
+    if (hasTeam) newSheet.autoResizeColumn(3);
 
     console.log(`✅ Parent game roster created successfully`);
 
-    // Show success alert
+    const alertDetail = hasTeam
+      ? 'Sorted alphabetically by name with color-coded availability.\nPractice Squad and Dropped players are hidden (filter applied).'
+      : 'Sorted alphabetically by name with color-coded availability.';
     SpreadsheetApp.getUi().alert(
       'Parent Game Roster Created!',
-      `Successfully created parent game roster for ${gameDate} with ${fullNameInfo.rowCount} students.\n\nSorted alphabetically by name with color-coded availability.\nPractice Squad and Dropped players are hidden (filter applied).`,
+      `Successfully created parent game roster for ${gameDate} with ${fullNameInfo.rowCount} students.\n\n${alertDetail}`,
       SpreadsheetApp.getUi().ButtonSet.OK
     );
 
