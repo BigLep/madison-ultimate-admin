@@ -78,9 +78,11 @@ function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
   eventSpecs.forEach(function (spec) {
     const matched = findMatchingEvent(existingEvents, spec.startTime, matchedEventIds);
     if (matched) {
-      updateCalendarEventFromSpec(matched, spec);
       matchedEventIds[matched.getId()] = true;
-      updated++;
+      if (!calendarEventMatchesSpec(matched, spec)) {
+        updateCalendarEventFromSpec(matched, spec);
+        updated++;
+      }
     } else {
       createCalendarEventFromSpec(calendar, spec);
       created++;
@@ -219,6 +221,24 @@ function createCalendarEventFromSpec(calendar, spec) {
   } else {
     calendar.createEvent(spec.title, spec.startTime, spec.endTime, { description: spec.description || '', location: spec.location || '' });
   }
+}
+
+/**
+ * Return true if the calendar event already matches the spec (no write needed).
+ * @param {CalendarEvent} event
+ * @param {{title: string, startTime: Date, endTime: Date, location: string, description: string, isAllDay: boolean}} spec
+ * @return {boolean}
+ */
+function calendarEventMatchesSpec(event, spec) {
+  if (event.getTitle() !== spec.title) return false;
+  if ((event.getLocation() || '') !== (spec.location || '')) return false;
+  if ((event.getDescription() || '') !== (spec.description || '')) return false;
+  if (!spec.isAllDay) {
+    const startDiff = Math.abs(event.getStartTime().getTime() - spec.startTime.getTime());
+    const endDiff = Math.abs(event.getEndTime().getTime() - spec.endTime.getTime());
+    if (startDiff > START_TIME_MATCH_MS || endDiff > START_TIME_MATCH_MS) return false;
+  }
+  return true;
 }
 
 /**

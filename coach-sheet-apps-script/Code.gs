@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '2.15';
+const SCRIPT_VERSION = '2.17';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -48,6 +48,9 @@ const CONFIG = {
   },
   gameInfo: {
     sheetName: '📍Game Info'
+  },
+  fieldsSheet: {
+    sheetName: '📍Fields'
   },
   practiceAvailability: {
     sheetName: 'Practice Availability'
