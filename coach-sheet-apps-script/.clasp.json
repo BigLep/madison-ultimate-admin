@@ -12,6 +12,7 @@
     "DeleteEmptyRowsColumns.gs",
     "BuildPracticeRoster.gs",
     "CreatePracticeCalendarEvents.gs",
-    "CreateGameCalendarEvents.gs"
+    "CreateGameCalendarEvents.gs",
+    "ExportGameInfoToMarkdown.gs"
   ]
 }

@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '2.17';
+const SCRIPT_VERSION = '2.18';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -680,6 +680,7 @@ function createCustomMenu() {
     .addItem('✅ Convert to Actual Attendance', 'convertToActualAttendance')
     .addItem('📅 Sync Practice Info to Calendar', 'createPracticeCalendarEvents')
     .addItem('📅 Sync Game Info to Calendar', 'createGameCalendarEvents')
+    .addItem('📄 Export Game Info to Markdown List', 'exportGameInfoToMarkdown')
     .addItem('📋 Organize Sheets', 'organizeSheets')
     .addSeparator()
     .addItem('📈 Show Statistics', 'showStatistics')
