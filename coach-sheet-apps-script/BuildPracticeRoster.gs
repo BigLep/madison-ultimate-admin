@@ -531,10 +531,12 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
     // Update headers with new dates (in case the practice date changed)
     const headers = ['#', 'Full Name', 'Grade', 'Gender', 'Team', practiceDate, `${practiceDate} Note`];
 
-    // Add next game columns if found
+    // Add next game columns if found (Activation Status, Availability, Note)
     if (nextGameInfo) {
-      headers.push(nextGameInfo.formattedDate);
-      headers.push(`${nextGameInfo.formattedDate} Note`);
+      const gameHeaders = getAvailabilityColumnHeaders(nextGameInfo.formattedDate, 'Game Availability');
+      headers.push(gameHeaders.activationHeader);
+      headers.push(gameHeaders.availabilityHeader);
+      headers.push(gameHeaders.noteHeader);
     }
 
     // Update header row (preserve formatting but update text)
@@ -644,10 +646,12 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     headers.push(practiceDate);                          // Practice availability
     headers.push(`${practiceDate} Note`);                // Practice availability note
 
-    // Add next game columns if found
+    // Add next game columns if found (Activation Status, Availability, Note)
     if (nextGameInfo) {
-      headers.push(nextGameInfo.formattedDate);
-      headers.push(`${nextGameInfo.formattedDate} Note`);
+      const gameHeaders = getAvailabilityColumnHeaders(nextGameInfo.formattedDate, 'Game Availability');
+      headers.push(gameHeaders.activationHeader);   // e.g. "3/7 Activation Status"
+      headers.push(gameHeaders.availabilityHeader); // e.g. "3/7 Availability"
+      headers.push(gameHeaders.noteHeader);         // e.g. "3/7 Note"
     }
     
     // Set up headers
@@ -735,20 +739,21 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     const practiceAvailabilityColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 1;
     newSheet.autoResizeColumn(practiceAvailabilityColumnIndex); // Practice availability column
     if (nextGameInfo) {
-      const nextGameAvailabilityColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 3;
-      newSheet.autoResizeColumn(nextGameAvailabilityColumnIndex); // Next game availability column
+      const baseColCount = Object.keys(CONFIG.rosterPrintoutBaseColumns).length;
+      newSheet.autoResizeColumn(baseColCount + 3); // Next game Activation Status
+      newSheet.autoResizeColumn(baseColCount + 4); // Next game Availability
+      newSheet.autoResizeColumn(baseColCount + 5); // Next game Note
     }
     
     // Enable text wrapping for note columns
     console.log('📝 Enabling text wrap for note columns...');
-    // Practice note column (column 7)
-    const practiceNoteColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 2;
+    const baseColCount = Object.keys(CONFIG.rosterPrintoutBaseColumns).length;
+    const practiceNoteColumnIndex = baseColCount + 2;
     const practiceNoteRange = newSheet.getRange(2, practiceNoteColumnIndex, fullNameInfo.rowCount, 1);
     practiceNoteRange.setWrap(true);
     
-    // Next game note column if it exists
     if (nextGameInfo) {
-      const nextGameNoteColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 4;
+      const nextGameNoteColumnIndex = baseColCount + 5;
       const gameNoteRange = newSheet.getRange(2, nextGameNoteColumnIndex, fullNameInfo.rowCount, 1);
       gameNoteRange.setWrap(true);
     }
@@ -871,31 +876,38 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
     console.log(`✅ Populated Practice Availability Note column with XLOOKUP`);
   }
 
-  // Add next game columns if available
+  // Add next game columns if available (Activation Status, Availability, Note)
   if (nextGameInfo && gameAvailabilitySheet) {
     const gameAvailSheetName = 'Game Availability';
     const nextGameColumns = findGameAvailabilityColumns(gameAvailabilitySheet, nextGameInfo.formattedDate);
+    const baseColCount = Object.keys(CONFIG.rosterPrintoutBaseColumns).length;
+    const nextGameActivationColIndex = baseColCount + 3;
+    const nextGameAvailabilityColIndex = baseColCount + 4;
+    const nextGameNoteColIndex = baseColCount + 5;
 
-    // Next Game Availability column (third column after base columns)
-    const nextGameAvailabilityColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 3;
+    if (nextGameColumns.activationStatusColumn) {
+      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${nextGameColumns.activationStatusColumn}:${nextGameColumns.activationStatusColumn}),"")`;
+      newSheet.getRange(2, nextGameActivationColIndex).setFormula(formula);
+      if (numRows > 1) {
+        newSheet.getRange(2, nextGameActivationColIndex).copyTo(newSheet.getRange(3, nextGameActivationColIndex, numRows - 1, 1));
+      }
+      console.log(`✅ Populated Next Game Activation Status column (${nextGameInfo.formattedDate}) with XLOOKUP`);
+    }
     if (nextGameColumns.availabilityColumn) {
       const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${nextGameColumns.availabilityColumn}:${nextGameColumns.availabilityColumn}),"")`;
-      newSheet.getRange(2, nextGameAvailabilityColumnIndex).setFormula(formula);
+      newSheet.getRange(2, nextGameAvailabilityColIndex).setFormula(formula);
       if (numRows > 1) {
-        newSheet.getRange(2, nextGameAvailabilityColumnIndex).copyTo(newSheet.getRange(3, nextGameAvailabilityColumnIndex, numRows - 1, 1));
+        newSheet.getRange(2, nextGameAvailabilityColIndex).copyTo(newSheet.getRange(3, nextGameAvailabilityColIndex, numRows - 1, 1));
       }
       console.log(`✅ Populated Next Game Availability column (${nextGameInfo.formattedDate}) with XLOOKUP`);
     }
-
-    // Next Game Availability Note column (fourth column after base columns)
-    const nextGameNoteColumnIndex = Object.keys(CONFIG.rosterPrintoutBaseColumns).length + 4;
     if (nextGameColumns.noteColumn) {
       const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${nextGameColumns.noteColumn}:${nextGameColumns.noteColumn}),"")`;
-      newSheet.getRange(2, nextGameNoteColumnIndex).setFormula(formula);
+      newSheet.getRange(2, nextGameNoteColIndex).setFormula(formula);
       if (numRows > 1) {
-        newSheet.getRange(2, nextGameNoteColumnIndex).copyTo(newSheet.getRange(3, nextGameNoteColumnIndex, numRows - 1, 1));
+        newSheet.getRange(2, nextGameNoteColIndex).copyTo(newSheet.getRange(3, nextGameNoteColIndex, numRows - 1, 1));
       }
-      console.log(`✅ Populated Next Game Availability Note column (${nextGameInfo.formattedDate} Note) with XLOOKUP`);
+      console.log(`✅ Populated Next Game Note column (${nextGameInfo.formattedDate} Note) with XLOOKUP`);
     }
   }
 }
@@ -963,25 +975,53 @@ function addGroupBorders(sheet, numRows) {
   console.log(`✅ Applied top borders to ${groupStartRows.length} group starts`);
 }
 
+// Practice availability sort order (lower = earlier): Planning to be there, blank, Not sure yet, Can't make it
+const PRACTICE_AVAIL_SORT_ORDER = {
+  '👍 Planning to be there': 0,
+  '': 1,
+  '❓ Not sure yet': 2,
+  '👎 Can\'t make it': 3
+};
+const PRACTICE_AVAIL_COLUMN_INDEX = 6; // Column F = practice availability (after base columns)
+
 /**
- * Sort the practice roster by Team, Gender, Full Name
- * Within each team, sorted by gender, and within each gender, sorted by name
+ * Sort the practice roster by Team > Gender > Practice Availability (custom order) > Grade > Name
+ * Practice availability order: "👍 Planning to be there", blank, "❓ Not sure yet", "👎 Can't make it"
  * Note: # column will automatically update after sort due to formula
  * @param {Sheet} sheet - The practice roster sheet
  * @param {number} numRows - Number of data rows
  * @param {number} numColumns - Number of columns
  */
 function sortPracticeRoster(sheet, numRows, numColumns) {
-  console.log(`🔄 Sorting ${numRows} rows by Team, Gender, Name...`);
-  
-  const dataRange = sheet.getRange(2, 1, numRows, numColumns);
-  
+  console.log('🔄 Sorting by Team, Gender, Practice Availability, Grade, Name...');
+
+  // Temporary single column for practice-availability sort key (numeric rank so Range.sort() can use it).
+  // getRange(row, column, numRows, numColumns) = (startRow, startCol, number of rows, number of columns).
+  sheet.insertColumnAfter(numColumns);
+  const sortKeyCol = numColumns + 1;
+  const numDataRows = numRows; // data rows = rows 2 to (1 + numRows)
+
+  const availRange = sheet.getRange(2, PRACTICE_AVAIL_COLUMN_INDEX, numDataRows, 1);
+  const availValues = availRange.getValues();
+  const sortKeys = availValues.map(function (row) {
+    const v = (row[0] != null ? String(row[0]).trim() : '');
+    const rank = PRACTICE_AVAIL_SORT_ORDER.hasOwnProperty(v) ? PRACTICE_AVAIL_SORT_ORDER[v] : 1;
+    return [rank];
+  });
+
+  const sortKeyRange = sheet.getRange(2, sortKeyCol, numDataRows, 1);
+  sortKeyRange.setValues(sortKeys);
+
+  const dataRange = sheet.getRange(2, 1, numDataRows, sortKeyCol);
   dataRange.sort([
-    {column: CONFIG.rosterPrintoutBaseColumns.team.index, ascending: true},    // Team - primary sort
-    {column: CONFIG.rosterPrintoutBaseColumns.gender.index, ascending: true},  // Gender - secondary sort
-    {column: CONFIG.rosterPrintoutBaseColumns.fullName.index, ascending: true} // Full Name - tertiary sort
+    { column: CONFIG.rosterPrintoutBaseColumns.team.index, ascending: true },
+    { column: CONFIG.rosterPrintoutBaseColumns.gender.index, ascending: true },
+    { column: sortKeyCol, ascending: true },
+    { column: CONFIG.rosterPrintoutBaseColumns.grade.index, ascending: true },
+    { column: CONFIG.rosterPrintoutBaseColumns.fullName.index, ascending: true }
   ]);
-  
+
+  sheet.deleteColumn(sortKeyCol);
   console.log('✅ Sorting complete');
 }
 
