@@ -20,7 +20,9 @@ const GAME_INFO_COLUMNS = {
   FIELD_LOCATION: 'Field Location',
   GAME_NOTE: 'Game Note',
   OPPONENT: 'Opponent',
-  OPPONENT_TEAM_PAGE: 'Oponent Team Page'  // exact header as in sheet
+  OPPONENT_TEAM_PAGE: 'Oponent Team Page',  // exact header as in sheet
+  GOOGLE_CALENDAR_EVENT_ID: 'Google Calendar Event ID',
+  GOOGLE_CALENDAR_WARMUP_EVENT_ID: 'Google Calendar Warmup Event ID'
 };
 
 // Fields sheet column headers (lookup for Google Map URL and DiscNW URL by Field Name)
@@ -64,6 +66,12 @@ function createGameCalendarEvents() {
       return false;
     };
     const result = syncEventsToCalendar(calendar, eventSpecs, isGameEventOurs);
+
+    if (result.writeBacks && result.writeBacks.length > 0) {
+      result.writeBacks.forEach(function (wb) {
+        infoSheet.getRange(wb.row, wb.col).setValue(wb.value);
+      });
+    }
 
     const message = 'Created: ' + result.created + '\nUpdated: ' + result.updated + '\nDeleted: ' + result.deleted;
     ui.alert('Calendar synced', message, ui.ButtonSet.OK);
@@ -132,9 +140,10 @@ function buildGameDescription(googleMapUrl, discNWUrl, opponentName, opponentUrl
 
 /**
  * Get game event specs from Game Info sheet using getDatesFromInfoSheet and Fields lookup.
+ * Each spec includes sheetEventId (from "Google Calendar Event ID" / "Google Calendar Warmup Event ID") and writeBack for ID-based sync.
  * @param {SpreadsheetApp.Spreadsheet} ss
  * @param {SpreadsheetApp.Sheet} infoSheet
- * @return {Array<{title: string, startTime: Date, endTime: Date, location: string, description: string, isAllDay: boolean}>}
+ * @return {Array<{title: string, startTime: Date, endTime: Date, location: string, description: string, isAllDay: boolean, sheetEventId?: string, writeBack?: {row: number, col: number}}>}
  */
 function getGameEventSpecsFromSheet(ss, infoSheet) {
   const fieldsLookup = getFieldsLookup(ss);
@@ -155,6 +164,8 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
   const colGameNote = col(GAME_INFO_COLUMNS.GAME_NOTE);
   const colOpponent = col(GAME_INFO_COLUMNS.OPPONENT);
   const colOpponentTeamPage = col(GAME_INFO_COLUMNS.OPPONENT_TEAM_PAGE);
+  const colGoogleCalEventId = col(GAME_INFO_COLUMNS.GOOGLE_CALENDAR_EVENT_ID);
+  const colGoogleCalWarmupEventId = col(GAME_INFO_COLUMNS.GOOGLE_CALENDAR_WARMUP_EVENT_ID);
 
   if (colDate === -1) {
     return [];
@@ -169,7 +180,9 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
     colFieldLocation >= 0 ? colFieldLocation + 1 : 0,
     colGameNote >= 0 ? colGameNote + 1 : 0,
     colOpponent >= 0 ? colOpponent + 1 : 0,
-    colOpponentTeamPage >= 0 ? colOpponentTeamPage + 1 : 0
+    colOpponentTeamPage >= 0 ? colOpponentTeamPage + 1 : 0,
+    colGoogleCalEventId >= 0 ? colGoogleCalEventId + 1 : 0,
+    colGoogleCalWarmupEventId >= 0 ? colGoogleCalWarmupEventId + 1 : 0
   );
   const dataRange = infoSheet.getRange(2, 1, lastRow, lastCol);
   const data = dataRange.getValues();
@@ -180,6 +193,13 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
     if (dataIndex < 0 || dataIndex >= data.length) return;
     const row = data[dataIndex];
     const dateObj = dateInfo.date;
+    const rowNum = dateInfo.rowIndex;
+    const gameEventIdVal = colGoogleCalEventId >= 0 ? row[colGoogleCalEventId] : null;
+    const sheetGameEventId = gameEventIdVal != null && String(gameEventIdVal).trim() !== '' ? String(gameEventIdVal).trim() : null;
+    const warmupEventIdVal = colGoogleCalWarmupEventId >= 0 ? row[colGoogleCalWarmupEventId] : null;
+    const sheetWarmupEventId = warmupEventIdVal != null && String(warmupEventIdVal).trim() !== '' ? String(warmupEventIdVal).trim() : null;
+    const writeBackGame = (colGoogleCalEventId >= 0) ? { row: rowNum, col: colGoogleCalEventId + 1 } : null;
+    const writeBackWarmup = (colGoogleCalWarmupEventId >= 0) ? { row: rowNum, col: colGoogleCalWarmupEventId + 1 } : null;
 
     const gameStartVal = colGameStart >= 0 ? row[colGameStart] : null;
     const opponentVal = colOpponent >= 0 ? row[colOpponent] : null;
@@ -206,7 +226,9 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
         endTime: tbdStart,
         location: '',
         description: '',
-        isAllDay: false
+        isAllDay: false,
+        sheetEventId: sheetGameEventId,
+        writeBack: writeBackGame
       });
       return;
     }
@@ -221,7 +243,9 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
         endTime: tbdStart,
         location: locationStr,
         description: mainDescription,
-        isAllDay: false
+        isAllDay: false,
+        sheetEventId: sheetGameEventId,
+        writeBack: writeBackGame
       });
       return;
     }
@@ -233,7 +257,9 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
       endTime: gameEndTime,
       location: locationStr,
       description: mainDescription,
-      isAllDay: false
+      isAllDay: false,
+      sheetEventId: sheetGameEventId,
+      writeBack: writeBackGame
     });
 
     const warmupVal = colWarmupArrival >= 0 ? row[colWarmupArrival] : null;
@@ -246,7 +272,9 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
           endTime: gameStartTime,
           location: locationStr,
           description: warmupDescription,
-          isAllDay: false
+          isAllDay: false,
+          sheetEventId: sheetWarmupEventId,
+          writeBack: writeBackWarmup
         });
       }
     }

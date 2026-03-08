@@ -42,12 +42,20 @@ function createPracticeCalendarEvents() {
         endTime: row.endTime,
         location: row.location || '',
         description: row.description || '',
-        isAllDay: row.isAllDay
+        isAllDay: row.isAllDay,
+        sheetEventId: row.sheetEventId || null,
+        writeBack: row.writeBack || null
       };
     });
     const result = syncEventsToCalendar(calendar, eventSpecs, function (e) {
       return e.getTitle() === PRACTICE_EVENT_TITLE;
     });
+
+    if (result.writeBacks && result.writeBacks.length > 0) {
+      result.writeBacks.forEach(function (wb) {
+        infoSheet.getRange(wb.row, wb.col).setValue(wb.value);
+      });
+    }
 
     const message = 'Created: ' + result.created + '\nUpdated: ' + result.updated + '\nDeleted: ' + result.deleted;
     ui.alert('Calendar synced', message, ui.ButtonSet.OK);
@@ -59,10 +67,13 @@ function createPracticeCalendarEvents() {
 
 /**
  * Shared sync: create/update/delete calendar events to match the given event specs.
+ * Supports ID-based matching and writing event IDs back to the spreadsheet.
  * @param {Calendar} calendar - Google Calendar
- * @param {Array<{title: string, startTime: Date, endTime: Date, location: string, description: string, isAllDay: boolean}>} eventSpecs
- * @param {function(CalendarEvent): boolean} isEventOurs - returns true if this event is managed by this sync (so it can be updated or deleted)
- * @return {{created: number, updated: number, deleted: number}}
+ * @param {Array} eventSpecs - Each spec: { title, startTime, endTime, location, description, isAllDay, sheetEventId?, writeBack? }
+ *   - sheetEventId: optional stored Google Calendar event ID; if present we match by ID first
+ *   - writeBack: optional { row: number, col: number } (1-based); if present we add { row, col, value: eventId } to result.writeBacks
+ * @param {function(CalendarEvent): boolean} isEventOurs - returns true if this event is managed by this sync
+ * @return {{created: number, updated: number, deleted: number, writeBacks: Array<{row: number, col: number, value: string}>}}
  */
 function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
   const startOfToday = new Date();
@@ -74,18 +85,32 @@ function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
   let created = 0;
   let updated = 0;
   const matchedEventIds = {};
+  const writeBacks = [];
 
   eventSpecs.forEach(function (spec) {
-    const matched = findMatchingEvent(existingEvents, spec.startTime, matchedEventIds);
+    let matched = null;
+    if (spec.sheetEventId && spec.sheetEventId.toString().trim()) {
+      const id = spec.sheetEventId.toString().trim();
+      matched = existingEvents.filter(function (e) { return e.getId() === id; })[0] || null;
+    }
+    if (!matched) {
+      matched = findMatchingEventBySpec(existingEvents, spec, matchedEventIds);
+    }
     if (matched) {
       matchedEventIds[matched.getId()] = true;
       if (!calendarEventMatchesSpec(matched, spec)) {
         updateCalendarEventFromSpec(matched, spec);
         updated++;
       }
+      if (spec.writeBack) {
+        writeBacks.push({ row: spec.writeBack.row, col: spec.writeBack.col, value: matched.getId() });
+      }
     } else {
-      createCalendarEventFromSpec(calendar, spec);
+      const createdEvent = createCalendarEventFromSpec(calendar, spec);
       created++;
+      if (spec.writeBack && createdEvent) {
+        writeBacks.push({ row: spec.writeBack.row, col: spec.writeBack.col, value: createdEvent.getId() });
+      }
     }
   });
 
@@ -97,7 +122,29 @@ function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
     }
   });
 
-  return { created: created, updated: updated, deleted: deleted };
+  return { created: created, updated: updated, deleted: deleted, writeBacks: writeBacks };
+}
+
+/**
+ * Find an existing event that matches the spec by start time (within tolerance) or by same day + same title.
+ * @param {CalendarEvent[]} events
+ * @param {Object} spec - has title, startTime
+ * @param {Object} alreadyMatched - set of event IDs already matched
+ * @return {CalendarEvent|null}
+ */
+function findMatchingEventBySpec(events, spec, alreadyMatched) {
+  const startTime = spec.startTime;
+  const specDayStart = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate()).getTime();
+  for (let i = 0; i < events.length; i++) {
+    if (alreadyMatched[events[i].getId()]) continue;
+    const e = events[i];
+    const eStart = e.getStartTime();
+    const timeDiff = Math.abs(eStart.getTime() - startTime.getTime());
+    if (timeDiff <= START_TIME_MATCH_MS) return e;
+    const eDayStart = new Date(eStart.getFullYear(), eStart.getMonth(), eStart.getDate()).getTime();
+    if (eDayStart === specDayStart && e.getTitle() === spec.title) return e;
+  }
+  return null;
 }
 
 /**
@@ -120,8 +167,9 @@ function getPracticeRowsFromSheet(ss, infoSheet) {
   const colLocationUrl = col('Location URL');
   const colStart = col('Start');
   const colEnd = col('End');
+  const colGoogleCalEventId = col('Google Calendar Event ID');
 
-  const lastCol = Math.max(colDate + 1, colLocation >= 0 ? colLocation + 1 : 0, colLocationUrl >= 0 ? colLocationUrl + 1 : 0, colStart >= 0 ? colStart + 1 : 0, colEnd >= 0 ? colEnd + 1 : 0);
+  const lastCol = Math.max(colDate + 1, colLocation >= 0 ? colLocation + 1 : 0, colLocationUrl >= 0 ? colLocationUrl + 1 : 0, colStart >= 0 ? colStart + 1 : 0, colEnd >= 0 ? colEnd + 1 : 0, colGoogleCalEventId >= 0 ? colGoogleCalEventId + 1 : 0);
   if (lastCol <= 0) {
     return [];
   }
@@ -165,13 +213,19 @@ function getPracticeRowsFromSheet(ss, infoSheet) {
     const locationUrl = colLocationUrl >= 0 && row[colLocationUrl] ? String(row[colLocationUrl]).trim() : '';
     const description = locationUrl ? locationUrl : '';
 
+    const eventIdVal = colGoogleCalEventId >= 0 ? row[colGoogleCalEventId] : null;
+    const sheetEventId = eventIdVal != null && String(eventIdVal).trim() !== '' ? String(eventIdVal).trim() : null;
+    const writeBack = (colGoogleCalEventId >= 0) ? { row: dateInfo.rowIndex, col: colGoogleCalEventId + 1 } : null;
+
     rows.push({
       startTime: startTime,
       endTime: endTime,
       location: location,
       locationUrl: locationUrl,
       description: description,
-      isAllDay: isAllDay
+      isAllDay: isAllDay,
+      sheetEventId: sheetEventId,
+      writeBack: writeBack
     });
   });
   return rows;
@@ -195,6 +249,7 @@ function combineDateAndTime(datePart, timePart) {
 
 /**
  * Find an existing event that matches the given start time (within tolerance).
+ * Used when specs do not use findMatchingEventBySpec (e.g. Practice sync without writeBack).
  * @param {CalendarEvent[]} events
  * @param {Date} startTime
  * @param {Object} alreadyMatched - set of event IDs already matched
@@ -214,13 +269,13 @@ function findMatchingEvent(events, startTime, alreadyMatched) {
  * Create a new calendar event from a generic event spec.
  * @param {Calendar} calendar
  * @param {{title: string, startTime: Date, endTime: Date, location: string, description: string, isAllDay: boolean}} spec
+ * @return {CalendarEvent|null} The created event (for writing ID back to sheet)
  */
 function createCalendarEventFromSpec(calendar, spec) {
   if (spec.isAllDay) {
-    calendar.createAllDayEvent(spec.title, spec.startTime, spec.startTime, { description: spec.description || '', location: spec.location || '' });
-  } else {
-    calendar.createEvent(spec.title, spec.startTime, spec.endTime, { description: spec.description || '', location: spec.location || '' });
+    return calendar.createAllDayEvent(spec.title, spec.startTime, spec.startTime, { description: spec.description || '', location: spec.location || '' });
   }
+  return calendar.createEvent(spec.title, spec.startTime, spec.endTime, { description: spec.description || '', location: spec.location || '' });
 }
 
 /**

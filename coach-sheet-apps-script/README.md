@@ -165,8 +165,23 @@ The `source` row (row 3) controls how columns are handled:
 - **Delete Empty Rows & Columns** - Clean up empty space
 - **Convert to Actual Attendance** - Convert availability to attendance records
 - **Organize Sheets** - Reorder sheet tabs
-- **Sync Practice Info to Calendar** - Syncs "🥏🏃 Practice" events from the Practice Info sheet to the team calendar (create/update/delete to match sheet)
-- **Sync Game Info to Calendar** - Syncs game and warmup events from the Game Info sheet to the team calendar ("🎯 Game vs. X", "🎯 TBD Game", "🥏 Game Warmup"; create/update/delete to match sheet)
+- **Sync Practice Info to Calendar** - Syncs "🥏🏃 Practice" events from the Practice Info sheet to the team calendar (create/update/delete to match sheet). Uses a **Google Calendar Event ID** column so the script can keep sheet and calendar in sync without guessing.
+- **Sync Game Info to Calendar** - Syncs game and warmup events from the Game Info sheet to the team calendar ("🎯 Game vs. X", "🎯 TBD Game", "🥏 Game Warmup"; create/update/delete to match sheet). Uses **Google Calendar Event ID** and **Google Calendar Warmup Event ID** columns. Warmup time comes from the **Warmup Arrival** column.
+
+#### Calendar sync logic (Game and Practice)
+
+The sync scripts store Google Calendar event IDs in the spreadsheet so logic stays tight:
+
+| Row has stored event ID? | Day-of match on calendar (by title or time)? | Action |
+|--------------------------|-----------------------------------------------|--------|
+| Yes                      | n/a                                           | Ensure calendar event matches the sheet (update if needed). |
+| No                       | Yes                                           | Ensure calendar matches sheet and **write the event ID** into the spreadsheet. |
+| No                       | No                                            | **Create** a new calendar event and **write the event ID** into the spreadsheet. |
+
+**Spreadsheet columns:** Add (or ensure) these headers so the sync can read/write IDs:
+
+- **📍Game Info:** `Google Calendar Event ID`, `Google Calendar Warmup Event ID`
+- **📍Practice Info:** `Google Calendar Event ID`
 
 ## Key Concepts
 
