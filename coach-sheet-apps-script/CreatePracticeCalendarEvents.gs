@@ -25,7 +25,7 @@ function createPracticeCalendarEvents() {
 
     const practiceRows = getPracticeRowsFromSheet(ss, infoSheet);
     if (practiceRows.length === 0) {
-      ui.alert('No practice rows', 'No valid practice rows found in the sheet (check Date column and skip "Bye" rows).', ui.ButtonSet.OK);
+      ui.alert('No practice rows', 'No valid practice rows found in the sheet (check Date column; Bye and Cancelled rows are skipped).', ui.ButtonSet.OK);
       return;
     }
 
@@ -82,12 +82,17 @@ function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
   endDate.setMonth(endDate.getMonth() + 6);
   const existingEvents = calendar.getEvents(startOfToday, endDate).filter(isEventOurs);
 
+  // Do not touch events in the past: only process specs that start on or after today
+  const futureSpecs = eventSpecs.filter(function (spec) {
+    return spec.startTime && spec.startTime.getTime() >= startOfToday.getTime();
+  });
+
   let created = 0;
   let updated = 0;
   const matchedEventIds = {};
   const writeBacks = [];
 
-  eventSpecs.forEach(function (spec) {
+  futureSpecs.forEach(function (spec) {
     let matched = null;
     if (spec.sheetEventId && spec.sheetEventId.toString().trim()) {
       const id = spec.sheetEventId.toString().trim();

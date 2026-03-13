@@ -23,7 +23,10 @@ const PRACTICE_AVAILABILITY_CONFIG = {
   skipConfig: {
     columnName: 'note',
     skipCondition: 'startsWith',
-    skipValue: 'Bye'
+    skipValue: 'Bye',
+    // Also skip cancelled practices: no column in Practice Availability, and sync will delete from calendar.
+    // Matching is case-insensitive (e.g. Bye, BYE, Cancelled, CANCELLED all work).
+    skipValues: ['Bye', 'Cancelled']
   }
 };
 
@@ -210,17 +213,24 @@ function getDatesFromInfoSheet(ss, config) {
     if (config.skipConfig && skipColumnIndex !== -1) {
       const skipValue = row[skipColumnIndex];
       let shouldSkip = false;
-      
+
       if (skipValue && skipValue.toString().trim() !== '') {
-        const skipValueStr = skipValue.toString().trim();
-        
+        const skipValueStr = skipValue.toString().trim().toLowerCase();
+        const valuesToCheck = config.skipConfig.skipValues && config.skipConfig.skipValues.length
+          ? config.skipConfig.skipValues
+          : [config.skipConfig.skipValue];
+
         if (config.skipConfig.skipCondition === 'startsWith') {
-          shouldSkip = skipValueStr.toLowerCase().startsWith(config.skipConfig.skipValue.toLowerCase());
+          shouldSkip = valuesToCheck.some(function (v) {
+            return v && skipValueStr.startsWith(String(v).toLowerCase());
+          });
         } else if (config.skipConfig.skipCondition === 'equals') {
-          shouldSkip = skipValueStr.toLowerCase() === config.skipConfig.skipValue.toLowerCase();
+          shouldSkip = valuesToCheck.some(function (v) {
+            return v && skipValueStr === String(v).toLowerCase();
+          });
         }
       }
-      
+
       if (shouldSkip) {
         console.log(`⏭️ Skipping row ${index + 2}: ${config.skipConfig.columnName} = "${skipValue}"`);
         return; // Skip this iteration
