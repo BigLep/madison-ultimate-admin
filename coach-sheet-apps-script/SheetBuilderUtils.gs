@@ -15,6 +15,20 @@ function copyFullNameColumn(targetSheet, rosterSheet, startRow = 2) {
 }
 
 /**
+ * Whether a roster row should appear on Build Practice Roster / Build Game Roster Prep.
+ * Column missing or empty → include (backward compatible). Explicit FALSE (boolean or string) → exclude.
+ * @param {*} cellValue - Value from "Include In Generated Rosters" column
+ * @return {boolean}
+ */
+function isIncludedInGeneratedRosters(cellValue) {
+  if (cellValue === false) return false;
+  if (cellValue === true) return true;
+  const s = cellValue != null ? String(cellValue).trim().toUpperCase() : '';
+  if (s === 'FALSE') return false;
+  return true;
+}
+
+/**
  * Copy Full Name column from roster to a specific column in new sheet
  * @param {Sheet} targetSheet - The sheet to copy Full Name to
  * @param {Sheet} rosterSheet - The source roster sheet
@@ -30,13 +44,29 @@ function copyFullNameColumnToColumn(targetSheet, rosterSheet, startRow, targetCo
     throw new Error(`${CONFIG.columns.fullName} column not found in roster sheet`);
   }
 
+  const includeColName = CONFIG.columns.includeInGeneratedRosters;
+  const includeColIndex = rosterHeaderRow.findIndex(function (name) {
+    return name === includeColName;
+  });
+
   // Use configurable first data row so roster layout (1 header vs 5 metadata rows) can change
   const lastRow = rosterSheet.getLastRow();
   const numDataRows = Math.max(0, lastRow - ROSTER_FIRST_DATA_ROW + 1);
   const rosterDataRange = rosterSheet.getRange(ROSTER_FIRST_DATA_ROW, fullNameColIndex + 1, numDataRows, 1);
   const fullNameValues = rosterDataRange.getValues();
 
-  const nonEmptyFullNames = fullNameValues.filter(row => row[0] && row[0].toString().trim() !== '');
+  let includeValues = null;
+  if (includeColIndex !== -1) {
+    includeValues = rosterSheet.getRange(ROSTER_FIRST_DATA_ROW, includeColIndex + 1, numDataRows, 1).getValues();
+  }
+
+  const nonEmptyFullNames = [];
+  for (let i = 0; i < fullNameValues.length; i++) {
+    const nameCell = fullNameValues[i][0];
+    if (!nameCell || String(nameCell).trim() === '') continue;
+    if (includeValues && !isIncludedInGeneratedRosters(includeValues[i][0])) continue;
+    nonEmptyFullNames.push([nameCell]);
+  }
 
   if (nonEmptyFullNames.length === 0) {
     throw new Error('No student data found in roster');

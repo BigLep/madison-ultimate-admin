@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '2.23';
+const SCRIPT_VERSION = '2.24';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -83,7 +83,8 @@ const CONFIG = {
     physicalCleared: 'Physical Cleared',
     parent1EmailOnMailingList: 'Parent 1 Email On Mailing List?',
     parent2EmailOnMailingList: 'Parent 2 Email On Mailing List?',
-    studentPersonalEmailOnMailingList: 'Student Personal Email On Mailing List?'
+    studentPersonalEmailOnMailingList: 'Student Personal Email On Mailing List?',
+    includeInGeneratedRosters: 'Include In Generated Rosters'
   },
 
   // Shared base column structure for roster printouts (Practice Roster and Game Roster Prep)
