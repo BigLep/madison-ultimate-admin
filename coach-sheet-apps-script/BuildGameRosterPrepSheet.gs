@@ -420,6 +420,56 @@ function finalizeGameRosterSheet(sheet, rowCount) {
   console.log(`✅ Sheet finalized successfully with ${rowCount} students`);
 }
 
+/** Gender labels for coach roster activation summary COUNTIFS (must match Gender column values, e.g. Gender Identification). */
+const COACH_GAME_ROSTER_SUMMARY_GENDERS = ['Bx', 'Gx'];
+
+/**
+ * Append a COUNTIFS summary below player rows: Active / Inactive / TBD × Bx / Gx.
+ * Placed one blank row after data; table in columns B–D (labels in B, Bx in C, Gx in D).
+ * No-op if Activation Status column is not on the sheet.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} numRows - Player data rows (rows 2 .. numRows+1)
+ * @param {Object} idx - layout.indices from getGameRosterPrepColumnLayout
+ */
+function addCoachGameRosterActivationSummary(sheet, numRows, idx) {
+  if (!numRows || !idx.activationStatus || !idx.gender) {
+    return;
+  }
+
+  const lastDataRow = 1 + numRows;
+  const genderLetter = getColumnLetter(idx.gender);
+  const activationLetter = getColumnLetter(idx.activationStatus);
+  const labelCol = 2; // B
+  const bxCol = 3; // C
+  const gxCol = 4; // D
+  const labelColLetter = getColumnLetter(labelCol);
+  const bxColLetter = getColumnLetter(bxCol);
+  const gxColLetter = getColumnLetter(gxCol);
+
+  const headerRow = numRows + 3;
+  sheet.getRange(headerRow, bxCol).setValue(COACH_GAME_ROSTER_SUMMARY_GENDERS[0]);
+  sheet.getRange(headerRow, gxCol).setValue(COACH_GAME_ROSTER_SUMMARY_GENDERS[1]);
+
+  const statusLabels = GAME_ACTIVATION_STATUS_OPTIONS.map(function (opt) { return opt.value; });
+  for (let i = 0; i < statusLabels.length; i++) {
+    const row = headerRow + 1 + i;
+    sheet.getRange(row, labelCol).setValue(statusLabels[i]);
+    const formulaBx = '=COUNTIFS($' + genderLetter + '$2:$' + genderLetter + '$' + lastDataRow + ',' +
+      '$' + bxColLetter + '$' + headerRow + ',$' + activationLetter + '$2:$' + activationLetter + '$' + lastDataRow + ',' +
+      '$' + labelColLetter + '$' + row + ')';
+    const formulaGx = '=COUNTIFS($' + genderLetter + '$2:$' + genderLetter + '$' + lastDataRow + ',' +
+      '$' + gxColLetter + '$' + headerRow + ',$' + activationLetter + '$2:$' + activationLetter + '$' + lastDataRow + ',' +
+      '$' + labelColLetter + '$' + row + ')';
+    sheet.getRange(row, bxCol).setFormula(formulaBx);
+    sheet.getRange(row, gxCol).setFormula(formulaGx);
+  }
+
+  const summaryEndRow = headerRow + statusLabels.length;
+  sheet.getRange(headerRow, bxCol, headerRow, gxCol).setFontWeight('bold');
+  sheet.getRange(headerRow + 1, labelCol, summaryEndRow, labelCol).setFontWeight('bold');
+  console.log('✅ Added coach activation summary table at rows ' + headerRow + '–' + summaryEndRow);
+}
+
 /**
  * Apply availability data validation to game roster
  * @param {Sheet} newSheet - The sheet to apply validation to
@@ -601,6 +651,8 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
 
     // Common cleanup
     finalizeGameRosterSheet(newSheet, fullNameInfo.rowCount);
+
+    addCoachGameRosterActivationSummary(newSheet, fullNameInfo.rowCount, idx);
 
     // Auto-resize columns
     console.log('📏 Auto-resizing columns...');
