@@ -13,6 +13,7 @@
     "BuildPracticeRoster.gs",
     "CreatePracticeCalendarEvents.gs",
     "CreateGameCalendarEvents.gs",
-    "ExportGameInfoToMarkdown.gs"
+    "ExportGameInfoToMarkdown.gs",
+    "ApplyActivationStatusFromRoster.gs"
   ]
 }

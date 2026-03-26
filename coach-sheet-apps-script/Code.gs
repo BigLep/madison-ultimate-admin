@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '2.27';
+const SCRIPT_VERSION = '2.31';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -673,6 +673,7 @@ function createCustomMenu() {
     .addItem('🏗️ Build Custom Sheet', 'buildCustomSheet')
     .addItem('🏅 Build Practice Roster', 'buildPracticeRoster')
     .addItem('🏆 Build Game Roster Prep Sheet', 'buildGameRosterPrepSheet')
+    .addItem('⬆️ Apply Activation Status', 'showApplyActivationStatusDialog')
     .addItem('📧 Build Email List', 'buildEmailList')
     .addItem('🎨 Format Spruce Up', 'formatSpruceUp')
     .addItem('🧹 Delete Empty Rows & Columns', 'deleteEmptyRowsAndColumns')
