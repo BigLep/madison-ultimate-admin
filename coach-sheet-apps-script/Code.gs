@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '2.31';
+const SCRIPT_VERSION = '2.33';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -88,8 +88,10 @@ const CONFIG = {
   },
 
   // Shared base column structure for roster printouts (Practice Roster and Game Roster Prep)
+  // Header order is driven by rosterPrintoutBaseColumnKeys (not Object.keys order).
+  rosterPrintoutBaseColumnKeys: ['number', 'fullName', 'team', 'gender', 'grade'],
   rosterPrintoutBaseColumns: {
-    // Base columns (always present) - # | Full Name | Team | Gender | Grade
+    // Base columns (always present) — # | Full Name | Team | Gender | Grade
     number: { name: '#', index: 1 },
     fullName: { name: 'Full Name', index: 2 },
     team: { name: 'Team', index: 3 },
