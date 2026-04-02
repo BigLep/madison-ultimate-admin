@@ -430,10 +430,11 @@ const COACH_GAME_ROSTER_SUMMARY_GENDERS = ['Bx', 'Gx'];
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {number} numRows - Player data rows (rows 2 .. numRows+1)
  * @param {Object} idx - layout.indices from getGameRosterPrepColumnLayout
+ * @return {number|undefined} Last row of this summary (for placing the next table), or undefined if skipped
  */
 function addCoachGameRosterActivationSummary(sheet, numRows, idx) {
   if (!numRows || !idx.activationStatus || !idx.gender) {
-    return;
+    return undefined;
   }
 
   const lastDataRow = 1 + numRows;
@@ -447,6 +448,7 @@ function addCoachGameRosterActivationSummary(sheet, numRows, idx) {
   const gxColLetter = getColumnLetter(gxCol);
 
   const headerRow = numRows + 3;
+  sheet.getRange(headerRow, labelCol).setValue('Independent of status');
   sheet.getRange(headerRow, bxCol).setValue(COACH_GAME_ROSTER_SUMMARY_GENDERS[0]);
   sheet.getRange(headerRow, gxCol).setValue(COACH_GAME_ROSTER_SUMMARY_GENDERS[1]);
 
@@ -465,9 +467,115 @@ function addCoachGameRosterActivationSummary(sheet, numRows, idx) {
   }
 
   const summaryEndRow = headerRow + statusLabels.length;
-  sheet.getRange(headerRow, bxCol, headerRow, gxCol).setFontWeight('bold');
+  sheet.getRange(headerRow, labelCol, headerRow, gxCol).setFontWeight('bold');
   sheet.getRange(headerRow + 1, labelCol, summaryEndRow, labelCol).setFontWeight('bold');
   console.log('✅ Added coach activation summary table at rows ' + headerRow + '–' + summaryEndRow);
+  return summaryEndRow;
+}
+
+/**
+ * Second summary: same activation × gender counts but only rows where game availability is not "👎 Can't make it"
+ * (Planning, Not sure, blank, Was there, etc.). One blank row after the first summary table.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} numRows - Player data rows (rows 2 .. numRows+1)
+ * @param {Object} idx - layout.indices from getGameRosterPrepColumnLayout
+ * @param {number} firstSummaryEndRow - Last row of the Independent-of-status table (data row for TBD)
+ */
+function addCoachGameRosterExcludingCantMakeItSummary(sheet, numRows, idx, firstSummaryEndRow) {
+  if (!numRows || !idx.activationStatus || !idx.gender || !idx.availability) {
+    return;
+  }
+
+  const lastDataRow = 1 + numRows;
+  const genderLetter = getColumnLetter(idx.gender);
+  const activationLetter = getColumnLetter(idx.activationStatus);
+  const availabilityLetter = getColumnLetter(idx.availability);
+  const labelCol = 2;
+  const bxCol = 3;
+  const gxCol = 4;
+  const labelColLetter = getColumnLetter(labelCol);
+  const bxColLetter = getColumnLetter(bxCol);
+  const gxColLetter = getColumnLetter(gxCol);
+
+  const headerRow2 = firstSummaryEndRow + 2;
+  sheet.getRange(headerRow2, labelCol).setValue('Status: Planning to be there');
+  sheet.getRange(headerRow2, bxCol).setValue(COACH_GAME_ROSTER_SUMMARY_GENDERS[0]);
+  sheet.getRange(headerRow2, gxCol).setValue(COACH_GAME_ROSTER_SUMMARY_GENDERS[1]);
+
+  const statusLabels = GAME_ACTIVATION_STATUS_OPTIONS.map(function (opt) { return opt.value; });
+  const availNotCantMakeIt = '"<>👎 Can\'t make it"';
+
+  for (let i = 0; i < statusLabels.length; i++) {
+    const row = headerRow2 + 1 + i;
+    sheet.getRange(row, labelCol).setValue(statusLabels[i]);
+    const formulaBx =
+      '=COUNTIFS($' +
+      genderLetter +
+      '$2:$' +
+      genderLetter +
+      '$' +
+      lastDataRow +
+      ',$' +
+      bxColLetter +
+      '$' +
+      headerRow2 +
+      ',$' +
+      activationLetter +
+      '$2:$' +
+      activationLetter +
+      '$' +
+      lastDataRow +
+      ',$' +
+      labelColLetter +
+      '$' +
+      row +
+      ',$' +
+      availabilityLetter +
+      '$2:$' +
+      availabilityLetter +
+      '$' +
+      lastDataRow +
+      ',' +
+      availNotCantMakeIt +
+      ')';
+    const formulaGx =
+      '=COUNTIFS($' +
+      genderLetter +
+      '$2:$' +
+      genderLetter +
+      '$' +
+      lastDataRow +
+      ',$' +
+      gxColLetter +
+      '$' +
+      headerRow2 +
+      ',$' +
+      activationLetter +
+      '$2:$' +
+      activationLetter +
+      '$' +
+      lastDataRow +
+      ',$' +
+      labelColLetter +
+      '$' +
+      row +
+      ',$' +
+      availabilityLetter +
+      '$2:$' +
+      availabilityLetter +
+      '$' +
+      lastDataRow +
+      ',' +
+      availNotCantMakeIt +
+      ')';
+    sheet.getRange(row, bxCol).setFormula(formulaBx);
+    sheet.getRange(row, gxCol).setFormula(formulaGx);
+  }
+
+  const summary2EndRow = headerRow2 + statusLabels.length;
+  sheet.getRange(headerRow2, labelCol, headerRow2, gxCol).setFontWeight('bold');
+  sheet.getRange(headerRow2 + 1, labelCol, summary2EndRow, labelCol).setFontWeight('bold');
+  console.log('✅ Added coach summary (excluding Can\'t make it) at rows ' + headerRow2 + '–' + summary2EndRow);
 }
 
 /**
@@ -652,7 +760,10 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     // Common cleanup
     finalizeGameRosterSheet(newSheet, fullNameInfo.rowCount);
 
-    addCoachGameRosterActivationSummary(newSheet, fullNameInfo.rowCount, idx);
+    const firstSummaryEndRow = addCoachGameRosterActivationSummary(newSheet, fullNameInfo.rowCount, idx);
+    if (firstSummaryEndRow !== undefined) {
+      addCoachGameRosterExcludingCantMakeItSummary(newSheet, fullNameInfo.rowCount, idx, firstSummaryEndRow);
+    }
 
     // Auto-resize columns
     console.log('📏 Auto-resizing columns...');
