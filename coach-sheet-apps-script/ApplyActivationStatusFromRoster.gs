@@ -11,7 +11,7 @@ const GAME_ACTIVATION_STATUS_HEADER_SUFFIX = ' Activation Status';
  */
 function parseGameActivationStatusHeader(headerStr) {
   if (!headerStr || typeof headerStr !== 'string') return null;
-  const m = headerStr.trim().match(/^(\d{1,2})\/(\d{1,2}) Activation Status$/);
+  const m = headerStr.trim().match(/^(\d{1,2})\/(\d{1,2}) Activation Status(?: \(Game \d+\))?$/);
   if (!m) return null;
   return String(parseInt(m[1], 10)) + '/' + String(parseInt(m[2], 10));
 }

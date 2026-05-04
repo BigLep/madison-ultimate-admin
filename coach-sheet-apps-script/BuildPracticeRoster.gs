@@ -533,7 +533,7 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
 
     // Add next game columns if found (Activation Status, Availability, Note)
     if (nextGameInfo) {
-      const gameHeaders = getAvailabilityColumnHeaders(nextGameInfo.formattedDate, 'Game Availability');
+      const gameHeaders = getAvailabilityColumnHeaders(nextGameInfo.formattedDate, 'Game Availability', nextGameInfo.ordinalForDate || 1);
       headers.push(gameHeaders.activationHeader);
       headers.push(gameHeaders.availabilityHeader);
       headers.push(gameHeaders.noteHeader);
@@ -646,7 +646,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
 
     // Add next game columns if found (Activation Status, Availability, Note)
     if (nextGameInfo) {
-      const gameHeaders = getAvailabilityColumnHeaders(nextGameInfo.formattedDate, 'Game Availability');
+      const gameHeaders = getAvailabilityColumnHeaders(nextGameInfo.formattedDate, 'Game Availability', nextGameInfo.ordinalForDate || 1);
       headers.push(gameHeaders.activationHeader);   // e.g. "3/7 Activation Status"
       headers.push(gameHeaders.availabilityHeader); // e.g. "3/7 Availability"
       headers.push(gameHeaders.noteHeader);         // e.g. "3/7 Note"
@@ -882,7 +882,7 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
   // Add next game columns if available (Activation Status, Availability, Note)
   if (nextGameInfo && gameAvailabilitySheet) {
     const gameAvailSheetName = 'Game Availability';
-    const nextGameColumns = findGameAvailabilityColumns(gameAvailabilitySheet, nextGameInfo.formattedDate);
+    const nextGameColumns = findGameAvailabilityColumns(gameAvailabilitySheet, nextGameInfo.formattedDate, nextGameInfo.ordinalForDate || 1);
     const nextGameActivationColIndex = baseColCount + 3;
     const nextGameAvailabilityColIndex = baseColCount + 4;
     const nextGameNoteColIndex = baseColCount + 5;
@@ -1073,10 +1073,11 @@ function findNextGameAfterPractice(ss, practiceDate) {
  * Find the availability columns in Game Availability sheet for a specific date
  * @param {Sheet} gameAvailabilitySheet - The Game Availability sheet
  * @param {string} gameDate - Game date in format "M/D"
+ * @param {number} [ordinalForDate] - Pass 2+ for double-header columns, e.g. Availability (Game 2)
  * @return {Object} Object with availabilityColumn and noteColumn letters
  */
-function findGameAvailabilityColumns(gameAvailabilitySheet, gameDate) {
-  return findAvailabilityColumns(gameAvailabilitySheet, gameDate, 'Game Availability');
+function findGameAvailabilityColumns(gameAvailabilitySheet, gameDate, ordinalForDate) {
+  return findAvailabilityColumns(gameAvailabilitySheet, gameDate, 'Game Availability', ordinalForDate);
 }
 
 /**
@@ -1085,11 +1086,13 @@ function findGameAvailabilityColumns(gameAvailabilitySheet, gameDate) {
  * @param {Sheet} availabilitySheet - The availability sheet to search
  * @param {string} dateString - Date in format "M/D"
  * @param {string} sheetType - Type of sheet for logging (e.g., 'Practice Availability', 'Game Availability')
+ * @param {number} [ordinalForDate] - Game Availability only: 2+ for double-header columns (e.g. "5/9 Availability (Game 2)")
  * @return {Object} Object with availabilityColumn, noteColumn, activationStatusColumn (letters), availabilityHeader, noteHeader, activationHeader (exact header strings; activation only for Game Availability)
  */
-function findAvailabilityColumns(availabilitySheet, dateString, sheetType) {
+function findAvailabilityColumns(availabilitySheet, dateString, sheetType, ordinalForDate) {
+  ordinalForDate = ordinalForDate || 1;
   const headerRow = availabilitySheet.getRange(1, 1, 1, availabilitySheet.getLastColumn()).getValues()[0];
-  const expected = getAvailabilityColumnHeaders(dateString, sheetType);
+  const expected = getAvailabilityColumnHeaders(dateString, sheetType, sheetType === 'Game Availability' ? ordinalForDate : 1);
 
   let availabilityColumn = null;
   let noteColumn = null;

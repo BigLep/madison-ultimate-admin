@@ -4,13 +4,13 @@
  * Supports both Practice and Game availability tracking
  */
 
-// Shared validation options for all availability tracking (colors managed separately via conditional formatting)
+// Shared validation options for all availability tracking (backgroundColor used only for conditional formatting)
 const AVAILABILITY_VALIDATION_OPTIONS = [
-  { value: '👍 Planning to be there' },
-  { value: '👎 Can\'t make it' },
-  { value: '❓ Not sure yet' },
-  { value: 'Was there' },
-  { value: 'Wasn\'t there' }
+  { value: '👍 Planning to be there', backgroundColor: '#d5e8d4' },
+  { value: '👎 Can\'t make it', backgroundColor: '#f4c7c3' },
+  { value: '❓ Not sure yet', backgroundColor: '#fce5cd' },
+  { value: 'Was there', backgroundColor: '#38761d' },
+  { value: 'Wasn\'t there', backgroundColor: '#cc0000' }
 ];
 
 // Configuration for Practice Availability feature
@@ -30,11 +30,11 @@ const PRACTICE_AVAILABILITY_CONFIG = {
   }
 };
 
-// Game Activation Status (game availability only): dropdown + background colors
+// Game Activation Status: dropdown values + CF colors (Active/Inactive match Was there / Wasn't there; TBD neutral grey)
 const GAME_ACTIVATION_STATUS_OPTIONS = [
-  { value: 'Active', backgroundColor: '#d9ead3' },   // light green
-  { value: 'Inactive', backgroundColor: '#f4cccc' }, // light red
-  { value: 'TBD', backgroundColor: '#efefef' }      // light grey / white
+  { value: 'Active', backgroundColor: '#38761d' },
+  { value: 'Inactive', backgroundColor: '#cc0000' },
+  { value: 'TBD', backgroundColor: '#e8eaed' }
 ];
 
 // Configuration for Game Availability feature
@@ -58,21 +58,67 @@ const GAME_AVAILABILITY_CONFIG = {
 };
 
 /**
+ * Parse a Game/Practice Info date cell into a Date (local). Handles "5/9 Sat", sheet serials, ISO.
+ * @param {*} dateValue
+ * @return {Date|null}
+ */
+function parseDateFromInfoSheet(dateValue) {
+  if (dateValue == null || dateValue === '') return null;
+  if (dateValue instanceof Date && !isNaN(dateValue.getTime())) return dateValue;
+  var s = String(dateValue).trim();
+  if (/\s/.test(s)) {
+    var first = s.split(/\s+/)[0];
+    var d1 = parseDateFromInfoSheet(first);
+    if (d1) return d1;
+  }
+  var serial = Number(s);
+  if (!isNaN(serial) && serial > 0) {
+    var epoch = new Date((serial - 25569) * 86400 * 1000);
+    if (!isNaN(epoch.getTime())) return epoch;
+  }
+  var parts = s.split('/');
+  if (parts.length >= 2) {
+    var month = parseInt(parts[0], 10);
+    var day = parseInt(parts[1], 10);
+    var year = parts[2] ? parseInt(parts[2], 10) : new Date().getFullYear();
+    if (!isNaN(month) && !isNaN(day) && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return new Date(year, month - 1, day);
+    }
+  }
+  var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    return new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
+  }
+  var fallback = new Date(s);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
+/**
+ * Canonical "M/D" key for counting games on the same calendar day (matches player portal toCanonicalDateKey).
+ * @param {Date} dateObj
+ * @return {string}
+ */
+function toCanonicalDateKeyFromDateObj(dateObj) {
+  return formatDateForColumn(dateObj);
+}
+
+/**
  * Get the expected column headers for a date in an availability sheet.
  * Single source of truth for column naming so Build Game/Practice Roster and Build Game Roster Prep use the same names.
+ * Game Availability: 2nd+ game on the same day uses " (Game N)" suffix (matches madison-ultimate findGameColumns).
  * @param {string} dateString - Date in format "M/D" (e.g. "3/7")
  * @param {string} sheetType - 'Practice Availability' or 'Game Availability'
+ * @param {number} [ordinalForDate] - 1 = first game that day (default); 2+ = double-header columns
  * @return {{ availabilityHeader: string, noteHeader: string, activationHeader?: string }}
  */
-function getAvailabilityColumnHeaders(dateString, sheetType) {
+function getAvailabilityColumnHeaders(dateString, sheetType, ordinalForDate) {
+  ordinalForDate = ordinalForDate || 1;
   if (sheetType === 'Game Availability') {
-    const availabilitySuffix = GAME_AVAILABILITY_CONFIG.columnsPerDate.find(function (c) { return c.useAvailabilityValidation; }).suffix;
-    const noteSuffix = GAME_AVAILABILITY_CONFIG.columnsPerDate.find(function (c) { return c.isFreeText; }).suffix;
-    const activationSuffix = GAME_AVAILABILITY_CONFIG.columnsPerDate.find(function (c) { return c.useActivationStatusValidation; }).suffix;
+    const gamePart = ordinalForDate <= 1 ? '' : (' (Game ' + ordinalForDate + ')');
     return {
-      availabilityHeader: dateString + availabilitySuffix,
-      noteHeader: dateString + noteSuffix,
-      activationHeader: dateString + activationSuffix
+      availabilityHeader: dateString + ' Availability' + gamePart,
+      noteHeader: dateString + ' Note' + gamePart,
+      activationHeader: dateString + ' Activation Status' + gamePart
     };
   }
   // Practice Availability: first column is just the date, second is " Note"
@@ -110,7 +156,8 @@ function buildAvailability(config) {
     
     console.log(`✅ ${typeCapitalized} Availability build complete`);
     
-    let message = `Successfully processed ${config.availabilitySheet} sheet for ${dates.length} ${config.type} dates.\n\n`;
+    const rowLabel = config.type === 'game' ? 'game row' : `${config.type} date`;
+    let message = `Successfully processed ${config.availabilitySheet} sheet for ${dates.length} ${rowLabel}(s).\n\n`;
     
     if (result.columnsCreated > 0) {
       message += `📊 ${result.columnSummary}`;
@@ -125,7 +172,7 @@ function buildAvailability(config) {
       message += 'No changes needed - all columns already exist.';
     }
     
-    message += '\n\n🎯 Data validation applied only to new columns - existing validation and colors preserved.';
+    message += '\n\n🎯 Data validation is applied in bulk (one rule type for all availability columns, one for all activation columns on game sheets). Conditional formatting uses one rule per status value across all matching columns.';
     
     SpreadsheetApp.getUi().alert(`${typeCapitalized} Availability Updated!`, message, SpreadsheetApp.getUi().ButtonSet.OK);
     
@@ -155,7 +202,7 @@ function buildGameAvailability() {
  * Shared function to extract dates from an info sheet
  * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
  * @param {Object} config - Configuration object (PRACTICE_AVAILABILITY_CONFIG or GAME_AVAILABILITY_CONFIG)
- * @return {Array} Array of date objects: {date, formattedDate}
+ * @return {Array} Array of date objects: {date, formattedDate, rowIndex}; for games also {ordinalForDate, gameLabel}
  */
 function getDatesFromInfoSheet(ss, config) {
   const infoSheet = ss.getSheetByName(config.infoSheet);
@@ -203,8 +250,10 @@ function getDatesFromInfoSheet(ss, config) {
   const columnsNeeded = skipColumnIndex !== -1 ? 
     Math.max(dateColumnIndex + 1, skipColumnIndex + 1) : 
     dateColumnIndex + 1;
-  const allData = infoSheet.getRange(2, 1, lastRow - 1, columnsNeeded).getValues();
+  const allData = infoSheet.getRange(2, 1, lastRow, columnsNeeded).getValues();
   const dates = [];
+  const isGame = config.type === 'game';
+  const ordinalByCanonical = isGame ? {} : null;
   
   allData.forEach((row, index) => {
     const dateValue = row[dateColumnIndex];
@@ -239,23 +288,27 @@ function getDatesFromInfoSheet(ss, config) {
     
     if (dateValue && dateValue !== '') {
       try {
-        // Handle both Date objects and date strings
-        let dateObj;
-        if (dateValue instanceof Date) {
-          dateObj = dateValue;
-        } else {
-          dateObj = new Date(dateValue);
-        }
-        
-        // Validate that it's a valid date
-        if (!isNaN(dateObj.getTime())) {
+        const dateObj = parseDateFromInfoSheet(dateValue);
+        if (dateObj && !isNaN(dateObj.getTime())) {
           const formattedDate = formatDateForColumn(dateObj);
-          dates.push({
+          const entry = {
             date: dateObj,
             formattedDate: formattedDate,
             rowIndex: index + 2 // +2 for 1-based indexing and header row
-          });
-          console.log(`${config.emoji} Found ${config.type} date: ${formattedDate} (row ${index + 2})`);
+          };
+          if (isGame) {
+            const canonical = toCanonicalDateKeyFromDateObj(dateObj);
+            ordinalByCanonical[canonical] = (ordinalByCanonical[canonical] || 0) + 1;
+            const ordinalForDate = ordinalByCanonical[canonical];
+            entry.ordinalForDate = ordinalForDate;
+            if (skipColumnIndex !== -1 && row[skipColumnIndex] != null && String(row[skipColumnIndex]).trim() !== '') {
+              entry.gameLabel = String(row[skipColumnIndex]).trim();
+            }
+            console.log(`${config.emoji} Found game row: ${formattedDate} (Game ${ordinalForDate} on ${canonical}, row ${index + 2})`);
+          } else {
+            console.log(`${config.emoji} Found ${config.type} date: ${formattedDate} (row ${index + 2})`);
+          }
+          dates.push(entry);
         } else {
           console.warn(`⚠️ Invalid date in row ${index + 2}: "${dateValue}"`);
         }
@@ -265,7 +318,7 @@ function getDatesFromInfoSheet(ss, config) {
     }
   });
   
-  console.log(`🎯 Found ${dates.length} valid ${config.type} dates`);
+  console.log(`🎯 Found ${dates.length} valid ${config.type} ${isGame ? 'rows' : 'dates'}`);
   return dates;
 }
 
@@ -309,7 +362,6 @@ function buildAvailabilityColumns(ss, dates, config) {
   const columnsCreated = [];
   const columnsSkipped = [];
   let validationRanges = []; // Track ranges that need availability dropdown
-  let activationStatusColumns = []; // Game only: columns that need Activation Status dropdown + colors
   let noteColumns = []; // Game only: Note columns (free text — clear any validation)
 
   // Find where to start adding new columns (after existing columns)
@@ -322,9 +374,16 @@ function buildAvailabilityColumns(ss, dates, config) {
     const dateString = dateInfo.formattedDate;
 
     if (isGame) {
-      // Game: three columns per date — $date Availability, $date Activation Status, $date Note (free text)
-      config.columnsPerDate.forEach((colDef) => {
-        const header = dateString + colDef.suffix;
+      const ord = dateInfo.ordinalForDate || 1;
+      const hdr = getAvailabilityColumnHeaders(dateString, 'Game Availability', ord);
+      const triple = [
+        { header: hdr.availabilityHeader, colDef: config.columnsPerDate[0] },
+        { header: hdr.activationHeader, colDef: config.columnsPerDate[1] },
+        { header: hdr.noteHeader, colDef: config.columnsPerDate[2] }
+      ];
+      triple.forEach(function (item) {
+        const header = item.header;
+        const colDef = item.colDef;
         const existingCol = existingColumns[header];
 
         if (existingCol) {
@@ -335,8 +394,6 @@ function buildAvailabilityColumns(ss, dates, config) {
             if (!existingValidation) {
               validationRanges.push({ column: existingCol, header: header, isExisting: true });
             }
-          } else if (colDef.useActivationStatusValidation) {
-            activationStatusColumns.push({ column: existingCol, header: header });
           } else if (colDef.isFreeText) {
             noteColumns.push(existingCol);
           }
@@ -350,8 +407,6 @@ function buildAvailabilityColumns(ss, dates, config) {
 
         if (colDef.useAvailabilityValidation) {
           validationRanges.push({ column: nextColumnIndex, header: header, isExisting: false });
-        } else if (colDef.useActivationStatusValidation) {
-          activationStatusColumns.push({ column: nextColumnIndex, header: header });
         } else if (colDef.isFreeText) {
           noteColumns.push(nextColumnIndex);
         }
@@ -392,19 +447,22 @@ function buildAvailabilityColumns(ss, dates, config) {
     }
   });
 
-  // Apply or extend data validation to availability columns
+  // Apply or extend data validation to availability columns (per-column; consolidated below for fewer rules)
   extendOrCreateDataValidation(availabilitySheet, validationRanges, config);
-
-  // Game only: apply Activation Status dropdown + conditional formatting (Active=green, Inactive=red, TBD=grey)
-  if (activationStatusColumns.length > 0) {
-    applyActivationStatusValidationAndFormatting(availabilitySheet, activationStatusColumns);
-  }
 
   // Game only: ensure Note columns are free text (no dropdown)
   noteColumns.forEach(function (col) {
     // getRange(row, column, numRows, numColumns) — 1 column only
     availabilitySheet.getRange(2, col, 999, 1).clearDataValidations();
   });
+
+  if (config.type === 'game') {
+    consolidateGameAvailabilityDataValidations(availabilitySheet);
+    refreshGameAvailabilitySheetConditionalFormatting(availabilitySheet);
+  } else if (config.type === 'practice') {
+    consolidatePracticeAvailabilityDataValidations(availabilitySheet);
+    refreshPracticeAvailabilitySheetConditionalFormatting(availabilitySheet);
+  }
 
   // Enable text wrapping on the sheet so headers and cells wrap
   const lastCol = availabilitySheet.getLastColumn();
@@ -570,17 +628,16 @@ function findExistingDataValidation(sheet, expectedValues) {
 }
 
 /**
- * Extend existing validation to a new column (preserves custom colors)
+ * Extend existing validation to a new column (copies criteria values from a compatible existing rule).
  * @param {Sheet} sheet - The Practice Availability sheet
  * @param {number} column - Column to apply validation to
  * @param {Object} existingValidation - Existing validation info
  */
 function extendExistingValidation(sheet, column, existingValidation) {
-  console.log(`🎨 Extending validation to column ${column} while preserving any custom colors`);
+  console.log(`🎨 Extending validation to column ${column}`);
   const validationRange = sheet.getRange(2, column, 1000, 1);
   
   // Create a new validation rule that matches the existing one
-  // This preserves any custom conditional formatting/colors that may exist
   const originalValidation = existingValidation.validation;
   const criteriaValues = originalValidation.getCriteriaValues()[0];
   
@@ -591,17 +648,17 @@ function extendExistingValidation(sheet, column, existingValidation) {
     .build();
     
   validationRange.setDataValidation(newValidation);
-  console.log(`✅ Validation extended to column ${column} without overriding colors`);
+  console.log(`✅ Validation extended to column ${column}`);
 }
 
 /**
- * Create new data validation rule (without setting colors - preserves conditional formatting)
- * @param {Sheet} sheet - The Practice Availability sheet
+ * Create new data validation rule
+ * @param {Sheet} sheet - The availability sheet
  * @param {number} column - Column to apply validation to
  * @param {Array} validationValues - Values for validation
  */
 function createNewValidation(sheet, column, validationValues) {
-  console.log(`🎨 Creating new validation for column ${column} without setting colors`);
+  console.log(`🎨 Creating new validation for column ${column}`);
   const validationRange = sheet.getRange(2, column, 1000, 1);
   
   const validation = SpreadsheetApp.newDataValidation()
@@ -611,42 +668,222 @@ function createNewValidation(sheet, column, validationValues) {
     .build();
   
   validationRange.setDataValidation(validation);
-  console.log(`✅ New validation created for column ${column} - colors can be set via conditional formatting`);
+  console.log(`✅ New validation created for column ${column}`);
 }
 
 /**
- * Apply Activation Status dropdown (Active / Inactive / TBD) and background colors to game columns.
- * @param {Sheet} sheet - Game Availability sheet
- * @param {Array<{column: number, header: string}>} activationStatusColumns - Column indices and headers
+ * Normalize header cell for pattern matching (handles Date-typed headers in row 1).
+ * @param {*} cell
+ * @return {string}
  */
-function applyActivationStatusValidationAndFormatting(sheet, activationStatusColumns) {
-  const values = GAME_ACTIVATION_STATUS_OPTIONS.map(function (o) { return o.value; });
-  const lastRow = Math.max(sheet.getLastRow(), 100);
-  const numRows = lastRow - 1; // rows 2 through lastRow inclusive
+function normalizeAvailabilityHeader_(cell) {
+  if (cell == null || cell === '') return '';
+  if (cell instanceof Date) return formatDateForColumn(cell);
+  return String(cell).trim();
+}
 
-  activationStatusColumns.forEach(function (info) {
-    const col = info.column;
-    // getRange(row, column, numRows, numColumns) — use 1 column so we only affect this Activation Status column
-    const range = sheet.getRange(2, col, numRows, 1);
+/** @return {Object.<string, boolean>} */
+function managedAvailabilityCfTextSet_() {
+  var o = {};
+  AVAILABILITY_VALIDATION_OPTIONS.forEach(function (x) {
+    o[x.value] = true;
+  });
+  GAME_ACTIVATION_STATUS_OPTIONS.forEach(function (x) {
+    o[x.value] = true;
+  });
+  return o;
+}
 
-    const validation = SpreadsheetApp.newDataValidation()
-      .requireValueInList(values, true)
+/**
+ * Drop CF rules we manage (text-equals for availability or activation values) so rebuilds do not stack.
+ * @param {GoogleAppsScript.Spreadsheet.ConditionalFormatRule[]} rules
+ * @param {Object.<string, boolean>} valueSet
+ * @return {GoogleAppsScript.Spreadsheet.ConditionalFormatRule[]}
+ */
+function removeManagedTextEqualsCfRules_(rules, valueSet) {
+  return rules.filter(function (rule) {
+    try {
+      var bc = rule.getBooleanCondition();
+      if (!bc) return true;
+      var vals = bc.getCriteriaValues();
+      if (!vals || vals.length === 0) return true;
+      var t = vals[0];
+      if (typeof t === 'string' && valueSet[t]) return false;
+      return true;
+    } catch (err) {
+      return true;
+    }
+  });
+}
+
+/**
+ * @return {{ availabilityCols: number[], activationCols: number[] }}
+ */
+function collectGameAvailabilityColumnIndices_(sheet) {
+  var lastCol = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var reAvail = /^\d{1,2}\/\d{1,2} Availability(?: \(Game \d+\))?$/;
+  var reAct = /^\d{1,2}\/\d{1,2} Activation Status(?: \(Game \d+\))?$/;
+  var availabilityCols = [];
+  var activationCols = [];
+  for (var i = 0; i < headers.length; i++) {
+    var s = normalizeAvailabilityHeader_(headers[i]);
+    if (reAvail.test(s)) availabilityCols.push(i + 1);
+    else if (reAct.test(s)) activationCols.push(i + 1);
+  }
+  return { availabilityCols: availabilityCols, activationCols: activationCols };
+}
+
+/**
+ * Practice availability columns are headers that are exactly M/D (not "M/D Note").
+ * @return {number[]}
+ */
+function collectPracticeAvailabilityColumnIndices_(sheet) {
+  var lastCol = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var reDateOnly = /^\d{1,2}\/\d{1,2}$/;
+  var out = [];
+  for (var i = 0; i < headers.length; i++) {
+    var s = normalizeAvailabilityHeader_(headers[i]);
+    if (reDateOnly.test(s)) out.push(i + 1);
+  }
+  return out;
+}
+
+/**
+ * Apply the same data validation to multiple columns (row 2 downward, numRows tall).
+ * RangeList supports clearDataValidations() but not setDataValidation(); loop per column.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number[]} columns 1-based column indices
+ * @param {number} numRows Height in rows (SpreadsheetApp getRange row/column/numRows/numColumns overload)
+ * @param {GoogleAppsScript.Spreadsheet.DataValidation} validation
+ */
+function applyDataValidationToColumnRanges_(sheet, columns, numRows, validation) {
+  columns.forEach(function (c) {
+    sheet.getRange(2, c, numRows, 1).setDataValidation(validation);
+  });
+}
+
+/**
+ * Apply one VALUE_IN_LIST to all game availability columns and one to all activation columns (fewer DV entries than per-column).
+ * @param {Sheet} sheet
+ */
+function consolidateGameAvailabilityDataValidations(sheet) {
+  var lastRow = Math.max(sheet.getLastRow(), 100);
+  var numRows = lastRow - 1;
+  var idx = collectGameAvailabilityColumnIndices_(sheet);
+  var valOpts = GAME_AVAILABILITY_CONFIG.validationOptions.map(function (o) {
+    return o.value;
+  });
+  var actOpts = GAME_ACTIVATION_STATUS_OPTIONS.map(function (o) {
+    return o.value;
+  });
+
+  if (idx.availabilityCols.length > 0) {
+    var dvA = SpreadsheetApp.newDataValidation()
+      .requireValueInList(valOpts, true)
+      .setAllowInvalid(false)
+      .setHelpText('Select your availability')
+      .build();
+    applyDataValidationToColumnRanges_(sheet, idx.availabilityCols, numRows, dvA);
+  }
+  if (idx.activationCols.length > 0) {
+    var dvB = SpreadsheetApp.newDataValidation()
+      .requireValueInList(actOpts, true)
       .setAllowInvalid(false)
       .setHelpText('Active / Inactive / TBD')
       .build();
-    range.setDataValidation(validation);
+    applyDataValidationToColumnRanges_(sheet, idx.activationCols, numRows, dvB);
+  }
+}
 
-    const rules = sheet.getConditionalFormatRules();
-    GAME_ACTIVATION_STATUS_OPTIONS.forEach(function (opt) {
-      const rule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo(opt.value)
-        .setBackground(opt.backgroundColor)
-        .setRanges([range])
-        .build();
-      rules.push(rule);
-    });
-    sheet.setConditionalFormatRules(rules);
+/**
+ * One VALUE_IN_LIST applied to all practice date availability columns (same rule per column).
+ * @param {Sheet} sheet
+ */
+function consolidatePracticeAvailabilityDataValidations(sheet) {
+  var lastRow = Math.max(sheet.getLastRow(), 100);
+  var numRows = lastRow - 1;
+  var cols = collectPracticeAvailabilityColumnIndices_(sheet);
+  if (cols.length === 0) return;
+
+  var valOpts = PRACTICE_AVAILABILITY_CONFIG.validationOptions.map(function (o) {
+    return o.value;
   });
+  var dv = SpreadsheetApp.newDataValidation()
+    .requireValueInList(valOpts, true)
+    .setAllowInvalid(false)
+    .setHelpText('Select your availability')
+    .build();
+  applyDataValidationToColumnRanges_(sheet, cols, numRows, dv);
+}
+
+/**
+ * Entire sheet grid — used for conditional formatting so we do not maintain per-column range lists.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @return {GoogleAppsScript.Spreadsheet.Range}
+ */
+function getWholeSheetRangeForCf_(sheet) {
+  return sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns());
+}
+
+/**
+ * @param {{ value: string, backgroundColor: string }} opt
+ * @param {GoogleAppsScript.Spreadsheet.Range} whole
+ * @return {GoogleAppsScript.Spreadsheet.ConditionalFormatRule}
+ */
+function buildTextEqualsWholeSheetCfRule_(opt, whole) {
+  return SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo(opt.value)
+    .setBackground(opt.backgroundColor)
+    .setRanges([whole])
+    .build();
+}
+
+/**
+ * Game Availability: one CF rule per availability value and one per activation value; each rule applies to the whole sheet.
+ * Still only adds availability rules if the sheet has availability headers (and likewise activation), so we do not color unrelated tabs.
+ * @param {Sheet} sheet
+ */
+function refreshGameAvailabilitySheetConditionalFormatting(sheet) {
+  var idx = collectGameAvailabilityColumnIndices_(sheet);
+  var managed = managedAvailabilityCfTextSet_();
+  var rules = removeManagedTextEqualsCfRules_(sheet.getConditionalFormatRules(), managed);
+  var whole = getWholeSheetRangeForCf_(sheet);
+
+  AVAILABILITY_VALIDATION_OPTIONS.forEach(function (opt) {
+    if (idx.availabilityCols.length === 0) return;
+    rules.push(buildTextEqualsWholeSheetCfRule_(opt, whole));
+  });
+
+  GAME_ACTIVATION_STATUS_OPTIONS.forEach(function (opt) {
+    if (idx.activationCols.length === 0) return;
+    rules.push(buildTextEqualsWholeSheetCfRule_(opt, whole));
+  });
+
+  sheet.setConditionalFormatRules(rules);
+}
+
+/**
+ * Practice Availability: one rule per availability value, each applied to the whole sheet (if any practice date columns exist).
+ * @param {Sheet} sheet
+ */
+function refreshPracticeAvailabilitySheetConditionalFormatting(sheet) {
+  var cols = collectPracticeAvailabilityColumnIndices_(sheet);
+  var managed = {};
+  AVAILABILITY_VALIDATION_OPTIONS.forEach(function (x) {
+    managed[x.value] = true;
+  });
+
+  var rules = removeManagedTextEqualsCfRules_(sheet.getConditionalFormatRules(), managed);
+  var whole = getWholeSheetRangeForCf_(sheet);
+
+  AVAILABILITY_VALIDATION_OPTIONS.forEach(function (opt) {
+    if (cols.length === 0) return;
+    rules.push(buildTextEqualsWholeSheetCfRule_(opt, whole));
+  });
+
+  sheet.setConditionalFormatRules(rules);
 }
 
 /**

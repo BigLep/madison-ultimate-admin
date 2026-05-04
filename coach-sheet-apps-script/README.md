@@ -150,7 +150,7 @@ The `source` row (row 3) controls how columns are handled:
 - **Build Practice Roster** - Create roster with practice availability columns
 - **Build Game Roster Prep Sheet** - Create game day roster (coach or parent view)
 - **Build Email List** - Generate email lists for parent communication
-- **Build Practice/Game Availability** - Create availability tracking sheets. For games, each date gets three columns (in order): *$Date* Availability, *$Date* Activation Status (dropdown: Active / Inactive / TBD with green/red/grey backgrounds), and *$Date* Note (free text). Headers and cells use text wrapping.
+- **Build Practice/Game Availability** - Create availability tracking sheets. For games, see **[Double headers](#double-headers)** below. Normally each calendar date gets three columns (in order): *$Date* Availability, *$Date* Activation Status (dropdown: Active / Inactive / TBD with green/red/grey backgrounds), and *$Date* Note (free text). If there are multiple **Game Info** rows on the same date, the script adds a second (or third) set with **`(Game 2)`** / **`(Game 3)`** in the header so they match the player portal. Headers and cells use text wrapping.
 - **Build Custom Sheet** - Interactive builder for custom column selection
 
 ### Analysis Tools
@@ -184,6 +184,39 @@ The sync scripts store Google Calendar event IDs in the spreadsheet so logic sta
 - **📍Practice Info:** `Google Calendar Event ID`
 
 ## Key Concepts
+
+### Double headers
+
+Two games on the same calendar day (e.g. playoff double-headers) are supported as follows.
+
+**Game Info (📍Game Info)**  
+- Enter **one row per game**. Reuse the same **Date** cell value for both games (e.g. two rows with `5/9`).
+- Keep rows in **true game order** (earlier game first). The script and the portal assign “game 1” / “game 2” **in row order** for that date (same rule as the portal API).
+
+**Game Availability**  
+After you add or change rows in Game Info, run **Build Game Availability**. For each distinct game row, the script ensures columns exist:
+
+| Occurrence that day | Example availability header | Example activation header | Example note header |
+|---------------------|----------------------------|---------------------------|---------------------|
+| 1st game on that date | `5/9 Availability` | `5/9 Activation Status` | `5/9 Note` |
+| 2nd game | `5/9 Availability (Game 2)` | `5/9 Activation Status (Game 2)` | `5/9 Note (Game 2)` |
+| 3rd game | `5/9 Availability (Game 3)` | … | … |
+
+Do **not** use two identical headers like two columns both named `5/9 Availability`—the second game must use the **`(Game N)`** suffix so the portal can tell them apart.
+
+**Build Game Roster Prep**  
+The game picker lists **one option per Game Info row** (date plus **Game #** label when present), so you can build a prep sheet for the first or second game on the same day.
+
+**Practice roster “next game” columns**  
+When a practice roster includes columns for the next game after that practice, **find next game** uses the next Game Info row in order; if that day has two games, you get columns for the **first** game on that date (unless you change Game Info order intentionally).
+
+### Practice & Game Availability — dropdowns and cell colors
+
+After **Build Practice Availability** or **Build Game Availability**, the script applies **data validation** in bulk (one shared rule type for all availability columns, and for games one shared rule for all activation columns—fewer duplicate rules than per-column). **Conditional formatting** fills cells by value: **one rule per distinct availability or activation value**, each rule’s range is the **entire sheet grid** (simple and reliable; only values that exactly match are colored). Rebuilding refreshes those managed rules so they do not stack.
+
+**Dropdown “chip” colors** in the validation dropdown list are still a Sheets **UI** feature; Apps Script does not style the list UI. **Cell background** colors come from the automated conditional formatting above.
+
+Roster prep sheets **copy** conditional formatting from **📋 Roster** and **copy** data validation from Practice / Game Availability; they do not duplicate the availability sheet’s CF rules on the prep tab.
 
 ### Dynamic Column Positioning
 
