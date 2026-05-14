@@ -6,6 +6,7 @@
     "Code.gs",
     "SheetBuilder.gs",
     "FormatSpruceUp.gs",
+    "ManagedConditionalFormatting.gs",
     "FullNameDiff.gs",
     "Availability.gs",
     "OrganizeSheets.gs",

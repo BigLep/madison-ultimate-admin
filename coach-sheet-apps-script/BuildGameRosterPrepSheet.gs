@@ -254,7 +254,7 @@ function createGameDateSelectionHtml(gameDates, defaultIndex) {
           <select id="gameDate" onchange="updateSheetName()">
             ${dateOptions}
           </select>
-          <div class="note">Choose the game (same calendar day can list multiple rows for double-headers)</div>
+          <div class="note">Pick any row for that calendar day—the prep sheet lists every game that day (activation, availability, and note for each).</div>
         </div>
 
         <div class="form-group">
@@ -360,18 +360,31 @@ function createGameRosterPrepSheet(sheetName, gameRowIndex, audience = 'coaches'
     throw new Error('Invalid game selection');
   }
   const selected = gameDates[idx];
-  const ordinal = selected.ordinalForDate || 1;
-  const displayLabel = selected.formattedDate + (selected.gameLabel ? ' · ' + selected.gameLabel : '');
+  const gameAvailabilitySheet = ss.getSheetByName('Game Availability');
+  if (!gameAvailabilitySheet) {
+    throw new Error('Game Availability sheet not found');
+  }
+  const availColumnsList = buildAvailColumnsListForSelectedCalendarDay_(gameAvailabilitySheet, gameDates, idx);
 
-  console.log(`🏆 Creating game roster prep sheet: "${sheetName}" for ${displayLabel} (ordinal ${ordinal}), audience: ${audience}`);
+  const sameDayCount = gameDates.filter(function (g) {
+    return g.formattedDate === selected.formattedDate;
+  }).length;
+  var displayLabel = selected.formattedDate;
+  if (sameDayCount > 1) {
+    displayLabel += ' · ' + sameDayCount + ' games';
+  } else if (selected.gameLabel) {
+    displayLabel += ' · ' + selected.gameLabel;
+  }
+
+  console.log(`🏆 Creating game roster prep sheet: "${sheetName}" for ${displayLabel} (${availColumnsList.length} game column set(s)), audience: ${audience}`);
 
   try {
-    const { ss: _ss, newSheet, rosterSheet, gameAvailabilitySheet, availColumns } = setupGameRosterSheets(sheetName, selected.formattedDate, ordinal);
+    const { newSheet, rosterSheet, gameAvailabilitySheet } = setupGameRosterSheets(sheetName, availColumnsList);
 
     if (audience === 'parents') {
-      return buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, selected.formattedDate, availColumns, displayLabel);
+      return buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, selected.formattedDate, availColumnsList, displayLabel);
     }
-    return buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, selected.formattedDate, availColumns, displayLabel);
+    return buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, selected.formattedDate, availColumnsList, displayLabel);
   } catch (error) {
     console.error('Error creating game roster prep sheet:', error);
     throw new Error(`Failed to create game roster prep sheet: ${error.message}`);
@@ -379,17 +392,59 @@ function createGameRosterPrepSheet(sheetName, gameRowIndex, audience = 'coaches'
 }
 
 /**
+ * All games on the same calendar day as gameDates[selectedIndex] (ordinal order). One findAvailabilityColumns result per game.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} gameAvailabilitySheet
+ * @param {Array} gameDates from getDatesFromInfoSheet
+ * @param {number} selectedIndex
+ * @return {Object[]}
+ */
+function buildAvailColumnsListForSelectedCalendarDay_(gameAvailabilitySheet, gameDates, selectedIndex) {
+  const selected = gameDates[selectedIndex];
+  if (!selected) throw new Error('Invalid game selection');
+  const dateKey = selected.formattedDate;
+  const rows = [];
+  for (var i = 0; i < gameDates.length; i++) {
+    if (gameDates[i].formattedDate === dateKey) rows.push(gameDates[i]);
+  }
+  rows.sort(function (a, b) {
+    return (a.ordinalForDate || 1) - (b.ordinalForDate || 1);
+  });
+  const list = [];
+  for (var j = 0; j < rows.length; j++) {
+    var ord = rows[j].ordinalForDate || 1;
+    var ac = findAvailabilityColumns(gameAvailabilitySheet, dateKey, 'Game Availability', ord);
+    if (!ac.availabilityColumn) {
+      var expect = getAvailabilityColumnHeaders(dateKey, 'Game Availability', ord).availabilityHeader;
+      throw new Error('Game "' + dateKey + '" (game ' + ord + ' on that date) not found in Game Availability. Expected column "' + expect + '". Run Build Game Availability first.');
+    }
+    list.push(ac);
+  }
+  return list;
+}
+
+/**
  * Get column layout for coach game roster prep based on CONFIG.gameRosterPrep.
- * Order: #, Full Name, [Team?], Gender, Grade, [$date Activation Status?], $date Availability, $date Note
+ * Order: #, Full Name, [Team?], Gender, Grade, then for each game that calendar day:
+ *   [$date Activation Status?], $date Availability, $date Note (and "(Game N)" variants).
  * @param {string} gameDate - Game date in format "M/D"
- * @param {Object} availColumns - From findAvailabilityColumns (headers for availability, note, activation)
+ * @param {Object[]} availColumnsList - One findAvailabilityColumns result per game on that day
  * @return {{ headers: string[], indices: Object }} headers array and 1-based column index for each logical column
  */
-function getGameRosterPrepColumnLayout(gameDate, availColumns) {
+function getGameRosterPrepColumnLayout(gameDate, availColumnsList) {
   const hasTeam = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasTeam;
   const hasActivation = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasActivationStatus;
   const headers = [CONFIG.rosterPrintoutBaseColumns.number.name, CONFIG.rosterPrintoutBaseColumns.fullName.name];
-  const indices = { number: 1, fullName: 2, team: null, gender: null, grade: null, activationStatus: null, availability: null, note: null };
+  const indices = {
+    number: 1,
+    fullName: 2,
+    team: null,
+    gender: null,
+    grade: null,
+    games: [],
+    activationStatus: null,
+    availability: null,
+    note: null
+  };
   let col = 3;
   if (hasTeam) {
     headers.push(CONFIG.rosterPrintoutBaseColumns.team.name);
@@ -399,27 +454,41 @@ function getGameRosterPrepColumnLayout(gameDate, availColumns) {
   indices.gender = col++;
   headers.push(CONFIG.rosterPrintoutBaseColumns.grade.name);
   indices.grade = col++;
-  if (hasActivation && availColumns.activationHeader) {
-    headers.push(availColumns.activationHeader);
-    indices.activationStatus = col++;
+
+  for (var gi = 0; gi < availColumnsList.length; gi++) {
+    var availColumns = availColumnsList[gi];
+    var gameIndices = { activation: null, availability: null, note: null };
+    if (hasActivation && availColumns.activationHeader && availColumns.activationStatusColumn) {
+      headers.push(availColumns.activationHeader);
+      gameIndices.activation = col++;
+    }
+    headers.push(availColumns.availabilityHeader);
+    gameIndices.availability = col++;
+    headers.push(availColumns.noteHeader);
+    gameIndices.note = col++;
+    indices.games.push(gameIndices);
   }
-  headers.push(availColumns.availabilityHeader);
-  indices.availability = col++;
-  headers.push(availColumns.noteHeader);
-  indices.note = col++;
+
+  if (indices.games.length > 0) {
+    indices.activationStatus = indices.games[0].activation;
+    indices.availability = indices.games[0].availability;
+    indices.note = indices.games[0].note;
+  }
   return { headers: headers, indices: indices };
 }
 
 /**
  * Common setup for game roster sheets
  * @param {string} sheetName - Name for the new sheet
- * @param {string} gameDate - Game date in format "M/D"
- * @param {number} [ordinalForDate] - 1 = first game that day; 2+ = double-header (must match Game Availability headers)
+ * @param {Object[]} availColumnsList - One findAvailabilityColumns result per game on the selected calendar day
  * @return {Object} Common resources needed by both roster types
  */
-function setupGameRosterSheets(sheetName, gameDate, ordinalForDate) {
+function setupGameRosterSheets(sheetName, availColumnsList) {
+  if (!availColumnsList || availColumnsList.length === 0) {
+    throw new Error('No game availability columns to build roster.');
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ord = ordinalForDate || 1;
 
   // Create new sheet
   const newSheet = ss.insertSheet(sheetName);
@@ -437,14 +506,7 @@ function setupGameRosterSheets(sheetName, gameDate, ordinalForDate) {
     throw new Error('Game Availability sheet not found');
   }
 
-  const availColumns = findAvailabilityColumns(gameAvailabilitySheet, gameDate, 'Game Availability', ord);
-
-  if (!availColumns.availabilityColumn) {
-    var expect = getAvailabilityColumnHeaders(gameDate, 'Game Availability', ord).availabilityHeader;
-    throw new Error(`Game "${gameDate}" (game ${ord} on that date) not found in Game Availability. Expected a column titled "${expect}". Run Build Game Availability first.`);
-  }
-
-  return { ss: ss, newSheet: newSheet, rosterSheet: rosterSheet, gameAvailabilitySheet: gameAvailabilitySheet, availColumns: availColumns };
+  return { ss: ss, newSheet: newSheet, rosterSheet: rosterSheet, gameAvailabilitySheet: gameAvailabilitySheet, availColumnsList: availColumnsList };
 }
 
 /**
@@ -642,12 +704,12 @@ function applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availC
  * @param {Object} availColumns - Availability column info
  * @param {string} displayLabel - Short label for dialogs (date plus optional game label)
  */
-function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gameDate, availColumns, displayLabel) {
+function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gameDate, availColumnsList, displayLabel) {
   const labelForUi = displayLabel || gameDate;
   console.log(`🏆 Building COACH game roster for: ${labelForUi}`);
 
   try {
-    const layout = getGameRosterPrepColumnLayout(gameDate, availColumns);
+    const layout = getGameRosterPrepColumnLayout(gameDate, availColumnsList);
     const headers = layout.headers;
     const idx = layout.indices;
 
@@ -659,7 +721,7 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     headerRange.setFontColor('white');
 
     console.log(`📝 Set up ${headers.length} column headers: ${headers.join(', ')}`);
-    console.log(`📍 Found availability columns: ${availColumns.availabilityColumn} and ${availColumns.noteColumn || 'none'}`);
+    console.log(`📍 ${availColumnsList.length} game(s) on this calendar day — availability columns: ${availColumnsList.map(function (a) { return a.availabilityColumn; }).join(', ')}`);
 
     // Copy Full Name column to column 2 from roster using shared utility
     const fullNameInfo = copyFullNameColumnToColumn(newSheet, rosterSheet, 2, 2);
@@ -668,7 +730,7 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
 
     // Populate other columns with XLOOKUP formulas (uses layout.indices)
-    populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, gameAvailabilitySheet, availColumns, layout.indices, fullNameInfo.rowCount);
+    populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, gameAvailabilitySheet, availColumnsList, layout.indices, fullNameInfo.rowCount);
 
     // Copy formatting from roster using shared utility
     console.log('🎨 Copying column formatting...');
@@ -681,20 +743,21 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     // Ensure header row styling is preserved using shared utility
     styleHeaderRow(newSheet, headers.length);
 
-    // Copy conditional formatting using shared utility
-    console.log('🎨 Copying conditional formatting...');
-    const totalRows = fullNameInfo.rowCount + 1;
-    copyConditionalFormatting(newSheet, rosterSheet, totalRows, headers.length);
+    // Whole-sheet value colors (same managed rules as Game Availability)
+    console.log('🎨 Applying managed availability / activation conditional formatting (whole sheet)...');
+    refreshManagedAvailabilityAndActivationCfOnSheet(newSheet);
 
-    // Copy data validation from Game Availability for the Availability column
-    if (availColumns.availabilityColumn && idx.availability) {
-      applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, idx.availability, fullNameInfo.rowCount);
-    }
-
-    // Copy Activation Status validation from Game Availability if this season uses it
-    if (idx.activationStatus && availColumns.activationStatusColumn) {
-      copyDataValidation(newSheet, gameAvailabilitySheet,
-        [{ sourceColumn: availColumns.activationHeader, targetColumn: idx.activationStatus }], fullNameInfo.rowCount);
+    for (var gi = 0; gi < availColumnsList.length; gi++) {
+      var ac = availColumnsList[gi];
+      var gix = idx.games[gi];
+      if (!gix) continue;
+      if (ac.availabilityColumn && gix.availability) {
+        applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, ac, gix.availability, fullNameInfo.rowCount);
+      }
+      if (gix.activation && ac.activationStatusColumn) {
+        copyDataValidation(newSheet, gameAvailabilitySheet,
+          [{ sourceColumn: ac.activationHeader, targetColumn: gix.activation }], fullNameInfo.rowCount);
+      }
     }
 
     // Force recalculation to ensure formulas are evaluated before sorting
@@ -728,14 +791,20 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     // Auto-resize columns
     console.log('📏 Auto-resizing columns...');
     newSheet.autoResizeColumn(idx.number);
-    if (idx.availability) newSheet.autoResizeColumn(idx.availability);
-    if (idx.activationStatus) newSheet.autoResizeColumn(idx.activationStatus);
+    for (var ri = 0; ri < idx.games.length; ri++) {
+      var gx = idx.games[ri];
+      if (gx.availability) newSheet.autoResizeColumn(gx.availability);
+      if (gx.activation) newSheet.autoResizeColumn(gx.activation);
+    }
 
-    // Enable text wrapping for note column
-    if (idx.note) {
-      console.log('📝 Enabling text wrap for note column...');
-      const noteColumnRange = newSheet.getRange(2, idx.note, fullNameInfo.rowCount, 1);
-      noteColumnRange.setWrap(true);
+    for (var ni = 0; ni < idx.games.length; ni++) {
+      var nx = idx.games[ni];
+      if (nx.note) {
+        newSheet.getRange(2, nx.note, fullNameInfo.rowCount, 1).setWrap(true);
+      }
+    }
+    if (idx.games.some(function (g) { return g.note; })) {
+      console.log('📝 Enabled text wrap for note column(s)');
     }
 
     // Set print settings
@@ -768,11 +837,11 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
  * @param {Sheet} rosterSheet - The source roster sheet
  * @param {Array} rosterHeaderRow - Header row from roster sheet
  * @param {Sheet} gameAvailabilitySheet - The game availability sheet
- * @param {Object} availColumns - Availability column letters and headers
- * @param {Object} indices - 1-based column indices (number, fullName, team?, gender, grade, activationStatus?, availability, note)
+ * @param {Object[]} availColumnsList - One findAvailabilityColumns result per game that day
+ * @param {Object} indices - 1-based column indices (number, fullName, team?, gender, grade, games[], activationStatus/availability/note = first game)
  * @param {number} numRows - Number of data rows
  */
-function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, gameAvailabilitySheet, availColumns, indices, numRows) {
+function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, gameAvailabilitySheet, availColumnsList, indices, numRows) {
   if (numRows === 0) return;
 
   const rosterSheetName = CONFIG.roster.sheetName;
@@ -823,25 +892,28 @@ function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, game
     }
   }
 
-  // Activation Status (only if this season has it)
-  if (indices.activationStatus && availColumns.activationStatusColumn) {
-    const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.activationStatusColumn}:${availColumns.activationStatusColumn}),"")`;
-    setFormula(indices.activationStatus, formula);
-    console.log(`✅ Populated Activation Status column with XLOOKUP`);
-  }
+  for (var gi = 0; gi < availColumnsList.length; gi++) {
+    var availColumns = availColumnsList[gi];
+    var gix = indices.games[gi];
+    if (!gix) continue;
 
-  // Game Availability
-  if (indices.availability && availColumns.availabilityColumn) {
-    const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
-    setFormula(indices.availability, formula);
-    console.log(`✅ Populated Game Availability column with XLOOKUP`);
-  }
+    if (gix.activation && availColumns.activationStatusColumn) {
+      var fAct = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.activationStatusColumn}:${availColumns.activationStatusColumn}),"")`;
+      setFormula(gix.activation, fAct);
+      console.log(`✅ Populated Activation Status column (game ${gi + 1}) with XLOOKUP`);
+    }
 
-  // Game Note
-  if (indices.note && availColumns.noteColumn) {
-    const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
-    setFormula(indices.note, formula);
-    console.log(`✅ Populated Game Note column with XLOOKUP`);
+    if (gix.availability && availColumns.availabilityColumn) {
+      var fAvail = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
+      setFormula(gix.availability, fAvail);
+      console.log(`✅ Populated Game Availability column (game ${gi + 1}) with XLOOKUP`);
+    }
+
+    if (gix.note && availColumns.noteColumn) {
+      var fNote = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
+      setFormula(gix.note, fNote);
+      console.log(`✅ Populated Game Note column (game ${gi + 1}) with XLOOKUP`);
+    }
   }
 }
 
@@ -872,15 +944,15 @@ function sortGameRosterPrep(sheet, numRows, numColumns, indices) {
 }
 
 /**
- * Build a parent-friendly game roster with just names and availability
+ * Build a parent-friendly game roster with names and per-game availability columns
  * @param {Sheet} newSheet - The new sheet to populate
  * @param {Sheet} rosterSheet - The roster sheet
  * @param {Sheet} gameAvailabilitySheet - The game availability sheet
  * @param {string} gameDate - Game date in format "M/D"
- * @param {Object} availColumns - Availability column info
+ * @param {Object[]} availColumnsList - One findAvailabilityColumns result per game that day
  * @param {string} displayLabel - Short label for dialogs
  */
-function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gameDate, availColumns, displayLabel) {
+function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gameDate, availColumnsList, displayLabel) {
   const labelForUi = displayLabel || gameDate;
   console.log(`👨‍👩‍👧‍👦 Building PARENT game roster for: ${labelForUi}`);
 
@@ -888,16 +960,24 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
     const hasTeam = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasTeam;
     const hasActivation = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasActivationStatus;
 
-    // Column order: Full Name (1), [Activation Status?], Availability, [Team if hasTeam]
     const headers = ['Full Name'];
-    const col = { fullName: 1, activation: null, availability: null, team: null };
-    let c = 2;
-    if (hasActivation && availColumns.activationHeader) {
-      headers.push(availColumns.activationHeader);
-      col.activation = c++;
+    const col = { fullName: 1, games: [], team: null };
+    var c = 2;
+
+    for (var gi = 0; gi < availColumnsList.length; gi++) {
+      var ac = availColumnsList[gi];
+      var gc = { activation: null, availability: null, note: null };
+      if (hasActivation && ac.activationHeader && ac.activationStatusColumn) {
+        headers.push(ac.activationHeader);
+        gc.activation = c++;
+      }
+      headers.push(ac.availabilityHeader);
+      gc.availability = c++;
+      headers.push(ac.noteHeader);
+      gc.note = c++;
+      col.games.push(gc);
     }
-    headers.push(availColumns.availabilityHeader);
-    col.availability = c++;
+
     if (hasTeam) {
       headers.push('Team');
       col.team = c++;
@@ -926,14 +1006,22 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
         }
       }
 
-      if (col.activation && availColumns.activationStatusColumn) {
-        setFormula(col.activation, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.activationStatusColumn}:${availColumns.activationStatusColumn}),"")`);
-        console.log(`✅ Populated Activation Status column with XLOOKUP`);
-      }
-
-      if (col.availability && availColumns.availabilityColumn) {
-        setFormula(col.availability, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`);
-        console.log(`✅ Populated Game Availability column with XLOOKUP`);
+      for (var pi = 0; pi < availColumnsList.length; pi++) {
+        var pac = availColumnsList[pi];
+        var pc = col.games[pi];
+        if (!pc) continue;
+        if (pc.activation && pac.activationStatusColumn) {
+          setFormula(pc.activation, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${pac.activationStatusColumn}:${pac.activationStatusColumn}),"")`);
+          console.log(`✅ Populated Activation Status (game ${pi + 1}) with XLOOKUP`);
+        }
+        if (pc.availability && pac.availabilityColumn) {
+          setFormula(pc.availability, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${pac.availabilityColumn}:${pac.availabilityColumn}),"")`);
+          console.log(`✅ Populated Game Availability (game ${pi + 1}) with XLOOKUP`);
+        }
+        if (pc.note && pac.noteColumn) {
+          setFormula(pc.note, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${pac.noteColumn}:${pac.noteColumn}),"")`);
+          console.log(`✅ Populated Game Note (game ${pi + 1}) with XLOOKUP`);
+        }
       }
 
       if (col.team) {
@@ -953,18 +1041,19 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
 
     const numCols = headers.length;
     if (fullNameInfo.rowCount > 0) {
-      const sortSpec = col.activation
-        ? [{ column: col.activation, ascending: true }, { column: 1, ascending: true }]
-        : [{ column: 1, ascending: true }];
-      console.log(col.activation
-        ? `🔄 Sorting ${fullNameInfo.rowCount} rows by Activation Status > Player Name...`
+      var sortSpec = [];
+      var g0 = col.games[0];
+      if (g0 && g0.activation) sortSpec.push({ column: g0.activation, ascending: true });
+      if (g0 && g0.availability) sortSpec.push({ column: g0.availability, ascending: true });
+      sortSpec.push({ column: 1, ascending: true });
+      console.log(sortSpec.length > 1
+        ? `🔄 Sorting ${fullNameInfo.rowCount} rows by first game status / availability > Player Name...`
         : `🔄 Sorting ${fullNameInfo.rowCount} rows by player name...`);
       const dataRange = newSheet.getRange(2, 1, fullNameInfo.rowCount, numCols);
       dataRange.sort(sortSpec);
       console.log('✅ Sorting complete');
     }
 
-    // Filter to hide Practice Squad and Dropped only when we have a Team column
     if (hasTeam && fullNameInfo.rowCount > 0 && col.team) {
       console.log('🔍 Applying filter to hide Practice Squad and Dropped...');
       const fullDataRange = newSheet.getRange(1, 1, fullNameInfo.rowCount + 1, numCols);
@@ -976,13 +1065,21 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
       console.log('✅ Filter applied - Practice Squad and Dropped hidden');
     }
 
+    styleHeaderRow(newSheet, headers.length);
+    refreshManagedAvailabilityAndActivationCfOnSheet(newSheet);
+
     if (fullNameInfo.rowCount > 0) {
-      if (col.activation) {
-        copyDataValidation(newSheet, gameAvailabilitySheet,
-          [{ sourceColumn: availColumns.activationHeader, targetColumn: col.activation }], fullNameInfo.rowCount);
-      }
-      if (col.availability && availColumns.availabilityColumn) {
-        applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, availColumns, col.availability, fullNameInfo.rowCount);
+      for (var di = 0; di < availColumnsList.length; di++) {
+        var dac = availColumnsList[di];
+        var dc = col.games[di];
+        if (!dc) continue;
+        if (dc.activation) {
+          copyDataValidation(newSheet, gameAvailabilitySheet,
+            [{ sourceColumn: dac.activationHeader, targetColumn: dc.activation }], fullNameInfo.rowCount);
+        }
+        if (dc.availability && dac.availabilityColumn) {
+          applyGameAvailabilityValidation(newSheet, gameAvailabilitySheet, dac, dc.availability, fullNameInfo.rowCount);
+        }
       }
     }
 
@@ -990,14 +1087,21 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
 
     console.log('📏 Auto-resizing columns...');
     newSheet.autoResizeColumn(1);
-    if (col.activation) newSheet.autoResizeColumn(col.activation);
-    if (col.availability) newSheet.autoResizeColumn(col.availability);
+    for (var ai = 0; ai < col.games.length; ai++) {
+      var ag = col.games[ai];
+      if (ag.activation) newSheet.autoResizeColumn(ag.activation);
+      if (ag.availability) newSheet.autoResizeColumn(ag.availability);
+      if (ag.note) {
+        newSheet.getRange(2, ag.note, fullNameInfo.rowCount, 1).setWrap(true);
+      }
+    }
     if (col.team) newSheet.autoResizeColumn(col.team);
 
     console.log(`✅ Parent game roster created successfully`);
 
-    const alertDetail = col.activation
-      ? (hasTeam ? 'Sorted by Activation Status > Player Name. Practice Squad and Dropped players are hidden (filter applied).' : 'Sorted by Activation Status > Player Name.')
+    var firstAct = col.games[0] && col.games[0].activation;
+    const alertDetail = firstAct
+      ? (hasTeam ? 'Sorted using the first game’s activation and availability, then player name. Practice Squad and Dropped players are hidden (filter applied).' : 'Sorted using the first game’s activation and availability, then player name.')
       : (hasTeam ? 'Sorted by player name. Practice Squad and Dropped players are hidden (filter applied).' : 'Sorted by player name.');
     SpreadsheetApp.getUi().alert(
       'Parent Game Roster Created!',

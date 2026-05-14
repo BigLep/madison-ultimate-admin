@@ -690,10 +690,9 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     // Ensure header row styling is preserved using shared utility
     styleHeaderRow(newSheet, headers.length);
     
-    // Copy conditional formatting using shared utility
-    console.log('🎨 Copying conditional formatting...');
-    const totalRows = fullNameInfo.rowCount + 1;
-    copyConditionalFormatting(newSheet, rosterSheet, totalRows, headers.length);
+    // Copy conditional formatting replaced by whole-sheet managed rules (practice + next-game columns when present)
+    console.log('🎨 Applying managed availability / activation conditional formatting (whole sheet)...');
+    refreshManagedAvailabilityAndActivationCfOnSheet(newSheet);
     
     // Copy data validation from Practice Availability for the Availability column using shared utility
     if (availColumns.availabilityColumn) {

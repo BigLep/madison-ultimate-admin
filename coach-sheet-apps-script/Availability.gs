@@ -2,16 +2,10 @@
  * Availability Builder Module
  * Creates availability tracking columns based on dates from info sheets
  * Supports both Practice and Game availability tracking
+ *
+ * AVAILABILITY_VALIDATION_OPTIONS and GAME_ACTIVATION_STATUS_OPTIONS are defined in ManagedConditionalFormatting.gs
+ * (shared with roster prep sheets and whole-sheet CF).
  */
-
-// Shared validation options for all availability tracking (backgroundColor used only for conditional formatting)
-const AVAILABILITY_VALIDATION_OPTIONS = [
-  { value: '👍 Planning to be there', backgroundColor: '#d5e8d4' },
-  { value: '👎 Can\'t make it', backgroundColor: '#f4c7c3' },
-  { value: '❓ Not sure yet', backgroundColor: '#fce5cd' },
-  { value: 'Was there', backgroundColor: '#38761d' },
-  { value: 'Wasn\'t there', backgroundColor: '#cc0000' }
-];
 
 // Configuration for Practice Availability feature
 const PRACTICE_AVAILABILITY_CONFIG = {
@@ -29,13 +23,6 @@ const PRACTICE_AVAILABILITY_CONFIG = {
     skipValues: ['Bye', 'Cancelled']
   }
 };
-
-// Game Activation Status: dropdown values + CF colors (Active/Inactive match Was there / Wasn't there; TBD neutral grey)
-const GAME_ACTIVATION_STATUS_OPTIONS = [
-  { value: 'Active', backgroundColor: '#38761d' },
-  { value: 'Inactive', backgroundColor: '#cc0000' },
-  { value: 'TBD', backgroundColor: '#e8eaed' }
-];
 
 // Configuration for Game Availability feature
 const GAME_AVAILABILITY_CONFIG = {
@@ -458,10 +445,8 @@ function buildAvailabilityColumns(ss, dates, config) {
 
   if (config.type === 'game') {
     consolidateGameAvailabilityDataValidations(availabilitySheet);
-    refreshGameAvailabilitySheetConditionalFormatting(availabilitySheet);
   } else if (config.type === 'practice') {
     consolidatePracticeAvailabilityDataValidations(availabilitySheet);
-    refreshPracticeAvailabilitySheetConditionalFormatting(availabilitySheet);
   }
 
   // Enable text wrapping on the sheet so headers and cells wrap
@@ -478,6 +463,8 @@ function buildAvailabilityColumns(ss, dates, config) {
   } catch (error) {
     console.warn('⚠️ Could not apply Format Spruce Up formatting:', error.message);
   }
+
+  refreshManagedAvailabilityAndActivationCfOnSheet(availabilitySheet);
 
   return {
     columnsCreated: columnsCreated.length,
@@ -672,85 +659,6 @@ function createNewValidation(sheet, column, validationValues) {
 }
 
 /**
- * Normalize header cell for pattern matching (handles Date-typed headers in row 1).
- * @param {*} cell
- * @return {string}
- */
-function normalizeAvailabilityHeader_(cell) {
-  if (cell == null || cell === '') return '';
-  if (cell instanceof Date) return formatDateForColumn(cell);
-  return String(cell).trim();
-}
-
-/** @return {Object.<string, boolean>} */
-function managedAvailabilityCfTextSet_() {
-  var o = {};
-  AVAILABILITY_VALIDATION_OPTIONS.forEach(function (x) {
-    o[x.value] = true;
-  });
-  GAME_ACTIVATION_STATUS_OPTIONS.forEach(function (x) {
-    o[x.value] = true;
-  });
-  return o;
-}
-
-/**
- * Drop CF rules we manage (text-equals for availability or activation values) so rebuilds do not stack.
- * @param {GoogleAppsScript.Spreadsheet.ConditionalFormatRule[]} rules
- * @param {Object.<string, boolean>} valueSet
- * @return {GoogleAppsScript.Spreadsheet.ConditionalFormatRule[]}
- */
-function removeManagedTextEqualsCfRules_(rules, valueSet) {
-  return rules.filter(function (rule) {
-    try {
-      var bc = rule.getBooleanCondition();
-      if (!bc) return true;
-      var vals = bc.getCriteriaValues();
-      if (!vals || vals.length === 0) return true;
-      var t = vals[0];
-      if (typeof t === 'string' && valueSet[t]) return false;
-      return true;
-    } catch (err) {
-      return true;
-    }
-  });
-}
-
-/**
- * @return {{ availabilityCols: number[], activationCols: number[] }}
- */
-function collectGameAvailabilityColumnIndices_(sheet) {
-  var lastCol = sheet.getLastColumn();
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var reAvail = /^\d{1,2}\/\d{1,2} Availability(?: \(Game \d+\))?$/;
-  var reAct = /^\d{1,2}\/\d{1,2} Activation Status(?: \(Game \d+\))?$/;
-  var availabilityCols = [];
-  var activationCols = [];
-  for (var i = 0; i < headers.length; i++) {
-    var s = normalizeAvailabilityHeader_(headers[i]);
-    if (reAvail.test(s)) availabilityCols.push(i + 1);
-    else if (reAct.test(s)) activationCols.push(i + 1);
-  }
-  return { availabilityCols: availabilityCols, activationCols: activationCols };
-}
-
-/**
- * Practice availability columns are headers that are exactly M/D (not "M/D Note").
- * @return {number[]}
- */
-function collectPracticeAvailabilityColumnIndices_(sheet) {
-  var lastCol = sheet.getLastColumn();
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var reDateOnly = /^\d{1,2}\/\d{1,2}$/;
-  var out = [];
-  for (var i = 0; i < headers.length; i++) {
-    var s = normalizeAvailabilityHeader_(headers[i]);
-    if (reDateOnly.test(s)) out.push(i + 1);
-  }
-  return out;
-}
-
-/**
  * Apply the same data validation to multiple columns (row 2 downward, numRows tall).
  * RangeList supports clearDataValidations() but not setDataValidation(); loop per column.
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
@@ -816,74 +724,6 @@ function consolidatePracticeAvailabilityDataValidations(sheet) {
     .setHelpText('Select your availability')
     .build();
   applyDataValidationToColumnRanges_(sheet, cols, numRows, dv);
-}
-
-/**
- * Entire sheet grid — used for conditional formatting so we do not maintain per-column range lists.
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
- * @return {GoogleAppsScript.Spreadsheet.Range}
- */
-function getWholeSheetRangeForCf_(sheet) {
-  return sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns());
-}
-
-/**
- * @param {{ value: string, backgroundColor: string }} opt
- * @param {GoogleAppsScript.Spreadsheet.Range} whole
- * @return {GoogleAppsScript.Spreadsheet.ConditionalFormatRule}
- */
-function buildTextEqualsWholeSheetCfRule_(opt, whole) {
-  return SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo(opt.value)
-    .setBackground(opt.backgroundColor)
-    .setRanges([whole])
-    .build();
-}
-
-/**
- * Game Availability: one CF rule per availability value and one per activation value; each rule applies to the whole sheet.
- * Still only adds availability rules if the sheet has availability headers (and likewise activation), so we do not color unrelated tabs.
- * @param {Sheet} sheet
- */
-function refreshGameAvailabilitySheetConditionalFormatting(sheet) {
-  var idx = collectGameAvailabilityColumnIndices_(sheet);
-  var managed = managedAvailabilityCfTextSet_();
-  var rules = removeManagedTextEqualsCfRules_(sheet.getConditionalFormatRules(), managed);
-  var whole = getWholeSheetRangeForCf_(sheet);
-
-  AVAILABILITY_VALIDATION_OPTIONS.forEach(function (opt) {
-    if (idx.availabilityCols.length === 0) return;
-    rules.push(buildTextEqualsWholeSheetCfRule_(opt, whole));
-  });
-
-  GAME_ACTIVATION_STATUS_OPTIONS.forEach(function (opt) {
-    if (idx.activationCols.length === 0) return;
-    rules.push(buildTextEqualsWholeSheetCfRule_(opt, whole));
-  });
-
-  sheet.setConditionalFormatRules(rules);
-}
-
-/**
- * Practice Availability: one rule per availability value, each applied to the whole sheet (if any practice date columns exist).
- * @param {Sheet} sheet
- */
-function refreshPracticeAvailabilitySheetConditionalFormatting(sheet) {
-  var cols = collectPracticeAvailabilityColumnIndices_(sheet);
-  var managed = {};
-  AVAILABILITY_VALIDATION_OPTIONS.forEach(function (x) {
-    managed[x.value] = true;
-  });
-
-  var rules = removeManagedTextEqualsCfRules_(sheet.getConditionalFormatRules(), managed);
-  var whole = getWholeSheetRangeForCf_(sheet);
-
-  AVAILABILITY_VALIDATION_OPTIONS.forEach(function (opt) {
-    if (cols.length === 0) return;
-    rules.push(buildTextEqualsWholeSheetCfRule_(opt, whole));
-  });
-
-  sheet.setConditionalFormatRules(rules);
 }
 
 /**

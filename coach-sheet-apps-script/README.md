@@ -205,7 +205,7 @@ After you add or change rows in Game Info, run **Build Game Availability**. For 
 Do **not** use two identical headers like two columns both named `5/9 Availability`—the second game must use the **`(Game N)`** suffix so the portal can tell them apart.
 
 **Build Game Roster Prep**  
-The game picker lists **one option per Game Info row** (date plus **Game #** label when present), so you can build a prep sheet for the first or second game on the same day.
+The game picker lists **one option per Game Info row** (date plus label when present). Whichever row you pick, the prep sheet includes **every game on that calendar day** in order: for each game, *Activation Status* (if enabled in `CONFIG.gameRosterPrep`), *Availability*, and *Note*—for example two games on `5/16` produce `5/16 Activation Status`, `5/16 Availability`, `5/16 Note`, then `5/16 Activation Status (Game 2)`, `5/16 Availability (Game 2)`, `5/16 Note (Game 2)`.
 
 **Practice roster “next game” columns**  
 When a practice roster includes columns for the next game after that practice, **find next game** uses the next Game Info row in order; if that day has two games, you get columns for the **first** game on that date (unless you change Game Info order intentionally).
@@ -214,9 +214,11 @@ When a practice roster includes columns for the next game after that practice, *
 
 After **Build Practice Availability** or **Build Game Availability**, the script applies **data validation** in bulk (one shared rule type for all availability columns, and for games one shared rule for all activation columns—fewer duplicate rules than per-column). **Conditional formatting** fills cells by value: **one rule per distinct availability or activation value**, each rule’s range is the **entire sheet grid** (simple and reliable; only values that exactly match are colored). Rebuilding refreshes those managed rules so they do not stack.
 
+The same **managed** whole-sheet rules are applied to **Build Practice Roster Prep** and **Build Game Roster Prep** sheets when those tabs include practice date columns (`M/D`) and/or game-style `M/D Availability` / `M/D Activation Status` headers (see `ManagedConditionalFormatting.gs`).
+
 **Dropdown “chip” colors** in the validation dropdown list are still a Sheets **UI** feature; Apps Script does not style the list UI. **Cell background** colors come from the automated conditional formatting above.
 
-Roster prep sheets **copy** conditional formatting from **📋 Roster** and **copy** data validation from Practice / Game Availability; they do not duplicate the availability sheet’s CF rules on the prep tab.
+Roster prep sheets **copy** data validation from Practice / Game Availability. They no longer copy conditional formatting from **📋 Roster** for availability coloring; use the managed rules above so prep tabs match Game Availability cell colors.
 
 ### Dynamic Column Positioning
 
@@ -243,6 +245,7 @@ The "Full Name" column is a manually-maintained join key for Additional Info loo
 |------|---------|
 | `Code.gs` | Main entry point, menu, core roster functions |
 | `Availability.gs` | Practice/game availability sheet builders |
+| `ManagedConditionalFormatting.gs` | Shared whole-sheet CF for availability/activation values (availability tabs + roster prep) |
 | `BuildPracticeRoster.gs` | Practice roster generation |
 | `BuildGameRosterPrepSheet.gs` | Game day roster generation |
 | `BuildEmailList.gs` | Email list generation |
