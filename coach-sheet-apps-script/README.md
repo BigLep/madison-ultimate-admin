@@ -148,9 +148,9 @@ The `source` row (row 3) controls how columns are handled:
 
 ### Sheet Builders
 - **Build Practice Roster** - Create roster with practice availability columns
-- **Build Game Roster Prep Sheet** - Create game day roster (coach or parent view)
+- **Build Game Roster Prep Sheet** - Create game day roster (coach or parent view). If **Game Info** has multiple rows on the **same calendar date**, the prep sheet includes **all** of those games (see [Multiple events on one calendar day](#multiple-events-on-the-same-calendar-day-double-headers)).
 - **Build Email List** - Generate email lists for parent communication
-- **Build Practice/Game Availability** - Create availability tracking sheets. For games, see **[Double headers](#double-headers)** below. Normally each calendar date gets three columns (in order): *$Date* Availability, *$Date* Activation Status (dropdown: Active / Inactive / TBD with green/red/grey backgrounds), and *$Date* Note (free text). If there are multiple **Game Info** rows on the same date, the script adds a second (or third) set with **`(Game 2)`** / **`(Game 3)`** in the header so they match the player portal. Headers and cells use text wrapping.
+- **Build Practice/Game Availability** - Create availability tracking sheets. For **multiple games on the same calendar day**, see **[Multiple events on one calendar day](#multiple-events-on-the-same-calendar-day-double-headers)** below. Normally each game date gets three columns (in order): *$Date* Availability, *$Date* Activation Status (dropdown: Active / Inactive / TBD with green/red/grey backgrounds), and *$Date* Note (free text). If there are multiple **Game Info** rows with the **same date**, the script adds a second (or third) set with **`(Game 2)`** / **`(Game 3)`** in the header so they match the player portal. Headers and cells use text wrapping.
 - **Build Custom Sheet** - Interactive builder for custom column selection
 
 ### Analysis Tools
@@ -185,12 +185,14 @@ The sync scripts store Google Calendar event IDs in the spreadsheet so logic sta
 
 ## Key Concepts
 
-### Double headers
+### Multiple events on the same calendar day (“double headers”)
 
-Two games on the same calendar day (e.g. playoff double-headers) are supported as follows.
+You can schedule **several games on one calendar date** (same `M/D` in **Game Info** more than once). That is fully supported end-to-end: sheet columns, roster prep, and the player portal all treat each row as a separate game, in **sheet row order** for that date.
+
+This section is also what people mean by **double-headers** (e.g. two league games Saturday, or pool play then finals the same day).
 
 **Game Info (📍Game Info)**  
-- Enter **one row per game**. Reuse the same **Date** cell value for both games (e.g. two rows with `5/9`).
+- Enter **one row per game**—not one row per calendar day. Reuse the same **Date** value for every game that day (e.g. two rows both `5/9`).
 - Keep rows in **true game order** (earlier game first). The script and the portal assign “game 1” / “game 2” **in row order** for that date (same rule as the portal API).
 
 **Game Availability**  
