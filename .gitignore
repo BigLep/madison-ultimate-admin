@@ -1,7 +1,8 @@
-# Ignore all files starting with dot (except .gitignore and clasp files)
+# Ignore all files starting with dot (except .gitignore, clasp files, and GitHub workflows)
 .*
 !.gitignore
 !.clasp.json
+!.github/
 
 # Personal Information - Do not commit sensitive data
 *.xlsx

@@ -1,0 +1,29 @@
+name: FinalForms export
+
+on:
+  schedule:
+    # 13:00 UTC = 6:00am Pacific during PDT (7:00am during PST)
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Export students_basic CSV and upload to Drive
+        run: uv run finalforms-export/export_students_basic.py
+        env:
+          FINALFORMS_EMAIL: ${{ secrets.FINALFORMS_EMAIL }}
+          FINALFORMS_PASSWORD: ${{ secrets.FINALFORMS_PASSWORD }}
+          # Drive uploads run as madisonultimate@gmail.com; regenerate with authorize_drive.py --gh-secrets
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+          # Per-season repository variables (Settings -> Secrets and variables -> Actions -> Variables).
+          # The script fails fast if these are missing or stale for the season.
+          FINALFORMS_SPORT_ID: ${{ vars.FINALFORMS_SPORT_ID }}
+          FINALFORMS_SCHOOL_YEAR: ${{ vars.FINALFORMS_SCHOOL_YEAR }}
+          DRIVE_FOLDER_ID: ${{ vars.DRIVE_FOLDER_ID }}
