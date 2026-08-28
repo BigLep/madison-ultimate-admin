@@ -11,7 +11,7 @@ The whole FinalForms flow is plain HTML over a session cookie (no JavaScript), s
 1. `POST /staff/login` with email/password and the CSRF token scraped from the login page
 2. `GET /students/background_export?export=students_basic&sports.id_eq=<SPORT_ID>&statuses.enrollment_status_in=active,external,homeschooled&statuses.school_year_eq=<YEAR>` queues an async export (exactly what the Export → Basic Student CSV click does)
 3. Poll `GET /background_exports/staff/<staff_id>/modal?layout=modal` until a new download link appears (only completed exports get one)
-4. `GET /background_exports/<id>/download`, validate the column layout, and upload to the Drive exports folder as `students_basic_YYYY_MM_DD.csv` (Pacific date; re-running the same day overwrites that day's file)
+4. `GET /background_exports/<id>/download`, validate the column layout, and upload to the Drive exports folder as `students_basic_YYYY_MM_DD YYYY-MM-DDTHH:MM:SSZ.csv` (Pacific date, then a UTC timestamp of the run; the timestamp makes each run its own file, so a same-day manual rerun via `workflow_dispatch` doesn't clobber the scheduled run's export). The consumer picks the newest file by parsing that timestamp out of the filename, not by Drive's `modifiedTime`.
 
 The script validates the header row against the column positions the coach sheet's XLOOKUP formulas and the portal parser depend on (StudentID in A, signature flags in P/Q, DOB in X, physical clearance in AB, parent contact in AM-AO/AS-AU) and fails loudly if FinalForms ever changes the layout. Any failure (login rejected, missing config, export timeout, layout change, Drive upload error) is a nonzero exit; whatever runs the script decides how to surface that. The fallback is always the manual process this replaces.
 

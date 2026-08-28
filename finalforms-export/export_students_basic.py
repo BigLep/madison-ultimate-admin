@@ -44,7 +44,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -282,8 +282,15 @@ def main():
     data = download_export(session, export_id)
     student_count = validate_csv(data)
 
-    today = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y_%m_%d")
-    filename = f"students_basic_{today}.csv"
+    # Include a full timestamp, not just the date: workflow_dispatch (the on-demand refresh
+    # button) can run this more than once a day, and a date-only filename means a same-day
+    # rerun silently overwrites the earlier export instead of leaving a trail. The consumer
+    # (madison-ultimate's getMostRecentFileInfoFromFolder) picks the newest file by parsing
+    # this exact "<date> <ISO8601 UTC timestamp>Z" pattern out of the filename.
+    now_pt = datetime.now(ZoneInfo("America/Los_Angeles"))
+    date_part = now_pt.strftime("%Y_%m_%d")
+    timestamp_part = now_pt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    filename = f"students_basic_{date_part} {timestamp_part}.csv"
     upload_to_drive(data, filename)
     print(f"Done: {student_count} students in {filename}")
 
