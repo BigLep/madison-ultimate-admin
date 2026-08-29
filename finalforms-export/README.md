@@ -63,6 +63,12 @@ Edit `.env` in this directory (gitignored; the script loads it automatically, an
 
 GitHub emails the repo owner when a scheduled run fails. Two platform caveats: schedules only run from the default branch, and GitHub auto-disables scheduled workflows after ~60 days without repo activity, so re-enabling from the Actions tab is part of each season's bootup.
 
+The workflow also has a `concurrency` group (`cancel-in-progress: false`), so an on-demand dispatch queues behind a run already in progress instead of racing or canceling it.
+
+### On-demand triggering from madison-ultimate
+
+The signup dashboard's Final Forms refresh button triggers `workflow_dispatch` on this workflow from outside this repo, via the GitHub API. That call authenticates with a classic PAT (`public_repo` scope) owned by a dedicated Madison Ultimate GitHub account kept as a **collaborator** on this repo — not a repo secret here, since it's used by madison-ultimate's own server (`FINALFORMS_GITHUB_TOKEN` in its Vercel env). If that collaborator invite is ever revoked or the account changes, the trigger breaks even though this workflow's own secrets are untouched; see `madison-ultimate`'s `docs/fall-2026/signup-plan.md` section 6 for the full setup and rotation date.
+
 ## Per-season checklist
 
 1. Create the new season's exports folder in Drive
