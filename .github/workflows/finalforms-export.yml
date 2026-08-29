@@ -6,6 +6,13 @@ on:
     - cron: "0 13 * * *"
   workflow_dispatch: {}
 
+# Never cancel an in-flight export: the signup dashboard's refresh button (madison-ultimate's
+# /api/signup/finalforms-refresh) does a single-flight check before dispatching, but this closes
+# the race window rather than killing a run that's mid-login/export.
+concurrency:
+  group: finalforms-export
+  cancel-in-progress: false
+
 jobs:
   export:
     runs-on: ubuntu-latest
