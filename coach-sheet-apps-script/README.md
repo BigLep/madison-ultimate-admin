@@ -148,7 +148,7 @@ Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, s
 ## Menu Functions
 
 ### Diagnostics
-- **Run Diagnostics** - Checks that required sheets exist, configured Drive folders/spreadsheets are reachable, and required Script Properties are set. Run this after deploying to a new season's spreadsheet, or any time something is misbehaving, before digging further.
+- **Run Diagnostics** - Checks that required sheets exist (including Extra Player Info with its header row), that the Signups IMPORTRANGE resolved and carries every header the Roster formulas reference, that the Roster header row has every defined column and its A2 key formula is intact, that the Final Forms Drive folder is reachable, and that the Buttondown key works. Run this after deploying to a new season's spreadsheet, or any time something is misbehaving, before digging further.
 
 ### Roster Management
 - **Generate Fresh Roster** - Rewrite the 📋 Roster: header row, header notes, and the row 2 array formulas, all keyed by Signups PlayerID. Safe to run any time; nothing authored is lost because nothing is authored there.

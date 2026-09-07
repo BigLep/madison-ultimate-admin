@@ -13,8 +13,7 @@ const ANALYZE_FINAL_FORMS_INDEX = {
   studentId: 0,   // A
   firstName: 3,   // D
   lastName: 4,    // E
-  grade: 22,      // W
-  dateOfBirth: 23 // X
+  grade: 22       // W
 };
 
 /**

@@ -64,6 +64,10 @@ The claude-in-chrome screenshot capture stopped working part way through the ses
 
 Versions went 3.6, 3.7, 3.8, 3.9, 3.10 (one bump per push). "3.10" sorts oddly as text but matches the `3.x` rule in the README.
 
+### D16: Analyze Signups reads Final Forms names from columns D and E
+
+Section 2 (Final Forms students with no signup) needs a name, and the plan's fixed-position list covers only A, P, Q, U, W, AB. The export's First Name and Last Name have sat in D and E every season (the portal plan notes the same layout), so the report reads them by position like the rest. If finalforms-export ever validates headers, D and E should join that list.
+
 ## Verification status
 
 Everything below was run against the live "2026 Fall Coach Sheets" workbook on 2026-09-07 with the menu driven from Chrome (logged in as madisonultimate@gmail.com) and the tabs read back with `gog sheets get`.
