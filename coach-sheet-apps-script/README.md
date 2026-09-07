@@ -2,7 +2,7 @@
 
 Google Apps Script tools for managing the Madison Middle School Ultimate Frisbee team roster spreadsheet.
 
-**Season note:** This README and the `main` branch apply to the **Spring 2026** season. For the 2025 fall season, see the `fall-2025` branch.
+**Season note:** This README and the `main` branch apply to the **Fall 2026** season. Past seasons get their own dated branch.
 
 ## Purpose
 
@@ -35,9 +35,9 @@ This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") th
 
 ## Deployment
 
-1. **Increment the version** in `Code.gs` (use format `2.x`, increment x):
+1. **Increment `SCRIPT_VERSION`** in `Code.gs` **before every push**, not after — this is a standing rule, not optional:
    ```javascript
-   const SCRIPT_VERSION = '2.1';  // Increment x for each release
+   const SCRIPT_VERSION = '3.4';  // Increment the x in 3.x for each release
    ```
 
 2. **Push changes**:
@@ -47,24 +47,47 @@ This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") th
 
 3. **Refresh the Google Sheet** and use the 🥏 Madison Ultimate menu.
 
-### Deploy to a new season's spreadsheet (e.g. Spring 2026)
+4. **Run 🩺 Run Diagnostics** from the menu to confirm nothing broke.
 
-To bind this script to a **new** spreadsheet (the script must be created from the sheet):
+### Deploy to a new season's spreadsheet
 
-1. Open the season's spreadsheet (e.g. [Spring 2026](https://docs.google.com/spreadsheets/d/1kV3Y_GST_Y-X9PZFXu9yFkCzGWvhk9f7G24Y8QNuayU/edit)).
-2. **Extensions → Apps Script**. This opens the script editor and creates a new Apps Script project bound to that sheet.
-3. In the script editor, open **Project settings** (gear icon) and copy the **Script ID**.
+To bind this script to a **new** spreadsheet, the usual path is duplicating the prior season's spreadsheet (File → Make a copy in Drive), which also duplicates its bound Apps Script project as-is (same code, same internal project title, but a **different Script ID**). If instead you start from a blank spreadsheet, Extensions → Apps Script there creates a fresh empty project bound to it.
+
+1. Open the new season's spreadsheet in Drive.
+2. **Extensions → Apps Script**. This opens the script editor for the project already bound to that sheet (via duplication) or creates a new one (via a blank sheet).
+3. In the script editor, open **Project settings** (gear icon) and copy the **Script ID** from the URL (`https://script.google.com/u/0/home/projects/<scriptId>/edit`).
+   - **There is no API or CLI shortcut for this step.** `gog`'s Apps Script commands (and the underlying Apps Script/Drive APIs) all require a Script ID you already have — none of them can look up "the script bound to spreadsheet X." The Apps Script editor UI is the only way to discover a newly-duplicated bound script's ID.
+   - The duplicated project's internal title stays whatever the source project was called (e.g. still "2026 Spring Coach Sheet Admin" after duplicating for fall); consider renaming it in Project settings for clarity, though this is cosmetic and doesn't affect deployment.
 4. In this repo, update `coach-sheet-apps-script/.clasp.json`: set `"scriptId"` to that Script ID (leave `rootDir` and `filePushOrder` as-is).
-5. From `coach-sheet-apps-script/` run:
+5. **Update per-season values in `Code.gs`** before pushing:
+   - `CONFIG.finalForms.folderId` — must point at **this season's** FinalForms exports Drive folder, and must match the `finalforms-export` GitHub Action's `DRIVE_FOLDER_ID` repo variable (`gh variable list -R BigLep/madison-ultimate-admin`). If these two drift apart, "Update Final Forms" silently imports the wrong season's data with no error.
+   - `CONFIG.mailingList.folderId` — same idea, for the mailing list source (see note below; this is being migrated off Google Groups/CSV to Buttondown).
+   - `CONFIG.gameRosterPrep.hasTeam` — `true` if this season uses teams (e.g. A/B squads) and the roster has a Team column; `false` to omit it from game roster prep sheets.
+   - `CONFIG.gameRosterPrep.hasActivationStatus` — `true` if Game Availability has an Activation Status column per date (Active/Inactive/TBD) and you want it on the coach game roster prep sheet (sorted first); `false` to omit it.
+6. **Increment `SCRIPT_VERSION`**, then from `coach-sheet-apps-script/` run:
    ```bash
    clasp push
    ```
-6. Back in the spreadsheet, refresh the page; the 🥏 Madison Ultimate menu should appear.
-7. **Set season-specific Game Roster Prep options** in `Code.gs` under `CONFIG.gameRosterPrep`:
-   - **`hasTeam`** – `true` if this season uses teams (e.g. A/B squads) and the roster has a Team column; `false` to omit the Team column from coach and parent game roster prep sheets.
-   - **`hasActivationStatus`** – `true` if Game Availability has an Activation Status column per date (Active/Inactive/TBD) and you want it on the coach game roster prep sheet (and sorted first); `false` to omit it.
+7. Back in the spreadsheet, refresh the page; the 🥏 Madison Ultimate menu should appear.
+8. **Confirm required sheets exist.** Duplicating a spreadsheet copies every tab, including data sheets the script itself writes into (e.g. **Final Forms**) that look like leftover imported data and are easy to delete by mistake during season cleanup — don't delete a sheet during setup without first grepping `Code.gs` for its name to check whether the script depends on it.
+9. **Set any required Script Properties** (see below) — these are per-project, not copied by duplicating the spreadsheet, so they must be re-entered on every new bound script.
+10. **Run 🩺 Run Diagnostics** from the menu as the final step. It checks that required sheets exist, configured Drive folders/spreadsheets are reachable, and required Script Properties are set — this is the "confirm everything is configured correctly" step for a new season, and the fast way to catch the kind of drift described above before a coach hits it mid-season.
 
-Note: `.clasp.json` currently points at the Spring 2026 script. After you deploy to a new sheet, switch the `scriptId` in `.clasp.json` depending on which season you’re editing.
+## Script Properties (secrets)
+
+Some integrations need credentials that must never be committed to this repo. Those are stored per-project in Apps Script's **Script Properties**, not in `Code.gs`:
+
+1. Open the spreadsheet → **Extensions → Apps Script**.
+2. **Project Settings** (gear icon) → **Script Properties** → **Add script property**.
+3. Enter the property name and value, then read it in code with `PropertiesService.getScriptProperties().getProperty('NAME')`.
+
+Script Properties are scoped to the Apps Script project (not the spreadsheet), so duplicating the spreadsheet for a new season does **not** carry them over — they must be re-added on the newly bound project each season. `🩺 Run Diagnostics` checks that required properties are set (and, for Buttondown, that the key actually works).
+
+### Required properties
+
+| Property | Used by | How to get it |
+|----------|---------|----------------|
+| `BUTTONDOWN_API_KEY` | 📬 Update Newsletter Subscribers | Buttondown → Settings → Programming → API Keys. Read access to subscribers is enough; do not paste it into `Code.gs` or this repo. |
 
 ## Spreadsheet Structure
 
@@ -77,7 +100,8 @@ The script expects these sheets to exist (created manually or via the menu):
 | `📋 Roster` | Main roster with player data and formulas |
 | `Final Forms` | Imported CSV data from SPS Final Forms |
 | `Additional Info` | Imported questionnaire responses (via IMPORTRANGE) |
-| `Mailing List` | Imported CSV of Google Groups membership |
+| `Newsletter Subscribers` | Imported Buttondown subscriber list (email + status) |
+| `Mailing List` | Legacy: imported CSV of Google Groups membership. Google Groups was retired in spring 2026; kept only because `findMissingEmails`, `findPendingParents`, and some roster formula columns still read it. |
 | `Practice Availability` | Player availability for practices |
 | `Game Availability` | Player availability for games |
 
@@ -137,6 +161,9 @@ The `source` row (row 3) controls how columns are handled:
 
 ## Menu Functions
 
+### Diagnostics
+- **Run Diagnostics** - Checks that required sheets exist, configured Drive folders/spreadsheets are reachable, and required Script Properties are set. Run this after deploying to a new season's spreadsheet, or any time something is misbehaving, before digging further.
+
 ### Roster Management
 - **Generate Fresh Roster** - Rebuild all formulas (preserves Manual/Formula columns)
 - **Clear Roster Data** - Clear data rows, keep metadata and Manual/Formula columns
@@ -144,7 +171,8 @@ The `source` row (row 3) controls how columns are handled:
 
 ### Data Import
 - **Update Final Forms** - Import latest Final Forms CSV
-- **Update Mailing List** - Import latest mailing list CSV
+- **Update Newsletter Subscribers** - Import the full Buttondown subscriber list (email + status) into the Newsletter Subscribers sheet. Requires the `BUTTONDOWN_API_KEY` script property (see [Script Properties](#script-properties-secrets)).
+- **Update Mailing List (legacy)** - Import latest Google Groups CSV export. Google Groups was retired as the mailing-list system of record in spring 2026; this is kept only because `findMissingEmails`, `findPendingParents`, and some roster formula columns still read its sheet. Prefer Update Newsletter Subscribers for current mailing-list status.
 
 ### Sheet Builders
 - **Build Practice Roster** - Create roster with practice availability columns

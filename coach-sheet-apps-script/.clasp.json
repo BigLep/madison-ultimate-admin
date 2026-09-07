@@ -4,6 +4,8 @@
   "filePushOrder": [
     "appsscript.json",
     "Code.gs",
+    "Diagnostics.gs",
+    "NewsletterSubscribers.gs",
     "SheetBuilder.gs",
     "FormatSpruceUp.gs",
     "ManagedConditionalFormatting.gs",

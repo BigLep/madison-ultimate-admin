@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.2';
+const SCRIPT_VERSION = '3.4';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -35,9 +35,22 @@ const CONFIG = {
     sheetName: 'Additional Info',
     rangeToImport: 'Form Responses 1!A:Z'
   },
+  // Legacy: Google Groups CSV export. Google Groups was retired as the mailing
+  // list system of record in spring 2026 (see newsletterSubscribers/buttondown
+  // below); this remains only because findMissingEmails, findPendingParents, and
+  // the roster's "MailingList Email address" formula columns still read it.
   mailingList: {
     folderId: '1pAeQMEqiA9QdK9G5yRXsqgbNVzEU7R1E',
     sheetName: 'Mailing List'
+  },
+  newsletterSubscribers: {
+    sheetName: 'Newsletter Subscribers'
+  },
+  buttondown: {
+    apiBase: 'https://api.buttondown.com/v1',
+    // Script property (Extensions > Apps Script > Project Settings > Script Properties),
+    // not committed here. Read access to subscribers is enough.
+    apiKeyProperty: 'BUTTONDOWN_API_KEY'
   },
   roster: {
     sheetName: '📋 Roster'
@@ -667,12 +680,15 @@ function getColumnLetter(columnNumber) {
 function createCustomMenu() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu(`🥏 Madison Ultimate (v${SCRIPT_VERSION})`)
+    .addItem('🩺 Run Diagnostics', 'runDiagnostics')
+    .addSeparator()
     .addItem('📝 Generate Fresh Roster', 'generateRoster')
     .addItem('🗑️ Clear Roster Data (Keep Metadata)', 'clearRosterData')
     .addSeparator()
     .addItem('🔄 Refresh All Data', 'refreshAllData')
     .addItem('📊 Update Final Forms', 'updateFinalForms')
-    .addItem('📧 Update Mailing List', 'updateMailingList')
+    .addItem('📧 Update Mailing List (legacy)', 'updateMailingList')
+    .addItem('📬 Update Newsletter Subscribers', 'updateNewsletterSubscribers')
     .addSeparator()
     .addItem('🏗️ Build Custom Sheet', 'buildCustomSheet')
     .addItem('🏅 Build Practice Roster', 'buildPracticeRoster')
