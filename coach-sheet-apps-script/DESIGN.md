@@ -35,7 +35,7 @@ Generate Fresh Roster clears contents, notes, and data validations, writes the h
 
 ### Column definitions
 
-`ROSTER_COLUMNS` in `Code.gs` is the single source of truth: an ordered list of `{ name, type, source, note, formula }` where `formula` is a builder that receives resolved column letters. The 39 columns and their rules are tabulated in the plan. Adding or reordering a column means editing that list and running Generate Fresh Roster.
+`ROSTER_COLUMNS` in `Code.gs` is the single source of truth: an ordered list of `{ name, type, source, note, formula }` where `formula` is a builder that receives resolved column letters. The 40 columns and their rules are tabulated in the plan (with its amendments section). Adding or reordering a column means editing that list and running Generate Fresh Roster.
 
 `CONFIG.columns` holds the header names other files look up (`Full Name`, `Team`, `Gender Identification`, `Grade`, `Include In Generated Rosters`, the Caretaker email columns, and so on); every value there must be a `ROSTER_COLUMNS` name, and Run Diagnostics checks the live header row for all of them.
 
@@ -59,6 +59,7 @@ Rules worth knowing:
 
 - **Grade** prefers Final Forms and falls back to Signups.
 - **Signup Gender** collapses the family's Gender Identification to Gx or Bx; **Gender Identification** is Signup Gender when set, else Final Forms Gender mapped Female to Gx and Male to Bx. Generated Rosters print Gender Identification.
+- **Gender Special Attention** is TRUE when Final Forms Gender and Signup Gender disagree, or when Pronouns include anything outside he/him for a Bx or she/her for a Gx (the pronoun list is lowercased, the expected pronouns and separators are stripped, and anything left over flags). A prompt for a coach to check in, not a verdict.
 - **Profile Complete?** is TRUE when Grade, Date of Birth, and Caretaker 1 Email are all non-empty. **Include In Generated Rosters** is the Extra Player Info value when set, else Profile Complete?.
 - **Final Forms Cleared?** is TRUE only when all forms are parent signed, all forms are student signed, and the physical is cleared; a missing SPS Student ID makes it FALSE.
 - **Student Personal Email** is blanked when its domain is seattleschools.org.

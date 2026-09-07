@@ -134,3 +134,7 @@ Generation ensures the sheet has at least 300 rows, freezes row 1, bolds the hea
 - photo-mapper reads `Full Name` and `StudentID` from a roster. The portal now ties each Player Photo to a PlayerID, so the tool has no remaining use case. Follow-up after this plan lands: delete `photo-mapper/` and its README mention in the repo root README, in its own commit.
 - Team values beyond Blue and Gold, and flipping `CONFIG.gameRosterPrep.hasTeam` to true, wait for tryouts.
 - Re-keying availability and generated sheets to PlayerID (deliberately not done, per ADR).
+
+## Amendments
+
+- 2026-09-07 (after the plan landed, Steven's request): Elementary School moved before Grade; Pronouns moved before Gender Identification; new derived Boolean column **Gender Special Attention** inserted between Pronouns and Gender Identification. Rule: TRUE when Final Forms Gender and Signup Gender both exist and disagree, or when Pronouns include anything outside he/him for a Bx or she/her for a Gx. Column order is now: PlayerID, SPS Student ID, Preferred First Name, Legal First Name, Last Name, Full Name, Elementary School, Grade, Final Forms Gender, Signup Gender, Pronouns, Gender Special Attention, Gender Identification, Team, then the rest of the table unchanged (40 columns).

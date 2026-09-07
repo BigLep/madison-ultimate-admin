@@ -82,10 +82,14 @@ Everything below was run against the live "2026 Fall Coach Sheets" workbook on 2
 - **WP4 grep**: `grep -rn "Additional Info\|additionalInfo\|FIRST_DATA_ROW\b\|parent1Email\|StudentID'" *.gs` returns nothing apart from `ROSTER_FIRST_DATA_ROW` and the Final Forms header literal.
 - **Node harness**: 18 formula assertions and 7 Analyze Signups assertions pass against the committed code; every `.gs` file passes `node --check`.
 
+### D17: Gender Special Attention rule (Steven's request, 2026-09-07)
+
+Steven asked for a column before Gender Identification that is TRUE when Final Forms and chosen gender disagree, or when the requested pronouns do not go with the traditional gender. Made precise as: (a) Final Forms Gender mapped to Gx/Bx and Signup Gender both non-blank and different; or (b) with Gender Identification Bx, the lowercased Pronouns list has anything left after stripping he, him, and separators; or (c) with Gender Identification Gx, anything left after stripping she and her. "Anything left" rather than a fixed list of they/them so custom pronouns flag too. Blank pronouns never flag. Live data at the time: pronoun tokens are he, him, she, her, they, them, semicolon-joined.
+
 ### Follow-ups completed after Steven's go-ahead (2026-09-07)
 
 - Deleted photo-mapper/ and its root README mention in its own commit. The gitignored service account key file under photo-mapper/backend/ was left on disk for Steven to remove or revoke.
-- Purged the five named test rows from the portal's Signups sheet and their orphaned Extra Player Info rows; Signups, Roster, and Extra Player Info each hold 75 rows and every Extra Player Info Full Name resolves. Three rows that look like tests but are not named as such (Bob Larson g94df, A E qk4mx, Big Loep tt3t7) were left for Steven.
+- Purged the five named test rows from the portal's Signups sheet and their orphaned Extra Player Info rows; Signups, Roster, and Extra Player Info each hold 75 rows and every Extra Player Info Full Name resolves. Steven then confirmed Bob Larson (g94df), A E (qk4mx), and Big Loep (tt3t7) were fixtures too; deleted with their Extra Player Info rows, leaving 72 Players.
 
 ### Not verified
 

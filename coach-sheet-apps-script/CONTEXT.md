@@ -67,6 +67,10 @@ _Avoid_: eligible, cleared (bare, which also names an unrelated Final Forms expo
 **Signup Gender**:
 The family's Gender Identification from Signups collapsed to Gx or Bx, blank when not supplied.
 
+**Gender Special Attention**:
+A Roster flag, TRUE when Final Forms Gender and Signup Gender disagree, or when the Player's Pronouns include anything outside he/him for a Bx or she/her for a Gx. A prompt for a coach to check in with the Player, not a verdict about them.
+_Avoid_: gender mismatch, gender flag
+
 **Gender Identification**:
 Gx or Bx for the Player: Signup Gender when supplied, otherwise Final Forms gender mapped Female to Gx and Male to Bx, otherwise blank. The value Generated Rosters print.
 _Avoid_: gender (ambiguous between the Final Forms field and this derived value)

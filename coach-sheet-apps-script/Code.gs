@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.11';
+const SCRIPT_VERSION = '3.12';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -241,18 +241,18 @@ const ROSTER_COLUMNS = [
     formula: (c) => c.arrayFormula(`TRIM(${c.r('Preferred First Name')}&" "&${c.r('Last Name')})`)
   },
   {
-    name: 'Grade',
-    type: 'Number',
-    source: `${ROSTER_SOURCE.finalForms}, ${ROSTER_SOURCE.signups} fallback`,
-    note: 'Final Forms Grade when the SPS Student ID resolves, else the Signups Grade.',
-    formula: (c) => c.arrayFormula(`LET(ff,${c.lookupFinalForms('grade', '""')},IF(ff="",${c.lookupSignups('grade')},ff))`)
-  },
-  {
     name: 'Elementary School',
     type: 'String',
     source: ROSTER_SOURCE.signups,
     note: 'Passthrough from Signups.',
     formula: (c) => c.arrayFormula(c.lookupSignups('elementarySchool'))
+  },
+  {
+    name: 'Grade',
+    type: 'Number',
+    source: `${ROSTER_SOURCE.finalForms}, ${ROSTER_SOURCE.signups} fallback`,
+    note: 'Final Forms Grade when the SPS Student ID resolves, else the Signups Grade.',
+    formula: (c) => c.arrayFormula(`LET(ff,${c.lookupFinalForms('grade', '""')},IF(ff="",${c.lookupSignups('grade')},ff))`)
   },
   {
     name: 'Final Forms Gender',
@@ -269,6 +269,27 @@ const ROSTER_COLUMNS = [
     formula: (c) => c.arrayFormula(`LET(g,TO_TEXT(${c.lookupSignups('genderIdentification')}),IF(REGEXMATCH(g,"Girl|Gx"),"Gx",IF(REGEXMATCH(g,"Boy|Bx"),"Bx","")))`)
   },
   {
+    name: 'Pronouns',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups (semicolon-joined when several were chosen).',
+    formula: (c) => c.arrayFormula(c.lookupSignups('pronouns'))
+  },
+  {
+    name: 'Gender Special Attention',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.derived,
+    note: 'TRUE when Final Forms Gender and Signup Gender disagree, or when Pronouns include anything outside he/him for a Bx or she/her for a Gx. A prompt for a coach to check in with the Player, not a verdict.',
+    formula: (c) => {
+      const ff = c.r('Final Forms Gender');
+      const sg = c.r('Signup Gender');
+      const gi = c.r('Gender Identification');
+      const pronouns = c.r('Pronouns');
+      const leftover = (expected) => `(REGEXREPLACE(p,"\\b(${expected})\\b|[;,/\\s]","")<>"")`;
+      return c.arrayFormula(`LET(ff,IF(${ff}="Female","Gx",IF(${ff}="Male","Bx","")),p,LOWER(${pronouns}),((ff<>"")*(${sg}<>"")*(ff<>${sg})+(${gi}="Bx")*${leftover('he|him')}+(${gi}="Gx")*${leftover('she|her')})>0)`);
+    }
+  },
+  {
     name: 'Gender Identification',
     type: 'Enum',
     source: ROSTER_SOURCE.derived,
@@ -278,13 +299,6 @@ const ROSTER_COLUMNS = [
       const fg = c.r('Final Forms Gender');
       return c.arrayFormula(`IF(${sg}<>"",${sg},IF(${fg}="Female","Gx",IF(${fg}="Male","Bx","")))`);
     }
-  },
-  {
-    name: 'Pronouns',
-    type: 'String',
-    source: ROSTER_SOURCE.signups,
-    note: 'Passthrough from Signups (semicolon-joined when several were chosen).',
-    formula: (c) => c.arrayFormula(c.lookupSignups('pronouns'))
   },
   {
     name: 'Team',
