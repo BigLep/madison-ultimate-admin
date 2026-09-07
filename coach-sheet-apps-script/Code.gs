@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.12';
+const SCRIPT_VERSION = '3.14';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -279,14 +279,17 @@ const ROSTER_COLUMNS = [
     name: 'Gender Special Attention',
     type: 'Boolean',
     source: ROSTER_SOURCE.derived,
-    note: 'TRUE when Final Forms Gender and Signup Gender disagree, or when Pronouns include anything outside he/him for a Bx or she/her for a Gx. A prompt for a coach to check in with the Player, not a verdict.',
+    note: 'TRUE when Final Forms Gender (Female, Male, or anything else such as Non-Binary) and Signup Gender disagree, or when Pronouns include anything outside he/him for a Bx or she/her for a Gx. A prompt for a coach to check in with the Player, not a verdict.',
     formula: (c) => {
       const ff = c.r('Final Forms Gender');
       const sg = c.r('Signup Gender');
       const gi = c.r('Gender Identification');
       const pronouns = c.r('Pronouns');
-      const leftover = (expected) => `(REGEXREPLACE(p,"\\b(${expected})\\b|[;,/\\s]","")<>"")`;
-      return c.arrayFormula(`LET(ff,IF(${ff}="Female","Gx",IF(${ff}="Male","Bx","")),p,LOWER(${pronouns}),((ff<>"")*(${sg}<>"")*(ff<>${sg})+(${gi}="Bx")*${leftover('he|him')}+(${gi}="Gx")*${leftover('she|her')})>0)`);
+      // Strip the expected pronouns and separators; anything left over flags. Plain substrings on purpose (no regex escapes):
+      // with tokens he, him, she, her, they, them, every unexpected token leaves a residue.
+      const leftover = (expected) => `(REGEXREPLACE(p,"${expected}|[;,/ ]","")<>"")`;
+      // Final Forms Female/Male map to Gx/Bx; any other non-blank value (for example Non-Binary) counts as a disagreement with a Gx or Bx signup.
+      return c.arrayFormula(`LET(ff,IF(${ff}="","",IF(${ff}="Female","Gx",IF(${ff}="Male","Bx","Other"))),p,LOWER(${pronouns}),((ff<>"")*(${sg}<>"")*(ff<>${sg})+(${gi}="Bx")*${leftover('he|him')}+(${gi}="Gx")*${leftover('she|her')})>0)`);
     }
   },
   {
