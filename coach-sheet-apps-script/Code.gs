@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.8';
+const SCRIPT_VERSION = '3.10';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -688,7 +688,7 @@ function createCustomMenu() {
     .addItem('📋 Organize Sheets', 'organizeSheets')
     .addSeparator()
     .addItem('📈 Show Statistics', 'showStatistics')
-    .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')
+    .addItem('🔍 Find Emails Not Subscribed to Newsletter', 'findMissingEmails')
     .addItem('👥 Caretakers Not Subscribed to Newsletter', 'findPendingParents')
     .addItem('🔎 Analyze Signups', 'analyzeSignups')
     .addItem('🔀 Full Name Diff', 'fullNameDiff')

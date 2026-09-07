@@ -51,8 +51,68 @@ function runDiagnostics() {
     }
   }
 
+  function checkSignupsMirror() {
+    const sheet = ss.getSheetByName(CONFIG.signups.sheetName);
+    if (!sheet) {
+      results.push({ pass: false, required: true, line: `❌ Sheet "${CONFIG.signups.sheetName}" (Signups mirror) NOT found; add a tab with that name whose A1 is an IMPORTRANGE of the portal's Signups sheet` });
+      return;
+    }
+    const a1Formula = sheet.getRange('A1').getFormula() || '';
+    if (!/^=IMPORTRANGE\(/i.test(a1Formula.trim())) {
+      results.push({ pass: false, required: true, line: `❌ Sheet "${CONFIG.signups.sheetName}" A1 is not an IMPORTRANGE formula (found: ${a1Formula || 'a plain value'})` });
+    } else {
+      const a2 = sheet.getRange('A2');
+      const a2Value = a2.getValue();
+      const a2Text = a2Value === null || a2Value === undefined ? '' : a2Value.toString();
+      const errored = /^#(REF|N\/A|ERROR|VALUE|NAME)/.test(a2Text) || a2Text === '';
+      results.push({
+        pass: !errored,
+        required: true,
+        line: errored
+          ? `❌ Sheet "${CONFIG.signups.sheetName}" IMPORTRANGE has not resolved (A2 is "${a2Text}"); open the tab and click "Allow access" if prompted`
+          : `✅ Sheet "${CONFIG.signups.sheetName}" (Signups mirror) IMPORTRANGE resolved`
+      });
+    }
+    const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+    try {
+      resolveSignupsColumns(headers);
+      results.push({ pass: true, required: true, line: `✅ Sheet "${CONFIG.signups.sheetName}" has every header the Roster formulas reference (${Object.keys(SIGNUPS_HEADERS).length})` });
+    } catch (e) {
+      results.push({ pass: false, required: true, line: `❌ ${e.message}` });
+    }
+  }
+
+  function checkRosterHeaderAndKey() {
+    const sheet = ss.getSheetByName(CONFIG.roster.sheetName);
+    if (!sheet) return; // reported by checkSheet above
+    const headers = sheet.getRange(ROSTER_HEADER_ROW, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0]
+      .map(h => h === null || h === undefined ? '' : h.toString().trim());
+    const present = new Set(headers);
+    const missingDefined = ROSTER_COLUMNS.map(c => c.name).filter(name => !present.has(name));
+    const missingConfig = Object.values(CONFIG.columns).filter(name => !present.has(name));
+    const missing = Array.from(new Set(missingDefined.concat(missingConfig)));
+    results.push({
+      pass: missing.length === 0,
+      required: true,
+      line: missing.length === 0
+        ? `✅ Roster header row has every ROSTER_COLUMNS name and every CONFIG.columns value (${ROSTER_COLUMNS.length} columns)`
+        : `❌ Roster header row is missing: ${missing.join(', ')}; run "Generate Fresh Roster"`
+    });
+    const keyFormula = sheet.getRange(ROSTER_FIRST_DATA_ROW, 1).getFormula() || '';
+    const keyIntact = keyFormula.startsWith('=SORT(FILTER(');
+    results.push({
+      pass: keyIntact,
+      required: true,
+      line: keyIntact
+        ? `✅ Roster A${ROSTER_FIRST_DATA_ROW} key formula is intact (=SORT(FILTER(...)`
+        : `❌ Roster A${ROSTER_FIRST_DATA_ROW} is not the PlayerID key formula (found: "${keyFormula || 'a plain value'}"); the sheet was sorted in place or edited; run "Generate Fresh Roster"`
+    });
+  }
+
   // Sheets the script reads from or writes into by exact name.
   checkSheet('Roster', CONFIG.roster.sheetName);
+  checkRosterHeaderAndKey();
+  checkSignupsMirror();
   checkSheet('Final Forms import target', CONFIG.finalForms.sheetName);
   checkSheet('Newsletter Subscribers import target', CONFIG.newsletterSubscribers.sheetName);
   results.push(Object.assign({ required: true }, checkExtraPlayerInfoSheet(ss)));
