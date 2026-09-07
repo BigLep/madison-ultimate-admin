@@ -1,26 +1,25 @@
 /**
- * Madison Middle School Ultimate Frisbee Roster Builder
- * Creates a roster with metadata rows and proper data mapping
- * 
- * To use:
- * 1. Open your Google Sheet
- * 2. Go to Extensions > Apps Script
- * 3. Delete ALL existing code and paste this entire script
- * 4. Save (Ctrl+S or Cmd+S)
- * 5. Run 'generateRoster' function
- * 6. Grant permissions when prompted
+ * Madison Ultimate coach sheet: roster generation and shared configuration.
+ *
+ * The 📋 Roster is a formula-only view keyed by the Signups PlayerID (see
+ * docs/adr/0001-roster-keyed-by-signups-playerid.md). Generate Fresh Roster writes
+ * one header row plus one array formula per column in row 2; nothing is authored
+ * in the Roster itself. Every fact lives in exactly one Source: Signups, Extra
+ * Player Info, Final Forms, or Newsletter Subscribers.
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.5';
+const SCRIPT_VERSION = '3.6';
 
-// Constants
-const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
-
-// Roster layout when reading from 📋 Roster (Build Practice Roster, Game Roster, analysis, etc.)
-// Set ROSTER_HEADER_ROW to the row that contains column headers (Full Name, etc.); data starts in the next row.
+// Roster layout: row 1 holds the column headers, row 2 holds the array formulas
+// that fill every data row below it. Readers (Build Practice Roster, Game Roster
+// Prep, Full Name Diff, analysis) use these two constants only.
 const ROSTER_HEADER_ROW = 1;
-const ROSTER_FIRST_DATA_ROW = ROSTER_HEADER_ROW + 1;
+const ROSTER_FIRST_DATA_ROW = 2;
+
+// Generate Fresh Roster makes sure the tab has at least this many rows so the
+// row 2 array formulas have room to spill.
+const ROSTER_MIN_ROWS = 300;
 
 // Configuration
 const CONFIG = {
@@ -30,10 +29,14 @@ const CONFIG = {
     folderId: '1WgD4hY0fIZlQEBt7ekOlHIECA-HgOMIZ', // 2026 Fall Final Forms
     sheetName: 'Final Forms'
   },
-  additionalInfo: {
-    spreadsheetId: '1f_PPULjdg-5q2Gi0cXvWvGz1RbwYmUtADChLqwsHuNs',
-    sheetName: 'Additional Info',
-    rangeToImport: 'Form Responses 1!A:Z'
+  // Read-only IMPORTRANGE mirror of the portal's Signups sheet (one row per Player,
+  // keyed by PlayerID). The Roster's key column and most passthrough columns read it.
+  signups: {
+    sheetName: '2026 Fall Signups'
+  },
+  // Coach-authored per-player facts (Team, Returning, Include override), keyed by PlayerID.
+  extraPlayerInfo: {
+    sheetName: 'Extra Player Info'
   },
   // Google Groups was retired as the mailing-list system of record in spring 2026.
   // Buttondown (newsletterSubscribers/buttondown below) is the real source now.
@@ -67,37 +70,41 @@ const CONFIG = {
   gameAvailability: {
     sheetName: 'Game Availability'
   },
-  
-  // Column name constants - centralized for easy updates
+
+  // Roster column headers other files look up by name. Every value here must be a
+  // ROSTER_COLUMNS name (Run Diagnostics checks the live header row for all of them).
   columns: {
-    fullName: 'Full Name',
-    firstName: 'First Name',
+    playerId: 'PlayerID',
+    spsStudentId: 'SPS Student ID',
+    preferredFirstName: 'Preferred First Name',
     lastName: 'Last Name',
-    studentId: 'StudentID',
+    fullName: 'Full Name',
     grade: 'Grade',
-    gender: 'Gender',
     genderIdentification: 'Gender Identification',
     team: 'Team',
-    dateOfBirth: 'Date of Birth',
-    studentSpsEmail: 'Student SPS Email',
-    studentPersonalEmail: 'Student Personal Email',
-    parent1Email: 'Parent 1 Email',
-    parent2Email: 'Parent 2 Email',
-    parent1FirstName: 'Parent 1 First Name',
-    parent1LastName: 'Parent 1 Last Name',
-    parent2FirstName: 'Parent 2 First Name',
-    parent2LastName: 'Parent 2 Last Name',
+    returning: 'Returning',
+    includeInGeneratedRosters: 'Include In Generated Rosters',
+    profileComplete: 'Profile Complete?',
     areAllFormsParentSigned: 'Are All Forms Parent Signed',
     areAllFormsStudentSigned: 'Are All Forms Student Signed',
     physicalCleared: 'Physical Cleared',
-    includeInGeneratedRosters: 'Include In Generated Rosters'
+    finalFormsCleared: 'Final Forms Cleared?',
+    dateOfBirth: 'Date of Birth',
+    studentPersonalEmail: 'Student Personal Email',
+    studentNewsletterStatus: 'Student Newsletter Status',
+    caretaker1Name: 'Caretaker 1 Name',
+    caretaker1Email: 'Caretaker 1 Email',
+    caretaker1NewsletterStatus: 'Caretaker 1 Newsletter Status',
+    caretaker2Name: 'Caretaker 2 Name',
+    caretaker2Email: 'Caretaker 2 Email',
+    caretaker2NewsletterStatus: 'Caretaker 2 Newsletter Status'
   },
 
   // Shared base column structure for roster printouts (Practice Roster and Game Roster Prep)
   // Header order is driven by rosterPrintoutBaseColumnKeys (not Object.keys order).
   rosterPrintoutBaseColumnKeys: ['number', 'fullName', 'team', 'gender', 'grade'],
   rosterPrintoutBaseColumns: {
-    // Base columns (always present) — # | Full Name | Team | Gender | Grade
+    // Base columns (always present): # | Full Name | Team | Gender | Grade
     number: { name: '#', index: 1 },
     fullName: { name: 'Full Name', index: 2 },
     team: { name: 'Team', index: 3 },
@@ -113,543 +120,528 @@ const CONFIG = {
   }
 };
 
+// Signups headers the Roster formulas reference. Resolved to column letters by name
+// at generation time, so the portal can reorder or add Signups columns freely.
+const SIGNUPS_HEADERS = {
+  playerId: 'PlayerID',
+  spsStudentId: 'SPS Student ID',
+  preferredFirstName: 'Preferred First Name',
+  legalFirstName: 'Legal First Name',
+  lastName: 'Last Name',
+  grade: 'Grade',
+  elementarySchool: 'Elementary School',
+  genderIdentification: 'Gender Identification',
+  pronouns: 'Pronouns',
+  dateOfBirth: 'Date of Birth',
+  studentSpsEmail: 'Student SPS Email',
+  studentPersonalEmail: 'Student Personal Email',
+  caretaker1Name: 'Caretaker 1 Name',
+  caretaker1Email: 'Caretaker 1 Email',
+  caretaker2Name: 'Caretaker 2 Name',
+  caretaker2Email: 'Caretaker 2 Email',
+  allergies: 'Allergies',
+  competingSports: 'Competing Sports and Activities',
+  jerseySize: 'Jersey Size',
+  playingExperience: 'Playing Experience',
+  hopes: 'Hopes',
+  otherInfo: 'Other Info',
+  mediaOptOut: 'Media Opt-Out',
+  photoDriveFileId: 'Photo Drive File ID'
+};
+
+// Final Forms export columns at fixed positions (validated by finalforms-export).
+const FINAL_FORMS_LETTERS = {
+  studentId: 'A',
+  parentSigned: 'P',
+  studentSigned: 'Q',
+  gender: 'U',
+  grade: 'W',
+  physicalClearance: 'AB'
+};
+
+// Extra Player Info header row, in column order. Sync Extra Player Info creates it.
+const EXTRA_PLAYER_INFO_HEADERS = ['PlayerID', 'Full Name', 'Team', 'Returning', 'Include In Generated Rosters'];
+
+// Column letters of the Extra Player Info tab, derived from the header order above.
+const EXTRA_PLAYER_INFO_LETTERS = {
+  playerId: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('PlayerID') + 1),
+  fullName: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Full Name') + 1),
+  team: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Team') + 1),
+  returning: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Returning') + 1),
+  include: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Include In Generated Rosters') + 1)
+};
+
+// Source labels used in header notes and Diagnostics output.
+const ROSTER_SOURCE = {
+  signups: 'Signups',
+  extraPlayerInfo: 'Extra Player Info',
+  finalForms: 'Final Forms',
+  newsletter: 'Newsletter Subscribers',
+  derived: 'Derived'
+};
 
 /**
- * Main function to generate the roster
+ * Roster column definitions: the single source of truth for the 📋 Roster.
+ *
+ * Order here is column order in the sheet. Each entry has the header name, a type
+ * and source for the header note, an explanation, and a formula builder that
+ * receives a context of resolved column letters and returns the row 2 formula.
+ * Adding or reordering a column means editing this list and running Generate
+ * Fresh Roster.
+ *
+ * Formula builder context (see buildRosterFormulas):
+ *   s(key)   Signups range like 'Signups'!$X:$X for a SIGNUPS_HEADERS key
+ *   f(key)   Final Forms range for a FINAL_FORMS_LETTERS key
+ *   e(key)   Extra Player Info range for an EXTRA_PLAYER_INFO_LETTERS key
+ *   r(name)  Roster sibling range like $X2:$X for a ROSTER_COLUMNS name
+ *   lookupSignups(key), lookupFinalForms(key, whenMissing), lookupExtra(key),
+ *   newsletterStatus(name), and arrayFormula(body) wrap the shared patterns.
+ */
+const ROSTER_COLUMNS = [
+  {
+    name: 'PlayerID',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Key: every non-empty PlayerID in Signups, sorted by Last Name then Preferred First Name. This single formula lists every Player; do not sort the sheet in place (use filter views).',
+    formula: (c) => c.keyFormula()
+  },
+  {
+    name: 'SPS Student ID',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Set on the Signups row by the portal once the Final Forms Join succeeds. Blank until then, which leaves every Final Forms column blank or FALSE.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('spsStudentId'))
+  },
+  {
+    name: 'Preferred First Name',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'The first name the Player goes by, chosen by the family at signup.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('preferredFirstName'))
+  },
+  {
+    name: 'Legal First Name',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Only filled when it differs from Preferred First Name.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('legalFirstName'))
+  },
+  {
+    name: 'Last Name',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('lastName'))
+  },
+  {
+    name: 'Full Name',
+    type: 'String',
+    source: ROSTER_SOURCE.derived,
+    note: 'TRIM(Preferred First Name & " " & Last Name). The key every Generated Roster and availability sheet uses to refer to a Player.',
+    formula: (c) => c.arrayFormula(`TRIM(${c.r('Preferred First Name')}&" "&${c.r('Last Name')})`)
+  },
+  {
+    name: 'Grade',
+    type: 'Number',
+    source: `${ROSTER_SOURCE.finalForms}, ${ROSTER_SOURCE.signups} fallback`,
+    note: 'Final Forms Grade when the SPS Student ID resolves, else the Signups Grade.',
+    formula: (c) => c.arrayFormula(`LET(ff,${c.lookupFinalForms('grade', '""')},IF(ff="",${c.lookupSignups('grade')},ff))`)
+  },
+  {
+    name: 'Elementary School',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('elementarySchool'))
+  },
+  {
+    name: 'Final Forms Gender',
+    type: 'Enum',
+    source: ROSTER_SOURCE.finalForms,
+    note: 'Final Forms Gender (Male or Female). Blank when the SPS Student ID is missing or not in the export.',
+    formula: (c) => c.arrayFormula(c.lookupFinalForms('gender', '""'))
+  },
+  {
+    name: 'Signup Gender',
+    type: 'Enum',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups Gender Identification collapsed: Girl or Gx to "Gx", Boy or Bx to "Bx", else blank.',
+    formula: (c) => c.arrayFormula(`LET(g,TO_TEXT(${c.lookupSignups('genderIdentification')}),IF(REGEXMATCH(g,"Girl|Gx"),"Gx",IF(REGEXMATCH(g,"Boy|Bx"),"Bx","")))`)
+  },
+  {
+    name: 'Gender Identification',
+    type: 'Enum',
+    source: ROSTER_SOURCE.derived,
+    note: 'Gx or Bx: Signup Gender when set, else Final Forms Gender mapped Female to Gx and Male to Bx, else blank. The value Generated Rosters print.',
+    formula: (c) => {
+      const sg = c.r('Signup Gender');
+      const fg = c.r('Final Forms Gender');
+      return c.arrayFormula(`IF(${sg}<>"",${sg},IF(${fg}="Female","Gx",IF(${fg}="Male","Bx","")))`);
+    }
+  },
+  {
+    name: 'Pronouns',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups (semicolon-joined when several were chosen).',
+    formula: (c) => c.arrayFormula(c.lookupSignups('pronouns'))
+  },
+  {
+    name: 'Team',
+    type: 'Enum',
+    source: ROSTER_SOURCE.extraPlayerInfo,
+    note: 'Coach-assigned squad for the season, authored in Extra Player Info after tryouts.',
+    formula: (c) => c.arrayFormula(c.lookupExtra('team'))
+  },
+  {
+    name: 'Returning',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.extraPlayerInfo,
+    note: 'Whether the Player played for Madison Ultimate in a prior season, authored in Extra Player Info.',
+    formula: (c) => c.arrayFormula(c.lookupExtra('returning'))
+  },
+  {
+    name: 'Include In Generated Rosters',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.derived,
+    note: 'Extra Player Info value when one is set, else Profile Complete?. Generated Rosters include a Player only when this is TRUE.',
+    formula: (c) => c.arrayFormula(`LET(e,${c.lookupExtra('include')},IF(e="",${c.r('Profile Complete?')},e))`)
+  },
+  {
+    name: 'Profile Complete?',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.derived,
+    note: 'TRUE when Grade, Date of Birth, and Caretaker 1 Email are all non-empty. A signup abandoned at step 0 stays visible here so a coach can follow up.',
+    formula: (c) => c.arrayFormula(`(${c.r('Grade')}<>"")*(${c.r('Date of Birth')}<>"")*(${c.r('Caretaker 1 Email')}<>"")=1`)
+  },
+  {
+    name: 'Are All Forms Parent Signed',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.finalForms,
+    note: 'Final Forms "Are All Forms Parent Signed" equals TRUE. FALSE when the SPS Student ID is missing or not in the export.',
+    formula: (c) => c.arrayFormula(c.finalFormsFlag('parentSigned'))
+  },
+  {
+    name: 'Are All Forms Student Signed',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.finalForms,
+    note: 'Final Forms "Are All Forms Student Signed" equals TRUE. FALSE when the SPS Student ID is missing or not in the export.',
+    formula: (c) => c.arrayFormula(c.finalFormsFlag('studentSigned'))
+  },
+  {
+    name: 'Physical Cleared',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.finalForms,
+    note: 'Final Forms "Physical Clearance" equals "Cleared". FALSE when the SPS Student ID is missing or not in the export.',
+    formula: (c) => c.arrayFormula(`IF(${c.r('SPS Student ID')}="",FALSE,${c.lookupFinalFormsRaw('physicalClearance')}="Cleared")`)
+  },
+  {
+    name: 'Final Forms Cleared?',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.derived,
+    note: 'TRUE only when all forms are parent signed, all forms are student signed, and the physical is cleared.',
+    formula: (c) => c.arrayFormula(`(${c.r('Are All Forms Parent Signed')}=TRUE)*(${c.r('Are All Forms Student Signed')}=TRUE)*(${c.r('Physical Cleared')}=TRUE)=1`)
+  },
+  {
+    name: 'Date of Birth',
+    type: 'Date',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups Date of Birth (ISO text) converted to a real date.',
+    formula: (c) => c.arrayFormula(`LET(v,${c.lookupSignups('dateOfBirth')},IF(v="","",IF(ISNUMBER(v),v,IFERROR(DATEVALUE(v),""))))`)
+  },
+  {
+    name: 'Student SPS Email',
+    type: 'Email',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('studentSpsEmail'))
+  },
+  {
+    name: 'Student Personal Email',
+    type: 'Email',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups, blanked when the domain is seattleschools.org.',
+    formula: (c) => c.arrayFormula(`LET(v,${c.lookupSignups('studentPersonalEmail')},IF(REGEXMATCH(LOWER(v),"@seattleschools\\.org$"),"",v))`)
+  },
+  {
+    name: 'Student Newsletter Status',
+    type: 'Enum',
+    source: ROSTER_SOURCE.newsletter,
+    note: 'Buttondown status for Student Personal Email ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), "not a member" when absent, blank when there is no email.',
+    formula: (c) => c.arrayFormula(c.newsletterStatus('Student Personal Email'))
+  },
+  {
+    name: 'Caretaker 1 Name',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('caretaker1Name'))
+  },
+  {
+    name: 'Caretaker 1 Email',
+    type: 'Email',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('caretaker1Email'))
+  },
+  {
+    name: 'Caretaker 1 Newsletter Status',
+    type: 'Enum',
+    source: ROSTER_SOURCE.newsletter,
+    note: 'Buttondown status for Caretaker 1 Email ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), "not a member" when absent, blank when there is no email.',
+    formula: (c) => c.arrayFormula(c.newsletterStatus('Caretaker 1 Email'))
+  },
+  {
+    name: 'Caretaker 2 Name',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('caretaker2Name'))
+  },
+  {
+    name: 'Caretaker 2 Email',
+    type: 'Email',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('caretaker2Email'))
+  },
+  {
+    name: 'Caretaker 2 Newsletter Status',
+    type: 'Enum',
+    source: ROSTER_SOURCE.newsletter,
+    note: 'Buttondown status for Caretaker 2 Email ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), "not a member" when absent, blank when there is no email.',
+    formula: (c) => c.arrayFormula(c.newsletterStatus('Caretaker 2 Email'))
+  },
+  {
+    name: 'Player Allergies',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups "Allergies".',
+    formula: (c) => c.arrayFormula(c.lookupSignups('allergies'))
+  },
+  {
+    name: 'Competing Sports and Activities',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('competingSports'))
+  },
+  {
+    name: 'Jersey Size',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('jerseySize'))
+  },
+  {
+    name: 'Playing Experience',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('playingExperience'))
+  },
+  {
+    name: 'Player hopes for the season',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups "Hopes".',
+    formula: (c) => c.arrayFormula(c.lookupSignups('hopes'))
+  },
+  {
+    name: 'Other Player Info',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups "Other Info".',
+    formula: (c) => c.arrayFormula(c.lookupSignups('otherInfo'))
+  },
+  {
+    name: 'Media Opt-Out',
+    type: 'Boolean',
+    source: ROSTER_SOURCE.signups,
+    note: 'TRUE when the family declared that photos of the Player must not appear in team communications. Does not affect the Player Photo.',
+    formula: (c) => c.arrayFormula(`LOWER(TO_TEXT(${c.lookupSignups('mediaOptOut')}))="true"`)
+  },
+  {
+    name: 'Photo Drive File ID',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Drive file id of the Player Photo the family uploaded through the portal.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('photoDriveFileId'))
+  },
+  {
+    name: 'Photo Link',
+    type: 'Hyperlink',
+    source: ROSTER_SOURCE.derived,
+    note: 'Link to the full-size Player Photo when a Photo Drive File ID is present.',
+    formula: (c) => {
+      const id = c.r('Photo Drive File ID');
+      return c.arrayFormula(`IF(${id}="","",HYPERLINK("https://drive.google.com/uc?id="&${id},"photo"))`);
+    }
+  }
+];
+
+/**
+ * Map the Signups header row to column letters for every SIGNUPS_HEADERS name.
+ * Pure: takes the header row values, returns { headerName: letter }.
+ * Throws naming every missing header so the fix is obvious.
+ */
+function resolveSignupsColumns(headerRowValues) {
+  const letters = {};
+  headerRowValues.forEach((header, index) => {
+    const name = header === null || header === undefined ? '' : header.toString().trim();
+    if (name && letters[name] === undefined) letters[name] = getColumnLetter(index + 1);
+  });
+  const missing = Object.values(SIGNUPS_HEADERS).filter(name => letters[name] === undefined);
+  if (missing.length > 0) {
+    throw new Error(`Signups tab "${CONFIG.signups.sheetName}" is missing header(s): ${missing.join(', ')}. The Roster formulas need every one of these in row 1.`);
+  }
+  const resolved = {};
+  Object.values(SIGNUPS_HEADERS).forEach(name => { resolved[name] = letters[name]; });
+  return resolved;
+}
+
+/**
+ * Column letters of every ROSTER_COLUMNS entry, in code order: { name: letter }.
+ */
+function resolveRosterColumns() {
+  const letters = {};
+  ROSTER_COLUMNS.forEach((col, index) => { letters[col.name] = getColumnLetter(index + 1); });
+  return letters;
+}
+
+/**
+ * Build the row 2 formula for every ROSTER_COLUMNS entry, in code order.
+ * Pure: takes the resolved Signups letters (from resolveSignupsColumns).
+ */
+function buildRosterFormulas(signupsLetters) {
+  const rosterLetters = resolveRosterColumns();
+  const first = ROSTER_FIRST_DATA_ROW;
+  const quote = (sheetName) => `'${sheetName.replace(/'/g, "''")}'`;
+  const S = quote(CONFIG.signups.sheetName);
+  const F = quote(CONFIG.finalForms.sheetName);
+  const E = quote(CONFIG.extraPlayerInfo.sheetName);
+  const N = quote(CONFIG.newsletterSubscribers.sheetName);
+
+  const signupsLetter = (key) => {
+    const header = SIGNUPS_HEADERS[key];
+    if (!header || !signupsLetters[header]) throw new Error(`Unknown Signups column key "${key}"`);
+    return signupsLetters[header];
+  };
+  const rosterLetter = (name) => {
+    if (!rosterLetters[name]) throw new Error(`Unknown Roster column "${name}"`);
+    return rosterLetters[name];
+  };
+  const keyRange = `$${rosterLetter('PlayerID')}${first}:$${rosterLetter('PlayerID')}`;
+  const spsRange = `$${rosterLetter('SPS Student ID')}${first}:$${rosterLetter('SPS Student ID')}`;
+
+  const c = {
+    s: (key) => { const l = signupsLetter(key); return `${S}!$${l}:$${l}`; },
+    f: (key) => { const l = FINAL_FORMS_LETTERS[key]; return `${F}!$${l}:$${l}`; },
+    e: (key) => { const l = EXTRA_PLAYER_INFO_LETTERS[key]; return `${E}!$${l}:$${l}`; },
+    r: (name) => { const l = rosterLetter(name); return `$${l}${first}:$${l}`; },
+    // Wrap a body so rows past the last PlayerID stay blank.
+    arrayFormula: (body) => `=ARRAYFORMULA(IF(${keyRange}="","",${body}))`,
+    // Signups value for this row's PlayerID, blank when missing.
+    lookupSignups: (key) => `IFERROR(XLOOKUP(${keyRange},${c.s('playerId')},${c.s(key)}),"")`,
+    // Final Forms value for this row's SPS Student ID (both sides coerced to text), blank when missing.
+    lookupFinalFormsRaw: (key) => `IFERROR(XLOOKUP(TO_TEXT(${spsRange}),TO_TEXT(${c.f('studentId')}),${c.f(key)}),"")`,
+    // Same, but a blank SPS Student ID yields whenMissing instead of matching a blank export row.
+    lookupFinalForms: (key, whenMissing) => `IF(${spsRange}="",${whenMissing},${c.lookupFinalFormsRaw(key)})`,
+    // Final Forms TRUE/FALSE flag as a real boolean whether the import stored text or boolean.
+    finalFormsFlag: (key) => `IF(${spsRange}="",FALSE,UPPER(TO_TEXT(${c.lookupFinalFormsRaw(key)}))="TRUE")`,
+    // Extra Player Info value for this row's PlayerID, blank when missing.
+    lookupExtra: (key) => `IFERROR(XLOOKUP(${keyRange},${c.e('playerId')},${c.e(key)}),"")`,
+    // Buttondown status for the email in a sibling Roster column.
+    newsletterStatus: (emailColumnName) => {
+      const email = c.r(emailColumnName);
+      return `IF(${email}="","",IFERROR(XLOOKUP(LOWER(${email}),LOWER(${N}!$A$2:$A),${N}!$B$2:$B),"not a member"))`;
+    },
+    // Column A: every PlayerID in Signups, sorted by Last Name then Preferred First Name.
+    keyFormula: () => {
+      const id = signupsLetter('playerId');
+      const last = signupsLetter('lastName');
+      const pref = signupsLetter('preferredFirstName');
+      const present = `${S}!${id}${first}:${id}<>""`;
+      return `=SORT(FILTER(${S}!${id}${first}:${id}, ${present}), FILTER(${S}!${last}${first}:${last}, ${present}), TRUE, FILTER(${S}!${pref}${first}:${pref}, ${present}), TRUE)`;
+    }
+  };
+
+  return ROSTER_COLUMNS.map(col => col.formula(c));
+}
+
+/**
+ * Header note text for a ROSTER_COLUMNS entry.
+ */
+function rosterHeaderNote(col) {
+  return `Type: ${col.type} / Source: ${col.source} / ${col.note}`;
+}
+
+/**
+ * Generate Fresh Roster: rewrite the 📋 Roster as one header row plus one array
+ * formula per column in row 2, all derived from Signups, Extra Player Info, Final
+ * Forms, and Newsletter Subscribers. Creates the tab if missing. Existing
+ * conditional formatting is left untouched.
  */
 function generateRoster() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  console.log('Generating roster...');
-  
-  // Build the roster sheet with metadata and formulas
-  buildRosterSheet(ss);
-  
-  // Populate Student IDs from Final Forms if available
-  let studentIdResult = null;
-  try {
-    studentIdResult = populateStudentIdsFromFinalForms(ss);
-  } catch (error) {
-    console.warn('Could not populate Student IDs from Final Forms:', error);
-    // Don't fail the entire generation if Student ID population fails
-  }
-  
-  // Create custom menu
-  createCustomMenu();
-  
-  SpreadsheetApp.flush();
-  
-  console.log('Roster generated successfully!');
-  
-  // Create success message with Student ID information
-  let message = 'The roster has been created with metadata rows and formulas.';
-  
-  if (studentIdResult && studentIdResult.success) {
-    message += `\n\n📊 Student IDs: ${studentIdResult.validCount} populated`;
-    if (studentIdResult.emptyIdCount > 0) {
-      message += `\n⚠️ Warning: ${studentIdResult.emptyIdCount} students in Final Forms have empty Student IDs and were skipped`;
-    }
-  } else if (studentIdResult) {
-    message += `\n\n⚠️ Warning: Could not populate Student IDs - ${studentIdResult.emptyIdCount} of ${studentIdResult.totalCount} entries have empty Student IDs`;
-  } else {
-    message += '\n\n⚠️ Warning: Could not access Final Forms to populate Student IDs';
-  }
-  
-  message += '\n\nNext Steps:\n1. Run "Update Newsletter Subscribers" to populate email status columns\n2. Formulas will automatically pull data as students are added\n\nNote: Columns are matched by header name, so you can safely reorder columns and regenerate.';
-  
-  SpreadsheetApp.getUi().alert('Roster Generated!', message, SpreadsheetApp.getUi().ButtonSet.OK);
-}
+  const ui = SpreadsheetApp.getUi();
 
-
-/**
- * Clear roster data while preserving metadata rows and Manual/Formula columns
- * Internal function that does the actual clearing
- */
-function clearRosterDataInternal(rosterSheet) {
-  const lastRow = rosterSheet.getMaxRows();
-  const lastCol = rosterSheet.getMaxColumns();
-  
-  if (lastRow >= FIRST_DATA_ROW) {
-    // Get the source row (row 3) to determine which columns to preserve
-    const sourceRow = rosterSheet.getRange(3, 1, 1, lastCol).getValues()[0];
-    
-    // Clear data column by column, preserving Manual, Formula, and blank sources
-    for (let col = 1; col <= lastCol; col++) {
-      const columnSource = sourceRow[col - 1];
-      const sourceString = columnSource ? columnSource.toString().trim() : '';
-      
-      // Skip columns with source "Manual", "Formula", or blank/empty
-      if (sourceString === 'Manual' || sourceString === 'Formula' || sourceString === '') {
-        console.log(`Preserving column ${col} (source: "${sourceString}")`);
-        continue;
-      }
-      
-      // Clear content for all other columns
-      const columnRange = rosterSheet.getRange(FIRST_DATA_ROW, col, lastRow - 5, 1);
-      columnRange.clearContent();
-    }
-  }
-}
-
-/**
- * Clear roster data while preserving metadata rows and Manual/Formula columns
- * User-facing function with UI alert
- */
-function clearRosterData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
-  
-  if (!rosterSheet) {
-    SpreadsheetApp.getUi().alert('Error', 'Roster sheet not found.', SpreadsheetApp.getUi().ButtonSet.OK);
+  const signupsSheet = ss.getSheetByName(CONFIG.signups.sheetName);
+  if (!signupsSheet) {
+    ui.alert('Error',
+      `Sheet "${CONFIG.signups.sheetName}" not found.\n\n` +
+      `The Roster is derived from it. Add a tab with that exact name whose A1 is an IMPORTRANGE of the portal's Signups sheet, then run this again.`,
+      ui.ButtonSet.OK);
     return;
   }
-  
-  clearRosterDataInternal(rosterSheet);
-  
+  const signupsHeaders = signupsSheet.getRange(1, 1, 1, Math.max(1, signupsSheet.getLastColumn())).getValues()[0];
+  const signupsLetters = resolveSignupsColumns(signupsHeaders);
+  const formulas = buildRosterFormulas(signupsLetters);
+  const headers = ROSTER_COLUMNS.map(col => col.name);
+  const notes = ROSTER_COLUMNS.map(rosterHeaderNote);
+
+  let rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+  if (!rosterSheet) {
+    rosterSheet = ss.insertSheet(CONFIG.roster.sheetName);
+    console.log(`Created sheet "${CONFIG.roster.sheetName}"`);
+  }
+
+  // Nothing is authored in the Roster, so clearing loses nothing: contents, notes,
+  // and leftover data validations go; conditional formatting stays.
+  rosterSheet.clearContents();
+  rosterSheet.clearNotes();
+  rosterSheet.getRange(1, 1, rosterSheet.getMaxRows(), rosterSheet.getMaxColumns()).clearDataValidations();
+  rosterSheet.setFrozenRows(0);
+
+  if (rosterSheet.getMaxRows() < ROSTER_MIN_ROWS) {
+    rosterSheet.insertRowsAfter(rosterSheet.getMaxRows(), ROSTER_MIN_ROWS - rosterSheet.getMaxRows());
+  }
+  if (rosterSheet.getMaxColumns() < headers.length) {
+    rosterSheet.insertColumnsAfter(rosterSheet.getMaxColumns(), headers.length - rosterSheet.getMaxColumns());
+  }
+
+  const headerRange = rosterSheet.getRange(ROSTER_HEADER_ROW, 1, 1, headers.length);
+  headerRange.setValues([headers]);
+  headerRange.setNotes([notes]);
+  headerRange.setFontWeight('bold');
+  rosterSheet.getRange(ROSTER_FIRST_DATA_ROW, 1, 1, formulas.length).setFormulas([formulas]);
+  rosterSheet.setFrozenRows(ROSTER_HEADER_ROW);
+
+  ROSTER_COLUMNS.forEach((col, index) => {
+    if (col.type === 'Date') {
+      rosterSheet.getRange(ROSTER_FIRST_DATA_ROW, index + 1, rosterSheet.getMaxRows() - ROSTER_HEADER_ROW, 1).setNumberFormat('yyyy-mm-dd');
+    }
+  });
+
   SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert('Data Cleared', 'Roster data has been cleared. Metadata rows 1-5 and Manual/Formula columns preserved.', SpreadsheetApp.getUi().ButtonSet.OK);
-}
+  console.log(`Roster generated: ${headers.length} columns, formulas in row ${ROSTER_FIRST_DATA_ROW}`);
 
-/**
- * Validate that script metadata matches what's in the sheet
- * Throws an error if there are mismatches, indicating the script needs updating
- */
-function validateRosterMetadata(rosterSheet, rosterColumns) {
-  const maxCols = rosterSheet.getMaxColumns();
-  const existingHeaders = rosterSheet.getRange(1, 1, 1, maxCols).getValues()[0];
-  const existingTypes = rosterSheet.getRange(2, 1, 1, maxCols).getValues()[0];
-  const existingSources = rosterSheet.getRange(3, 1, 1, maxCols).getValues()[0];
-  const existingNotes = rosterSheet.getRange(4, 1, 1, maxCols).getValues()[0];
-  
-  const mismatches = [];
-  
-  // Check each column the script knows about
-  rosterColumns.forEach(col => {
-    const colIndex = existingHeaders.indexOf(col.name);
-    
-    if (colIndex === -1) {
-      // Column is missing from sheet
-      mismatches.push(`❌ MISSING COLUMN: "${col.name}" is defined in the script but not found in the sheet. Please add this column manually.`);
-    } else {
-      // Column exists in sheet - validate metadata
-      const sheetType = existingTypes[colIndex]?.toString().trim() || '';
-      const sheetSource = existingSources[colIndex]?.toString().trim() || '';
-      const sheetNote = existingNotes[colIndex]?.toString().trim() || '';
-      
-      // Compare with script definitions (allow empty values to match)
-      if (sheetType && sheetType !== col.type) {
-        mismatches.push(`Column "${col.name}": Type mismatch. Sheet has "${sheetType}", script expects "${col.type}"`);
-      }
-      
-      if (sheetSource && sheetSource !== col.source) {
-        mismatches.push(`Column "${col.name}": Source mismatch. Sheet has "${sheetSource}", script expects "${col.source}"`);
-      }
-      
-      if (sheetNote && col.note && sheetNote !== col.note) {
-        mismatches.push(`Column "${col.name}": Note mismatch. Sheet has different note than script expects`);
-      }
-    }
-  });
-  
-  if (mismatches.length > 0) {
-    const errorMessage = `❌ METADATA MISMATCH DETECTED ❌\n\nThe sheet metadata doesn't match the script definitions. Please update the script or fix the sheet metadata:\n\n${mismatches.join('\n\n')}\n\n⚠️ The sheet is now the source of truth. Update the script to match what's in the sheet, or fix the sheet metadata to match the script.`;
-    
-    throw new Error(errorMessage);
-  }
-  
-  console.log('✅ Metadata validation passed - sheet and script are in sync');
-}
-
-/**
- * Build the roster sheet with metadata and correct formulas
- */
-function buildRosterSheet(spreadsheet) {
-  const rosterSheet = spreadsheet.getSheetByName(CONFIG.roster.sheetName);
-  
-  // Get existing headers from row 1 to find column positions
-  const maxCols = rosterSheet.getMaxColumns();
-  const existingHeaders = rosterSheet.getRange(1, 1, 1, maxCols).getValues()[0];
-  
-  // Create a map of header names to column numbers
-  const columnMap = new Map();
-  existingHeaders.forEach((header, index) => {
-    if (header && header !== '') {
-      columnMap.set(header, index + 1);
-    }
-  });
-  
-  
-  // Clear data rows (FIRST_DATA_ROW+) for defined columns only, preserve Manual/Formula columns
-  clearRosterDataInternal(rosterSheet);
-  
-  // Define all roster columns with metadata
-  const rosterColumns = [
-    {
-      name: 'StudentID',
-      type: 'String',
-      source: 'FinalForms StudentID',
-      note: ''
-      // No formula - this column gets populated with actual values during Final Forms import
-    },
-    {
-      name: 'First Name',
-      type: 'String',
-      source: 'FinalForms First Name',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!D:D),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Last Name',
-      type: 'String',
-      source: 'FinalForms Last Name',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!E:E),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Student SPS Email',
-      type: 'Email Address',
-      source: 'FinalForms Email',
-      note: 'Only set this if the domain is seattleschools.org',
-      formula: `=IFERROR(IF(REGEXMATCH(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),"@seattleschools\\.org"),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),""),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Student Personal Email',
-      type: 'Email',
-      source: 'FinalForms Email',
-      note: 'Only set this if the domain is not seattleschools.org and the email address is not used as a FinalForms parent email',
-      formula: `=IFERROR(IF(AND(NOT(REGEXMATCH(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),"@seattleschools\\.org")),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F)<>XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AO:AO),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F)<>XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AU:AU)),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),""),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Student Personal Email On Mailing List?',
-      type: 'Enum',
-      source: 'Newsletter Subscribers Buttondown status',
-      note: 'Returns the Buttondown subscriber status ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), or "not a member" if the email is not a subscriber at all',
-      formula: `=IFERROR(VLOOKUP(STUDENT_PERSONAL_EMAIL_COLUMN,'Newsletter Subscribers'!$A$2:$B,2,FALSE),"not a member")`
-    },
-    {
-      name: 'Are All Forms Parent Signed',
-      type: 'Boolean',
-      source: 'FinalForms Are All Forms Parent Signed',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!P:P),FALSE)` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Are All Forms Student Signed',
-      type: 'Boolean',
-      source: 'FinalForms Are All Forms Student Signed',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!Q:Q),FALSE)` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Physical Cleared',
-      type: 'Boolean',
-      source: 'FinalForms Physical Cleared',
-      note: '',
-      formula: `=IFERROR(IF(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AB:AB)="Cleared",TRUE,FALSE),FALSE)` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Gender',
-      type: 'Enum',
-      source: 'FinalForms Gender',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!U:U),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Grade',
-      type: 'Number',
-      source: 'FinalForms Grade',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!W:W),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Date of Birth',
-      type: 'Date',
-      source: 'FinalForms Date of Birth',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!X:X),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Parent 1 First Name',
-      type: 'String',
-      source: 'FinalForms Parent 1 First Name',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AM:AM),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Parent 1 Last Name',
-      type: 'String',
-      source: 'FinalForms Parent 1 Last Name',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AN:AN),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Parent 1 Email',
-      type: 'Email',
-      source: 'FinalForms Parent 1 Email',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AO:AO),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Parent 1 Email On Mailing List?',
-      type: 'Enum',
-      source: 'Newsletter Subscribers Buttondown status',
-      note: 'Returns the Buttondown subscriber status ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), or "not a member" if the email is not a subscriber at all',
-      formula: `=IFERROR(VLOOKUP(PARENT1_EMAIL_COLUMN,'Newsletter Subscribers'!$A$2:$B,2,FALSE),"not a member")`
-    },
-    {
-      name: 'Parent 2 First Name',
-      type: 'String',
-      source: 'FinalForms Parent 2 First Name',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AS:AS),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Parent 2 Last Name',
-      type: 'String',
-      source: 'FinalForms Parent 2 Last Name',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AT:AT),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Parent 2 Email',
-      type: 'Email',
-      source: 'FinalForms Parent 2 Email',
-      note: '',
-      formula: `=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!AU:AU),"")` // Using XLOOKUP with Student ID
-    },
-    {
-      name: 'Parent 2 Email On Mailing List?',
-      type: 'Enum',
-      source: 'Newsletter Subscribers Buttondown status',
-      note: 'Returns the Buttondown subscriber status ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), or "not a member" if the email is not a subscriber at all',
-      formula: `=IFERROR(VLOOKUP(PARENT2_EMAIL_COLUMN,'Newsletter Subscribers'!$A$2:$B,2,FALSE),"not a member")`
-    },
-    {
-      name: 'Player Pronouns (select all that apply)',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!C:C,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Supplied Gender Identification',
-      type: 'Enum',
-      source: 'AdditionalInfoForm',
-      note: 'Set this to values of either "Gx" or "Bx".',
-      formula: `=IFERROR(IF(REGEXMATCH(INDEX('Additional Info'!D:D,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"Girl|Gx"),"Gx",IF(REGEXMATCH(INDEX('Additional Info'!D:D,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"Boy|Bx"),"Bx","")),"")`
-    },
-    {
-      name: 'Player Allergies',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!E:E,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Competing Sports and Activities',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!F:F,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Jersey Size',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!G:G,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Playing Experience',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!H:H,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Player hopes for the season',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!I:I,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Other Player Info',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!K:K,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Are you interested in helping coach?',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!L:L,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: "Have you played or coached Ultimate before? What's been your experience?",
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!M:M,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: "Have you played or coached other team sports? What's been your experience?",
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!N:N,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Are you interested in helping in other ways?',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!O:O,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    },
-    {
-      name: 'Anything else you want to share?',
-      type: 'String',
-      source: 'AdditionalInfoForm',
-      note: '',
-      formula: `=IFERROR(INDEX('Additional Info'!P:P,MATCH(TRIM(A6&" "&C6),'Additional Info'!B:B,0)),"")`
-    }
-  ];
-  
-  // Validate that script metadata matches sheet metadata
-  validateRosterMetadata(rosterSheet, rosterColumns);
-  
-  // Find Full Name column at runtime (critical join key to Additional Info)
-  const fullNameCol = columnMap.get('Full Name');
-  if (!fullNameCol) {
-    throw new Error('❌ CRITICAL: "Full Name" column not found in roster sheet. This column is required as the join key to Additional Info data.');
-  }
-  const fullNameLetter = getColumnLetter(fullNameCol);
-  
-  
-  // Process each column definition (validation ensures all exist)
-  rosterColumns.forEach((col) => {
-    const colNum = columnMap.get(col.name);
-    // Note: validation above ensures this column exists
-    
-    // Now we need to update formulas to reference the correct columns dynamically
-    // Create a formula that adapts to the current column positions
-    let formula = col.formula;
-    
-    // Process formula if it exists
-    if (!formula) {
-      console.log(`Column "${col.name}" has no formula - column will be populated manually or via import`);
-    } else {
-      // Replace column references with dynamic lookups
-      // For formulas that reference other columns (like A6, C6, E6, etc.)
-      // we need to find those columns' current positions
-      
-      if (formula.includes('TRIM(A6&" "&C6)')) {
-      // Replace concatenated First+Last names with Full Name column reference
-      // This is the critical join key to Additional Info data
-      formula = formula.replaceAll('TRIM(A6&" "&C6)', `${fullNameLetter}6`);
-    } else if (formula.includes('XLOOKUP(A6,')) {
-      // Handle XLOOKUP formulas that reference StudentID column
-      const studentIdCol = columnMap.get('StudentID');
-      if (!studentIdCol) {
-        throw new Error('❌ CRITICAL: "StudentID" column not found. Required for Final Forms XLOOKUP formulas.');
-      }
-      
-      // Convert column number to letter
-      const studentIdLetter = getColumnLetter(studentIdCol);
-      
-      // Replace A6 with actual StudentID column in XLOOKUP formulas
-      formula = formula.replace(/XLOOKUP\(A6,/g, `XLOOKUP(${studentIdLetter}6,`);
-    } else if (formula.includes('A6') || formula.includes('C6')) {
-      // Handle other column references (non-Additional Info lookups, non-XLOOKUP)
-      const firstNameCol = columnMap.get('First Name');
-      const lastNameCol = columnMap.get('Last Name');
-      
-      if (!firstNameCol || !lastNameCol) {
-        throw new Error(`Cannot find required columns: First Name (${firstNameCol}), Last Name (${lastNameCol})`);
-      }
-      
-      // Convert column number to letter
-      const firstNameLetter = getColumnLetter(firstNameCol);
-      const lastNameLetter = getColumnLetter(lastNameCol);
-      
-      // Replace A6 with actual First Name column and C6 with Last Name column
-      formula = formula.replace(/A6/g, firstNameLetter + '6');
-      formula = formula.replace(/C6/g, lastNameLetter + '6');
-    }
-    
-    // Only replace E6 references for columns that actually use Student Personal Email
-    // Don't replace E6 if it was created by our Full Name replacement above
-    if (formula.includes('E6') && col.source && col.source.includes('Email')) {
-      // Find Student Personal Email column
-      const emailCol = columnMap.get('Student Personal Email');
-      if (!emailCol) {
-        throw new Error('Cannot find required column: Student Personal Email');
-      }
-      const emailLetter = getColumnLetter(emailCol);
-      formula = formula.replace(/E6/g, emailLetter + '6');
-    }
-    
-    if (formula.includes('O6')) {
-      // Find Parent 1 Email column
-      const parent1EmailCol = columnMap.get('Parent 1 Email');
-      if (!parent1EmailCol) {
-        throw new Error('Cannot find required column: Parent 1 Email');
-      }
-      const parent1EmailLetter = getColumnLetter(parent1EmailCol);
-      formula = formula.replace(/O6/g, parent1EmailLetter + '6');
-    }
-    
-    if (formula.includes('S6')) {
-      // Find Parent 2 Email column
-      const parent2EmailCol = columnMap.get('Parent 2 Email');
-      if (!parent2EmailCol) {
-        throw new Error('Cannot find required column: Parent 2 Email');
-      }
-      const parent2EmailLetter = getColumnLetter(parent2EmailCol);
-      formula = formula.replace(/S6/g, parent2EmailLetter + '6');
-    }
-    
-    // Replace placeholder column references with dynamic lookups
-    if (formula.includes('STUDENT_PERSONAL_EMAIL_COLUMN')) {
-      const studentEmailCol = columnMap.get('Student Personal Email');
-      if (!studentEmailCol) {
-        throw new Error('Cannot find required column: Student Personal Email');
-      }
-      const studentEmailLetter = getColumnLetter(studentEmailCol);
-      formula = formula.replace(/STUDENT_PERSONAL_EMAIL_COLUMN/g, `${studentEmailLetter}6`);
-    }
-    
-    if (formula.includes('PARENT1_EMAIL_COLUMN')) {
-      const parent1EmailCol = columnMap.get('Parent 1 Email');
-      if (!parent1EmailCol) {
-        throw new Error('Cannot find required column: Parent 1 Email');
-      }
-      const parent1EmailLetter = getColumnLetter(parent1EmailCol);
-      formula = formula.replace(/PARENT1_EMAIL_COLUMN/g, `${parent1EmailLetter}6`);
-    }
-    
-    if (formula.includes('PARENT2_EMAIL_COLUMN')) {
-      const parent2EmailCol = columnMap.get('Parent 2 Email');
-      if (!parent2EmailCol) {
-        throw new Error('Cannot find required column: Parent 2 Email');
-      }
-      const parent2EmailLetter = getColumnLetter(parent2EmailCol);
-      formula = formula.replace(/PARENT2_EMAIL_COLUMN/g, `${parent2EmailLetter}6`);
-    }
-    
-      // Set formula for FIRST_DATA_ROW
-      rosterSheet.getRange(FIRST_DATA_ROW, colNum).setFormula(formula);
-      
-      // Copy formula down to row 200
-      const sourceRange = rosterSheet.getRange(FIRST_DATA_ROW, colNum, 1, 1);
-      const targetRange = rosterSheet.getRange(FIRST_DATA_ROW + 1, colNum, 194, 1);
-      sourceRange.copyTo(targetRange);
-    } // End of formula processing else block
-  });
-  
-  console.log('Roster sheet built with dynamic column mapping');
+  ui.alert('Roster Generated',
+    `"${CONFIG.roster.sheetName}" now has ${headers.length} columns: a header row (hover a header for its type, Source, and rule) and array formulas in row ${ROSTER_FIRST_DATA_ROW} keyed by Signups PlayerID.\n\n` +
+    `Nothing is authored here; fix a wrong value in its Source (Signups, Extra Player Info, Final Forms, Newsletter Subscribers).\n\n` +
+    `Sort with filter views only: sorting the range in place breaks the key formula.\n\n` +
+    `Next: run "Sync Extra Player Info" so every PlayerID has a row for Team, Returning, and the Include override.`,
+    ui.ButtonSet.OK);
 }
 
 /**
@@ -674,7 +666,7 @@ function createCustomMenu() {
     .addItem('🩺 Run Diagnostics', 'runDiagnostics')
     .addSeparator()
     .addItem('📝 Generate Fresh Roster', 'generateRoster')
-    .addItem('🗑️ Clear Roster Data (Keep Metadata)', 'clearRosterData')
+    .addItem('🧩 Sync Extra Player Info', 'syncExtraPlayerInfo')
     .addSeparator()
     .addItem('🔄 Refresh All Data', 'refreshAllData')
     .addItem('📊 Update Final Forms', 'updateFinalForms')
@@ -697,8 +689,8 @@ function createCustomMenu() {
     .addSeparator()
     .addItem('📈 Show Statistics', 'showStatistics')
     .addItem('🔍 Find Emails Not on Mailing List', 'findMissingEmails')
-    .addItem('👥 Parents Not Members of Mailing List', 'findPendingParents')
-    .addItem('📊 Analyze Additional Info Responses', 'analyzeAdditionalInfoResponses')
+    .addItem('👥 Caretakers Not Subscribed to Newsletter', 'findPendingParents')
+    .addItem('🔎 Analyze Signups', 'analyzeSignups')
     .addItem('🔀 Full Name Diff', 'fullNameDiff')
     .addToUi();
 }
@@ -709,9 +701,9 @@ function createCustomMenu() {
 function refreshAllData() {
   updateFinalForms();
   updateNewsletterSubscribers();
-  // Additional Info updates automatically via IMPORTRANGE
+  // Signups refreshes on its own through IMPORTRANGE; the Roster formulas pick everything up.
   SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert('Data Refreshed', 'Final Forms and Newsletter Subscribers data have been updated.', SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert('Data Refreshed', 'Final Forms and Newsletter Subscribers have been updated. Signups refreshes on its own through IMPORTRANGE.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 /**
@@ -883,110 +875,6 @@ function getRowKey(row, index) {
   return `Row_${index}`;
 }
 
-/**
- * Populate Student IDs in roster from Final Forms sheet
- * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
- */
-function populateStudentIdsFromFinalForms(ss) {
-  // Get Final Forms sheet data
-  const finalFormsSheet = ss.getSheetByName(CONFIG.finalForms.sheetName);
-  if (!finalFormsSheet) {
-    console.warn('Final Forms sheet not found, skipping Student ID population');
-    return;
-  }
-  
-  const lastRow = finalFormsSheet.getLastRow();
-  if (lastRow <= 1) {
-    console.warn('No data found in Final Forms sheet, skipping Student ID population');
-    return;
-  }
-  
-  // Get all Final Forms data
-  const finalFormsData = finalFormsSheet.getRange(1, 1, lastRow, finalFormsSheet.getLastColumn()).getValues();
-  
-  return updateRosterStudentIdsInternal(ss, finalFormsData);
-}
-
-/**
- * Internal helper function to update the roster Student ID column with values from Final Forms
- * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
- * @param {Array} finalFormsData - The Final Forms CSV data array
- */
-function updateRosterStudentIdsInternal(ss, finalFormsData) {
-  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
-  if (!rosterSheet) {
-    console.warn('Roster sheet not found, skipping Student ID update');
-    return;
-  }
-  
-  // Check if StudentID column exists in roster
-  const headerRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
-  const studentIdColIndex = headerRow.findIndex(header => header === 'StudentID');
-  
-  if (studentIdColIndex === -1) {
-    console.warn('StudentID column not found in roster, skipping update');
-    return;
-  }
-  
-  const studentIdCol = studentIdColIndex + 1; // Convert to 1-based column number
-  
-  // Extract Student IDs from Final Forms data (assuming column A contains Student IDs)
-  if (finalFormsData.length <= 1) {
-    console.warn('No Final Forms data to extract Student IDs from');
-    return;
-  }
-  
-  // Extract and filter Student IDs (skip header row, filter out empty IDs)
-  const allStudentData = finalFormsData.slice(1); // Skip header row
-  const validStudentIds = [];
-  let emptyIdCount = 0;
-  
-  allStudentData.forEach((row, index) => {
-    const studentId = row[0]; // Column A is Student ID
-    if (studentId && studentId.toString().trim() !== '') {
-      validStudentIds.push(studentId.toString().trim());
-    } else {
-      emptyIdCount++;
-      console.warn(`Row ${index + 2} in Final Forms has empty Student ID`);
-    }
-  });
-  
-  if (validStudentIds.length === 0) {
-    console.warn('No valid Student IDs found in Final Forms data');
-    return {
-      success: false,
-      validCount: 0,
-      emptyIdCount: emptyIdCount,
-      totalCount: allStudentData.length
-    };
-  }
-  
-  // Update the roster Student ID column with valid values only
-  const startRow = FIRST_DATA_ROW; // Start from first data row
-  
-  // Clear existing data in Student ID column (data rows only)
-  const maxRows = rosterSheet.getMaxRows();
-  if (maxRows >= startRow) {
-    rosterSheet.getRange(startRow, studentIdCol, maxRows - startRow + 1, 1).clearContent();
-  }
-  
-  // Write the valid Student IDs
-  const range = rosterSheet.getRange(startRow, studentIdCol, validStudentIds.length, 1);
-  const values = validStudentIds.map(id => [id]); // Convert to 2D array
-  range.setValues(values);
-  
-  console.log(`✅ Updated ${validStudentIds.length} Student IDs in roster column ${studentIdCol}`);
-  if (emptyIdCount > 0) {
-    console.warn(`⚠️ Skipped ${emptyIdCount} entries with empty Student IDs`);
-  }
-  
-  return {
-    success: true,
-    validCount: validStudentIds.length,
-    emptyIdCount: emptyIdCount,
-    totalCount: allStudentData.length
-  };
-}
 
 /**
  * Update Final Forms data
@@ -1038,7 +926,7 @@ function updateFinalForms() {
     console.log(`✅ Updated Final Forms from: ${fileName}`);
     
     SpreadsheetApp.getUi().alert('Final Forms Updated', 
-      `Successfully imported ${studentCount} students from:\n${fileName}\n\nChange: ${diff.difference >= 0 ? '+' : ''}${diff.difference} students\n\nNote: Run "Generate Fresh Roster" to populate Student IDs and formulas in the roster.`, 
+      `Successfully imported ${studentCount} students from:\n${fileName}\n\nChange: ${diff.difference >= 0 ? '+' : ''}${diff.difference} students\n\nThe Roster's Final Forms columns update on their own (they look up each row's SPS Student ID).`, 
       SpreadsheetApp.getUi().ButtonSet.OK);
       
   } catch (e) {
@@ -1047,121 +935,92 @@ function updateFinalForms() {
   }
 }
 
+
+/**
+ * Read the Roster header row plus every data row in one call.
+ * Returns { headers, rows, col(name) } where col(name) is the 0-based index of a
+ * header (throws when a required header is missing).
+ */
+function readRosterTable(rosterSheet) {
+  const lastRow = rosterSheet.getLastRow();
+  const lastCol = rosterSheet.getLastColumn();
+  const values = lastRow >= ROSTER_HEADER_ROW && lastCol > 0
+    ? rosterSheet.getRange(ROSTER_HEADER_ROW, 1, lastRow - ROSTER_HEADER_ROW + 1, lastCol).getValues()
+    : [[]];
+  const headers = values[0].map(h => (h === null || h === undefined) ? '' : h.toString().trim());
+  const rows = values.slice(ROSTER_FIRST_DATA_ROW - ROSTER_HEADER_ROW);
+  const col = (name) => {
+    const index = headers.indexOf(name);
+    if (index === -1) throw new Error(`Cannot find required Roster column "${name}". Run "Generate Fresh Roster" first.`);
+    return index;
+  };
+  return { headers, rows, col };
+}
+
 /**
  * Show statistics about the roster
  */
 function showStatistics() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
-  
+
   if (!rosterSheet) {
     SpreadsheetApp.getUi().alert('Error', 'Roster sheet not found.', SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
-  
-  // Get column positions dynamically
-  const headers = rosterSheet.getRange(1, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
-  const columnMap = new Map();
-  headers.forEach((header, index) => {
-    if (header) columnMap.set(header, index + 1);
-  });
-  
-  // Get column positions we need
-  const firstNameCol = columnMap.get('First Name');
-  if (!firstNameCol) {
-    throw new Error('Cannot find required column: First Name');
-  }
-  const formsParentSignedCol = columnMap.get('Are All Forms Parent Signed');
-  const formsStudentSignedCol = columnMap.get('Are All Forms Student Signed');
-  const physicalClearedCol = columnMap.get('Physical Cleared');
-  const parent1MailingCol = columnMap.get('Parent 1 Email On Mailing List?');
-  const parent2MailingCol = columnMap.get('Parent 2 Email On Mailing List?');
-  const gradeCol = columnMap.get('Grade');
-  
-  // Start counting from FIRST_DATA_ROW
-  const firstDataRow = FIRST_DATA_ROW;
-  const lastRow = rosterSheet.getLastRow();
-  
-  // Count non-empty student rows
-  let totalStudents = 0;
-  for (let i = firstDataRow; i <= lastRow; i++) {
-    const firstName = rosterSheet.getRange(i, firstNameCol).getValue();
-    if (firstName && firstName !== '') {
-      totalStudents++;
-    }
-  }
-  
-  // Count various statistics
-  let statsData = {
-    formsParentSigned: 0,
-    formsStudentSigned: 0,
-    physicalCleared: 0,
-    additionalInfo: 0,
-    parent1OnList: 0,
-    parent2OnList: 0,
+
+  const table = readRosterTable(rosterSheet);
+  const playerIdCol = table.col(CONFIG.columns.playerId);
+  const players = table.rows.filter(row => row[playerIdCol] !== '' && row[playerIdCol] !== null);
+  const total = players.length;
+
+  const countTrue = (name) => {
+    const index = table.col(name);
+    return players.filter(row => row[index] === true).length;
+  };
+  const countRegular = (name) => {
+    const index = table.col(name);
+    return players.filter(row => row[index] === 'regular').length;
+  };
+  const pct = (n) => total ? `${Math.round(n / total * 100)}%` : '0%';
+
+  const stats = {
+    profileComplete: countTrue(CONFIG.columns.profileComplete),
+    finalFormsCleared: countTrue(CONFIG.columns.finalFormsCleared),
+    parentSigned: countTrue(CONFIG.columns.areAllFormsParentSigned),
+    studentSigned: countTrue(CONFIG.columns.areAllFormsStudentSigned),
+    physicalCleared: countTrue(CONFIG.columns.physicalCleared),
+    includeInGeneratedRosters: countTrue(CONFIG.columns.includeInGeneratedRosters),
+    caretaker1Regular: countRegular(CONFIG.columns.caretaker1NewsletterStatus),
+    caretaker2Regular: countRegular(CONFIG.columns.caretaker2NewsletterStatus),
     grades: {}
   };
-  
-  for (let i = firstDataRow; i < firstDataRow + totalStudents; i++) {
-    // Check forms signed
-    if (formsParentSignedCol && rosterSheet.getRange(i, formsParentSignedCol).getValue() === true) {
-      statsData.formsParentSigned++;
-    }
-    if (formsStudentSignedCol && rosterSheet.getRange(i, formsStudentSignedCol).getValue() === true) {
-      statsData.formsStudentSigned++;
-    }
-    
-    // Check physical cleared
-    if (physicalClearedCol && rosterSheet.getRange(i, physicalClearedCol).getValue() === true) {
-      statsData.physicalCleared++;
-    }
-    
-    // Check additional info
-    if (additionalInfoCol && rosterSheet.getRange(i, additionalInfoCol).getValue() === true) {
-      statsData.additionalInfo++;
-    }
-    
-    // Check newsletter subscription status ("regular" = actively subscribed in Buttondown).
-    // Note: this previously compared to the boolean `true`, which the mailing-list
-    // column never returns (it's a status string), so these counts were always 0.
-    if (parent1MailingCol) {
-      const parent1Status = rosterSheet.getRange(i, parent1MailingCol).getValue();
-      if (parent1Status === 'regular') statsData.parent1OnList++;
-    }
-    if (parent2MailingCol) {
-      const parent2Status = rosterSheet.getRange(i, parent2MailingCol).getValue();
-      if (parent2Status === 'regular') statsData.parent2OnList++;
-    }
-    
-    // Count grade distribution
-    if (gradeCol) {
-      const grade = rosterSheet.getRange(i, gradeCol).getValue();
-      if (grade) {
-        statsData.grades[grade] = (statsData.grades[grade] || 0) + 1;
-      }
-    }
-  }
-  
-  // Build statistics message
+  const gradeCol = table.col(CONFIG.columns.grade);
+  players.forEach(row => {
+    const grade = row[gradeCol];
+    if (grade !== '' && grade !== null) stats.grades[grade] = (stats.grades[grade] || 0) + 1;
+  });
+
   let message = `📊 Roster Statistics\n\n`;
-  message += `Total Students: ${totalStudents}\n\n`;
-  
-  message += `Forms Status:\n`;
-  message += `  Parent Signed: ${statsData.formsParentSigned} (${Math.round(statsData.formsParentSigned/totalStudents*100)}%)\n`;
-  message += `  Student Signed: ${statsData.formsStudentSigned} (${Math.round(statsData.formsStudentSigned/totalStudents*100)}%)\n`;
-  message += `  Physical Cleared: ${statsData.physicalCleared} (${Math.round(statsData.physicalCleared/totalStudents*100)}%)\n\n`;
-  
-  message += `Additional Info Completed: ${statsData.additionalInfo} (${Math.round(statsData.additionalInfo/totalStudents*100)}%)\n\n`;
-  
-  message += `Mailing List Status:\n`;
-  message += `  Parent 1 on List (Yes): ${statsData.parent1OnList}\n`;
-  message += `  Parent 2 on List (Yes): ${statsData.parent2OnList}\n\n`;
-  
+  message += `Total Players (Signups rows): ${total}\n`;
+  message += `Profile Complete: ${stats.profileComplete} (${pct(stats.profileComplete)})\n`;
+  message += `Include In Generated Rosters: ${stats.includeInGeneratedRosters} (${pct(stats.includeInGeneratedRosters)})\n\n`;
+
+  message += `Final Forms:\n`;
+  message += `  Parent Signed: ${stats.parentSigned} (${pct(stats.parentSigned)})\n`;
+  message += `  Student Signed: ${stats.studentSigned} (${pct(stats.studentSigned)})\n`;
+  message += `  Physical Cleared: ${stats.physicalCleared} (${pct(stats.physicalCleared)})\n`;
+  message += `  Final Forms Cleared: ${stats.finalFormsCleared} (${pct(stats.finalFormsCleared)})\n\n`;
+
+  message += `Newsletter (status "regular"):\n`;
+  message += `  Caretaker 1 subscribed: ${stats.caretaker1Regular}\n`;
+  message += `  Caretaker 2 subscribed: ${stats.caretaker2Regular}\n\n`;
+
   message += `Grade Distribution:\n`;
-  for (const [grade, count] of Object.entries(statsData.grades).sort()) {
-    message += `  Grade ${grade}: ${count} students\n`;
-  }
-  
+  Object.keys(stats.grades).sort((a, b) => Number(a) - Number(b)).forEach(grade => {
+    message += `  Grade ${grade}: ${stats.grades[grade]} players\n`;
+  });
+
   SpreadsheetApp.getUi().alert('Madison Ultimate Roster Statistics', message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
@@ -1189,103 +1048,81 @@ function findMissingEmails() {
   );
 
   console.log(`Found ${mailingListEmails.size} emails in Newsletter Subscribers`);
-  
-  // Find email columns in roster (looking for columns with "Email" in header)
-  const headers = rosterSheet.getRange('1:1').getValues()[0];
+
+  const table = readRosterTable(rosterSheet);
+  const fullNameCol = table.col(CONFIG.columns.fullName);
+
+  // Email columns are the ones whose header ends with "Email" (the "... Newsletter Status" columns hold statuses, not addresses)
   const emailColumns = [];
-  
-  headers.forEach((header, index) => {
-    if (header && header.toString().toLowerCase().includes('email')) {
-      emailColumns.push(index + 1); // 1-based column index
+  table.headers.forEach((header, index) => {
+    if (/email$/i.test(header)) {
+      emailColumns.push(index);
       console.log(`Found email column: ${header} at column ${index + 1}`);
     }
   });
-  
-  // Collect all unique emails from roster
-  const lastRow = rosterSheet.getLastRow();
+
   const uniqueRosterEmails = new Set();
   const missingEmails = [];
-  
-  // Process each email column
-  emailColumns.forEach(colNum => {
-    if (lastRow > 5) { // Skip metadata rows
-      const emailData = rosterSheet.getRange(FIRST_DATA_ROW, colNum, lastRow - 5, 1).getValues();
-      emailData.forEach((row, rowIndex) => {
-        const email = row[0];
-        if (email && email.toString().trim()) {
-          const emailStr = email.toString().trim();
-          const emailLower = emailStr.toLowerCase();
-          
-          // Skip Seattle School email addresses
-          if (emailLower.includes('@seattleschools.org')) {
-            console.log(`Skipping Seattle Schools email: ${emailStr}`);
-            return;
-          }
-          
-          // Check if this email is not in mailing list and not already added
-          if (!mailingListEmails.has(emailLower) && !uniqueRosterEmails.has(emailLower)) {
-            uniqueRosterEmails.add(emailLower);
-            
-            // Get student name from same row
-            const firstName = rosterSheet.getRange(rowIndex + FIRST_DATA_ROW, 1).getValue();
-            const lastName = rosterSheet.getRange(rowIndex + FIRST_DATA_ROW, 2).getValue();
-            const columnName = headers[colNum - 1];
-            
-            missingEmails.push({
-              email: emailStr,
-              name: `${firstName} ${lastName}`.trim(),
-              source: columnName,
-              row: rowIndex + FIRST_DATA_ROW
-            });
-          }
-        }
-      });
-    }
+
+  emailColumns.forEach(colIndex => {
+    table.rows.forEach((row, rowIndex) => {
+      const email = row[colIndex];
+      if (!email || !email.toString().trim()) return;
+      const emailStr = email.toString().trim();
+      const emailLower = emailStr.toLowerCase();
+
+      // Skip Seattle School email addresses
+      if (emailLower.includes('@seattleschools.org')) return;
+
+      if (!mailingListEmails.has(emailLower) && !uniqueRosterEmails.has(emailLower)) {
+        uniqueRosterEmails.add(emailLower);
+        missingEmails.push({
+          email: emailStr,
+          name: (row[fullNameCol] || '').toString().trim(),
+          source: table.headers[colIndex],
+          row: rowIndex + ROSTER_FIRST_DATA_ROW
+        });
+      }
+    });
   });
-  
+
   // Sort missing emails alphabetically
   missingEmails.sort((a, b) => a.email.localeCompare(b.email));
-  
+
   // Display results
   if (missingEmails.length === 0) {
     SpreadsheetApp.getUi().alert(
-      'All Emails on Mailing List',
-      'All roster email addresses are already on the mailing list (Seattle Schools emails excluded).',
+      'All Emails Subscribed',
+      'Every roster email address is a Newsletter subscriber (Seattle Schools emails excluded).',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } else {
-    // Create a formatted message
-    let message = `Found ${missingEmails.length} email addresses not on the mailing list:\n\n`;
-    
-    // Group by source column for better readability
+    let message = `Found ${missingEmails.length} email addresses not on the Newsletter:\n\n`;
+
     const bySource = {};
     missingEmails.forEach(item => {
-      if (!bySource[item.source]) {
-        bySource[item.source] = [];
-      }
+      if (!bySource[item.source]) bySource[item.source] = [];
       bySource[item.source].push(item);
     });
-    
-    // Format the message
+
     Object.keys(bySource).sort().forEach(source => {
       message += `\n${source}:\n`;
       bySource[source].forEach(item => {
         message += `  • ${item.email} (${item.name})\n`;
       });
     });
-    
-    message += '\n\nYou can copy these addresses to add them to the mailing list.';
-    
-    // For easier copying, also create a comma-separated list
+
+    message += '\n\nYou can copy these addresses to invite them to the Newsletter.';
+
     const emailList = missingEmails.map(item => item.email).join(', ');
     message += `\n\nComma-separated list for easy copying:\n${emailList}`;
-    
+
     // Show in a dialog (alert has size limits, so using custom HTML dialog for long lists)
     if (missingEmails.length > 10) {
       showMissingEmailsDialog(missingEmails, emailList);
     } else {
       SpreadsheetApp.getUi().alert(
-        'Emails Not on Mailing List',
+        'Emails Not on the Newsletter',
         message,
         SpreadsheetApp.getUi().ButtonSet.OK
       );
@@ -1318,7 +1155,7 @@ function showMissingEmailsDialog(missingEmails, emailList) {
       .stats { color: #5f6368; margin-bottom: 15px; }
     </style>
     <div>
-      <h3>Emails Not on Mailing List</h3>
+      <h3>Emails Not on the Newsletter</h3>
       <div class="stats">Found ${missingEmails.length} email addresses (Seattle Schools excluded)</div>
       
       <div class="copy-section">
@@ -1348,112 +1185,64 @@ function showMissingEmailsDialog(missingEmails, emailList) {
     .setWidth(600)
     .setHeight(500);
   
-  SpreadsheetApp.getUi().showModalDialog(html, 'Emails Not on Mailing List');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Emails Not on the Newsletter');
 }
 
+
 /**
- * Find all parents/caretakers who are not active Buttondown newsletter subscribers
+ * Find every Caretaker who is not an active Buttondown Newsletter subscriber
  * Shows those with any status other than "regular" (includes "unactivated", "unsubscribed", and "not a member")
  */
 function findPendingParents() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
-  
+
   if (!rosterSheet) {
     SpreadsheetApp.getUi().alert('Error: Could not find Roster sheet');
     return;
   }
-  
-  // Get column positions dynamically
-  const headers = rosterSheet.getRange(1, 1, 1, rosterSheet.getMaxColumns()).getValues()[0];
-  const columnMap = new Map();
-  headers.forEach((header, index) => {
-    if (header) columnMap.set(header, index + 1);
-  });
-  
-  // Get the columns we need
-  const firstNameCol = columnMap.get('First Name');
-  const lastNameCol = columnMap.get('Last Name');
-  const parent1FirstCol = columnMap.get('Parent 1 First Name');
-  const parent1LastCol = columnMap.get('Parent 1 Last Name');
-  const parent1EmailCol = columnMap.get('Parent 1 Email');
-  const parent1StatusCol = columnMap.get('Parent 1 Email On Mailing List?');
-  const parent2FirstCol = columnMap.get('Parent 2 First Name');
-  const parent2LastCol = columnMap.get('Parent 2 Last Name');
-  const parent2EmailCol = columnMap.get('Parent 2 Email');
-  const parent2StatusCol = columnMap.get('Parent 2 Email On Mailing List?');
-  
-  if (!firstNameCol || !lastNameCol) {
-    SpreadsheetApp.getUi().alert('Error: Could not find required columns');
-    return;
-  }
-  
-  const lastRow = rosterSheet.getLastRow();
+
+  const table = readRosterTable(rosterSheet);
+  const fullNameCol = table.col(CONFIG.columns.fullName);
+  const caretakers = [
+    { label: 'Caretaker 1', name: table.col(CONFIG.columns.caretaker1Name), email: table.col(CONFIG.columns.caretaker1Email), status: table.col(CONFIG.columns.caretaker1NewsletterStatus) },
+    { label: 'Caretaker 2', name: table.col(CONFIG.columns.caretaker2Name), email: table.col(CONFIG.columns.caretaker2Email), status: table.col(CONFIG.columns.caretaker2NewsletterStatus) }
+  ];
+
   const pendingParents = [];
   const seenEmails = new Set(); // Avoid duplicates
-  
-  // Process each data row (starting from FIRST_DATA_ROW)
-  for (let row = FIRST_DATA_ROW; row <= lastRow; row++) {
-    const studentFirst = rosterSheet.getRange(row, firstNameCol).getValue();
-    const studentLast = rosterSheet.getRange(row, lastNameCol).getValue();
-    
-    // Skip empty rows
-    if (!studentFirst) continue;
-    
-    // Check Parent 1
-    if (parent1StatusCol && parent1EmailCol && parent1FirstCol && parent1LastCol) {
-      const status = rosterSheet.getRange(row, parent1StatusCol).getValue();
-      const email = rosterSheet.getRange(row, parent1EmailCol).getValue();
-      const firstName = rosterSheet.getRange(row, parent1FirstCol).getValue();
-      const lastName = rosterSheet.getRange(row, parent1LastCol).getValue();
-      
-      if (status && status !== 'regular' && email && firstName && !seenEmails.has(email.toLowerCase())) {
-        seenEmails.add(email.toLowerCase());
-        pendingParents.push({
-          firstName: firstName.toString().trim(),
-          lastName: lastName.toString().trim(),
-          email: email.toString().trim(),
-          status: status.toString(),
-          student: `${studentFirst} ${studentLast}`.trim(),
-          parentType: 'Parent 1'
-        });
-      }
-    }
-    
-    // Check Parent 2
-    if (parent2StatusCol && parent2EmailCol && parent2FirstCol && parent2LastCol) {
-      const status = rosterSheet.getRange(row, parent2StatusCol).getValue();
-      const email = rosterSheet.getRange(row, parent2EmailCol).getValue();
-      const firstName = rosterSheet.getRange(row, parent2FirstCol).getValue();
-      const lastName = rosterSheet.getRange(row, parent2LastCol).getValue();
-      
-      if (status && status !== 'regular' && email && firstName && !seenEmails.has(email.toLowerCase())) {
-        seenEmails.add(email.toLowerCase());
-        pendingParents.push({
-          firstName: firstName.toString().trim(),
-          lastName: lastName.toString().trim(),
-          email: email.toString().trim(),
-          status: status.toString(),
-          student: `${studentFirst} ${studentLast}`.trim(),
-          parentType: 'Parent 2'
-        });
-      }
-    }
-  }
-  
-  // Sort by last name, then first name
-  pendingParents.sort((a, b) => {
-    const lastNameCompare = a.lastName.localeCompare(b.lastName);
-    return lastNameCompare !== 0 ? lastNameCompare : a.firstName.localeCompare(b.firstName);
+
+  table.rows.forEach(row => {
+    const student = (row[fullNameCol] || '').toString().trim();
+    if (!student) return;
+
+    caretakers.forEach(caretaker => {
+      const status = row[caretaker.status];
+      const email = row[caretaker.email];
+      if (!status || status === 'regular' || !email) return;
+      const emailStr = email.toString().trim();
+      if (!emailStr || seenEmails.has(emailStr.toLowerCase())) return;
+      seenEmails.add(emailStr.toLowerCase());
+      pendingParents.push({
+        name: (row[caretaker.name] || '').toString().trim(),
+        email: emailStr,
+        status: status.toString(),
+        student: student,
+        parentType: caretaker.label
+      });
+    });
   });
-  
-  // Generate table data
-  const tableData = pendingParents;
-  
+
+  // Sort by caretaker name, then email
+  pendingParents.sort((a, b) => {
+    const nameCompare = a.name.localeCompare(b.name);
+    return nameCompare !== 0 ? nameCompare : a.email.localeCompare(b.email);
+  });
+
   if (pendingParents.length === 0) {
     SpreadsheetApp.getUi().alert(
-      'All Parents Are Members',
-      'All parents have "member" status on the mailing list.',
+      'All Caretakers Subscribed',
+      'Every Caretaker email has status "regular" on the Newsletter.',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } else {
@@ -1462,7 +1251,7 @@ function findPendingParents() {
 }
 
 /**
- * Show pending parents in a modal dialog with HTML table for easy copy/paste
+ * Show Caretakers not subscribed to the Newsletter in a modal dialog with HTML table for easy copy/paste
  */
 function showPendingParentsDialog(pendingParents) {
   const html = HtmlService.createHtmlOutput(`
@@ -1536,8 +1325,8 @@ function showPendingParentsDialog(pendingParents) {
       }
     </style>
     <div>
-      <h3>Parents Not Members of Mailing List</h3>
-      <div class="stats">Found ${pendingParents.length} parents who are not members</div>
+      <h3>Caretakers Not Subscribed to Newsletter</h3>
+      <div class="stats">Found ${pendingParents.length} Caretaker emails whose Newsletter status is not "regular"</div>
       
       <div class="instructions">
         <strong>Instructions:</strong> Select the table below and copy (Ctrl+C / Cmd+C) to paste into spreadsheets or emails.
@@ -1548,21 +1337,21 @@ function showPendingParentsDialog(pendingParents) {
         <table id="parentTable">
           <thead>
             <tr>
-              <th>First Name</th>
-              <th>Last Name</th>
+              <th>Caretaker</th>
               <th>Email Address</th>
               <th>Status</th>
-              <th>Student</th>
+              <th>Player</th>
+              <th>Which</th>
             </tr>
           </thead>
           <tbody>
             ${pendingParents.map(parent => `
               <tr>
-                <td>${parent.firstName}</td>
-                <td>${parent.lastName}</td>
+                <td>${parent.name}</td>
                 <td>${parent.email}</td>
                 <td><span class="status-${parent.status.replace(' ', '-')}">${parent.status}</span></td>
                 <td>${parent.student}</td>
+                <td>${parent.parentType}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1588,16 +1377,9 @@ function showPendingParentsDialog(pendingParents) {
     .setWidth(700)
     .setHeight(600);
   
-  SpreadsheetApp.getUi().showModalDialog(html, 'Parents Not Members of Mailing List');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Caretakers Not Subscribed to Newsletter');
 }
 
-/**
- * Analyze Additional Info responses for matches, suggestions, and potential duplicates
- * Creates a separate "Additional Info Analysis" sheet with the results
- *
- * This function is now implemented in AdditionalInfoAnalysis.gs
- */
-// This function is implemented in AdditionalInfoAnalysis.gs
 
 /**
  * Run on spreadsheet open to create menu
