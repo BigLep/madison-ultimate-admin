@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.15';
+const SCRIPT_VERSION = '3.16';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -325,10 +325,10 @@ const ROSTER_COLUMNS = [
     formula: (c) => c.arrayFormula(c.lookupSignups('pronouns'))
   },
   {
-    name: 'Gender Special Attention',
+    name: 'Gender Default Handling',
     type: 'Boolean',
     source: ROSTER_SOURCE.derived,
-    note: 'TRUE when Final Forms Gender (Female, Male, or anything else such as Non-Binary) and Signup Gender disagree, or when Pronouns include anything outside he/him for a Bx or she/her for a Gx. A prompt for a coach to check in with the Player, not a verdict.',
+    note: 'TRUE when nothing about gender needs a coach\'s attention. FALSE when Final Forms Gender (Female, Male, or anything else such as Non-Binary) and Signup Gender disagree, or when Pronouns include anything outside he/him for a Bx or she/her for a Gx: a prompt to check in with the Player, not a verdict.',
     formula: (c) => {
       const ff = c.r('Final Forms Gender');
       const sg = c.r('Signup Gender');
@@ -338,7 +338,7 @@ const ROSTER_COLUMNS = [
       // with tokens he, him, she, her, they, them, every unexpected token leaves a residue.
       const leftover = (expected) => `(REGEXREPLACE(p,"${expected}|[;,/ ]","")<>"")`;
       // Final Forms Female/Male map to Gx/Bx; any other non-blank value (for example Non-Binary) counts as a disagreement with a Gx or Bx signup.
-      return c.arrayFormula(`LET(ff,IF(${ff}="","",IF(${ff}="Female","Gx",IF(${ff}="Male","Bx","Other"))),p,LOWER(${pronouns}),((ff<>"")*(${sg}<>"")*(ff<>${sg})+(${gi}="Bx")*${leftover('he|him')}+(${gi}="Gx")*${leftover('she|her')})>0)`);
+      return c.arrayFormula(`LET(ff,IF(${ff}="","",IF(${ff}="Female","Gx",IF(${ff}="Male","Bx","Other"))),p,LOWER(${pronouns}),((ff<>"")*(${sg}<>"")*(ff<>${sg})+(${gi}="Bx")*${leftover('he|him')}+(${gi}="Gx")*${leftover('she|her')})=0)`);
     }
   },
   {
@@ -472,11 +472,11 @@ const ROSTER_COLUMNS = [
     formula: (c) => c.arrayFormula(c.newsletterStatus('Student Personal Email'))
   },
   {
-    name: 'Media Opt-Out',
+    name: 'Media OK',
     type: 'Boolean',
     source: ROSTER_SOURCE.signups,
-    note: 'TRUE when the family declared that photos of the Player must not appear in team communications. Does not affect the Player Photo.',
-    formula: (c) => c.arrayFormula(`LOWER(TO_TEXT(${c.lookupSignups('mediaOptOut')}))="true"`)
+    note: 'TRUE when photos of the Player may appear in team communications. FALSE when the family declared a Media Opt-Out. Does not affect the Player Photo.',
+    formula: (c) => c.arrayFormula(`LOWER(TO_TEXT(${c.lookupSignups('mediaOptOut')}))<>"true"`)
   },
   {
     name: 'Photo Drive File ID',

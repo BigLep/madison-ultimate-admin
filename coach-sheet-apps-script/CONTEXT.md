@@ -67,9 +67,13 @@ _Avoid_: eligible, cleared (bare, which also names an unrelated Final Forms expo
 **Signup Gender**:
 The family's Gender Identification from Signups collapsed to Gx or Bx, blank when not supplied.
 
-**Gender Special Attention**:
-A Roster flag, TRUE when Final Forms Gender and Signup Gender disagree, or when the Player's Pronouns include anything outside he/him for a Bx or she/her for a Gx. A prompt for a coach to check in with the Player, not a verdict about them.
-_Avoid_: gender mismatch, gender flag
+**Gender Default Handling**:
+A Roster flag, TRUE when nothing about gender needs a coach's attention. FALSE when Final Forms Gender and Signup Gender disagree, or when the Player's Pronouns include anything outside he/him for a Bx or she/her for a Gx: a prompt to check in with the Player, not a verdict about them. Like every Roster Boolean, TRUE means all is well and FALSE means something needs attention.
+_Avoid_: gender mismatch, gender flag, Gender Special Attention (the inverted earlier name)
+
+**Media OK**:
+TRUE when photos of the Player may appear in team communications; FALSE when the family declared a Media Opt-Out.
+_Avoid_: Media Opt-Out as a column name (the Signups field keeps that name; the Roster column is inverted so TRUE means all is well)
 
 **Gender Identification**:
 Gx or Bx for the Player: Signup Gender when supplied, otherwise Final Forms gender mapped Female to Gx and Male to Bx, otherwise blank. The value Generated Rosters print.
