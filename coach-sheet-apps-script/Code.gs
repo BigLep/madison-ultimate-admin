@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.1';
+const SCRIPT_VERSION = '3.2';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -990,7 +990,13 @@ function updateFinalForms() {
   const sheet = ss.getSheetByName(CONFIG.finalForms.sheetName);
   
   if (!sheet) {
-    SpreadsheetApp.getUi().alert('Error', 'Final Forms sheet not found.', SpreadsheetApp.getUi().ButtonSet.OK);
+    const existingSheetNames = ss.getSheets().map(s => s.getName()).join(', ');
+    SpreadsheetApp.getUi().alert('Error',
+      `Sheet "${CONFIG.finalForms.sheetName}" not found.\n\n` +
+      `This sheet is required: the roster's XLOOKUP formulas read from it, and this menu item writes the imported CSV into it.\n\n` +
+      `Fix: add a tab named exactly "${CONFIG.finalForms.sheetName}" (blank is fine, this will populate it), then run this again.\n\n` +
+      `Existing tabs: ${existingSheetNames}`,
+      SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
   
