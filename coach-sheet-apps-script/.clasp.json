@@ -5,6 +5,7 @@
     "appsscript.json",
     "Code.gs",
     "Diagnostics.gs",
+    "ExtraPlayerInfo.gs",
     "NewsletterSubscribers.gs",
     "SheetBuilder.gs",
     "FormatSpruceUp.gs",

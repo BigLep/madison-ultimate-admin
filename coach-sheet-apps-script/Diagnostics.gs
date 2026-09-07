@@ -55,6 +55,7 @@ function runDiagnostics() {
   checkSheet('Roster', CONFIG.roster.sheetName);
   checkSheet('Final Forms import target', CONFIG.finalForms.sheetName);
   checkSheet('Newsletter Subscribers import target', CONFIG.newsletterSubscribers.sheetName);
+  results.push(Object.assign({ required: true }, checkExtraPlayerInfoSheet(ss)));
   checkSheet('Practice Info', CONFIG.practiceInfo.sheetName);
   checkSheet('Game Info', CONFIG.gameInfo.sheetName);
   checkSheet('Fields', CONFIG.fieldsSheet.sheetName);
