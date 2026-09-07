@@ -91,6 +91,10 @@ Steven asked for a column before Gender Identification that is TRUE when Final F
 - Deleted photo-mapper/ and its root README mention in its own commit. The gitignored service account key file under photo-mapper/backend/ was left on disk for Steven to remove or revoke.
 - Purged the five named test rows from the portal's Signups sheet and their orphaned Extra Player Info rows; Signups, Roster, and Extra Player Info each hold 75 rows and every Extra Player Info Full Name resolves. Steven then confirmed Bob Larson (g94df), A E (qk4mx), and Big Loep (tt3t7) were fixtures too; deleted with their Extra Player Info rows, leaving 72 Players.
 
+### Final verification after the column changes (2026-09-07, v3.16)
+
+Steven ran Generate Fresh Roster on 3.16 after the reorder, the Gender Default Handling column, and the Boolean inversion. The comparison script (every column of every row against Signups, Final Forms, and Newsletter Subscribers, including the inverted Gender Default Handling and Media OK rules) reported 70 Players, header order exactly as requested, and 0 mismatches.
+
 ### Not verified
 
 - Build Practice Roster and Build Game Roster Prep end-to-end (D14).

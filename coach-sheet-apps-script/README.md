@@ -113,6 +113,8 @@ The 📋 Roster is one header row plus one array formula per column in row 2. No
 
 Sort with filter views only. Data > Sort range or the basic filter's sort physically reorders cells and breaks the key formula in A2; Run Diagnostics checks that the key formula is intact.
 
+Every Boolean column reads TRUE for "all is well" and FALSE for "something needs a coach's attention": Profile Complete?, the three Final Forms flags and Final Forms Cleared?, Include In Generated Rosters, Gender Default Handling (FALSE when Final Forms and Signup gender disagree or the pronouns are off-pattern for the Gx/Bx), and Media OK (FALSE when the family opted out of media). Filter any Boolean column to FALSE to get a to-do list.
+
 Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, source, note, formula). Adding or reordering a column means editing that list and running Generate Fresh Roster, which rewrites the header row, the header notes (hover a header to see its type, Source, and rule), and row 2. The plan that introduced this layout is in [docs/plans/2026-09-roster-rebuild.md](./docs/plans/2026-09-roster-rebuild.md).
 
 ## Data Sources
