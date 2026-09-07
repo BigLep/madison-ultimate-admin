@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.14';
+const SCRIPT_VERSION = '3.15';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -248,6 +248,55 @@ const ROSTER_COLUMNS = [
     formula: (c) => c.arrayFormula(c.lookupSignups('elementarySchool'))
   },
   {
+    name: 'Date of Birth',
+    type: 'Date',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups Date of Birth (ISO text) converted to a real date.',
+    formula: (c) => c.arrayFormula(`LET(v,${c.lookupSignups('dateOfBirth')},IF(v="","",IF(ISNUMBER(v),v,IFERROR(DATEVALUE(v),""))))`)
+  },
+  {
+    name: 'Player Allergies',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups "Allergies".',
+    formula: (c) => c.arrayFormula(c.lookupSignups('allergies'))
+  },
+  {
+    name: 'Competing Sports and Activities',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('competingSports'))
+  },
+  {
+    name: 'Jersey Size',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('jerseySize'))
+  },
+  {
+    name: 'Playing Experience',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Passthrough from Signups.',
+    formula: (c) => c.arrayFormula(c.lookupSignups('playingExperience'))
+  },
+  {
+    name: 'Player hopes for the season',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups "Hopes".',
+    formula: (c) => c.arrayFormula(c.lookupSignups('hopes'))
+  },
+  {
+    name: 'Other Player Info',
+    type: 'String',
+    source: ROSTER_SOURCE.signups,
+    note: 'Signups "Other Info".',
+    formula: (c) => c.arrayFormula(c.lookupSignups('otherInfo'))
+  },
+  {
     name: 'Grade',
     type: 'Number',
     source: `${ROSTER_SOURCE.finalForms}, ${ROSTER_SOURCE.signups} fallback`,
@@ -360,34 +409,6 @@ const ROSTER_COLUMNS = [
     formula: (c) => c.arrayFormula(`(${c.r('Are All Forms Parent Signed')}=TRUE)*(${c.r('Are All Forms Student Signed')}=TRUE)*(${c.r('Physical Cleared')}=TRUE)=1`)
   },
   {
-    name: 'Date of Birth',
-    type: 'Date',
-    source: ROSTER_SOURCE.signups,
-    note: 'Signups Date of Birth (ISO text) converted to a real date.',
-    formula: (c) => c.arrayFormula(`LET(v,${c.lookupSignups('dateOfBirth')},IF(v="","",IF(ISNUMBER(v),v,IFERROR(DATEVALUE(v),""))))`)
-  },
-  {
-    name: 'Student SPS Email',
-    type: 'Email',
-    source: ROSTER_SOURCE.signups,
-    note: 'Passthrough from Signups.',
-    formula: (c) => c.arrayFormula(c.lookupSignups('studentSpsEmail'))
-  },
-  {
-    name: 'Student Personal Email',
-    type: 'Email',
-    source: ROSTER_SOURCE.signups,
-    note: 'Passthrough from Signups, blanked when the domain is seattleschools.org.',
-    formula: (c) => c.arrayFormula(`LET(v,${c.lookupSignups('studentPersonalEmail')},IF(REGEXMATCH(LOWER(v),"@seattleschools\\.org$"),"",v))`)
-  },
-  {
-    name: 'Student Newsletter Status',
-    type: 'Enum',
-    source: ROSTER_SOURCE.newsletter,
-    note: 'Buttondown status for Student Personal Email ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), "not a member" when absent, blank when there is no email.',
-    formula: (c) => c.arrayFormula(c.newsletterStatus('Student Personal Email'))
-  },
-  {
     name: 'Caretaker 1 Name',
     type: 'String',
     source: ROSTER_SOURCE.signups,
@@ -430,46 +451,25 @@ const ROSTER_COLUMNS = [
     formula: (c) => c.arrayFormula(c.newsletterStatus('Caretaker 2 Email'))
   },
   {
-    name: 'Player Allergies',
-    type: 'String',
-    source: ROSTER_SOURCE.signups,
-    note: 'Signups "Allergies".',
-    formula: (c) => c.arrayFormula(c.lookupSignups('allergies'))
-  },
-  {
-    name: 'Competing Sports and Activities',
-    type: 'String',
+    name: 'Student SPS Email',
+    type: 'Email',
     source: ROSTER_SOURCE.signups,
     note: 'Passthrough from Signups.',
-    formula: (c) => c.arrayFormula(c.lookupSignups('competingSports'))
+    formula: (c) => c.arrayFormula(c.lookupSignups('studentSpsEmail'))
   },
   {
-    name: 'Jersey Size',
-    type: 'String',
+    name: 'Student Personal Email',
+    type: 'Email',
     source: ROSTER_SOURCE.signups,
-    note: 'Passthrough from Signups.',
-    formula: (c) => c.arrayFormula(c.lookupSignups('jerseySize'))
+    note: 'Passthrough from Signups, blanked when the domain is seattleschools.org.',
+    formula: (c) => c.arrayFormula(`LET(v,${c.lookupSignups('studentPersonalEmail')},IF(REGEXMATCH(LOWER(v),"@seattleschools\\.org$"),"",v))`)
   },
   {
-    name: 'Playing Experience',
-    type: 'String',
-    source: ROSTER_SOURCE.signups,
-    note: 'Passthrough from Signups.',
-    formula: (c) => c.arrayFormula(c.lookupSignups('playingExperience'))
-  },
-  {
-    name: 'Player hopes for the season',
-    type: 'String',
-    source: ROSTER_SOURCE.signups,
-    note: 'Signups "Hopes".',
-    formula: (c) => c.arrayFormula(c.lookupSignups('hopes'))
-  },
-  {
-    name: 'Other Player Info',
-    type: 'String',
-    source: ROSTER_SOURCE.signups,
-    note: 'Signups "Other Info".',
-    formula: (c) => c.arrayFormula(c.lookupSignups('otherInfo'))
+    name: 'Student Newsletter Status',
+    type: 'Enum',
+    source: ROSTER_SOURCE.newsletter,
+    note: 'Buttondown status for Student Personal Email ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), "not a member" when absent, blank when there is no email.',
+    formula: (c) => c.arrayFormula(c.newsletterStatus('Student Personal Email'))
   },
   {
     name: 'Media Opt-Out',
