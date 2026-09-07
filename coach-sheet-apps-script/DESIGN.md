@@ -111,5 +111,5 @@ There is no Apps Script test runner in this repo. The pure seam is `resolveSignu
 
 ## Out of scope, noted
 
-- `photo-mapper/` read Full Name and StudentID from a roster. The portal now ties each Player Photo to a PlayerID, so the tool has no remaining use case; deleting it is a follow-up in its own commit.
+- The old `photo-mapper/` tool (removed 2026-09-07) read Full Name and StudentID from a roster; the portal now ties each Player Photo to a PlayerID.
 - Team values beyond Blue and Gold, and `CONFIG.gameRosterPrep.hasTeam`, wait for tryouts.
