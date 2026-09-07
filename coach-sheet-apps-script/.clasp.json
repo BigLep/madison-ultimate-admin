@@ -6,6 +6,7 @@
     "Code.gs",
     "Diagnostics.gs",
     "ExtraPlayerInfo.gs",
+    "AnalyzeSignups.gs",
     "NewsletterSubscribers.gs",
     "SheetBuilder.gs",
     "FormatSpruceUp.gs",

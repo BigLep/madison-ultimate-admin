@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.7';
+const SCRIPT_VERSION = '3.8';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
