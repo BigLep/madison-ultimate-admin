@@ -129,7 +129,7 @@ Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, s
 ### Extra Player Info (coach-authored)
 
 - **Source**: coaches, in the `Extra Player Info` tab
-- **Columns**: PlayerID, Full Name (formula), Team (dropdown seeded Blue/Gold; edit the list after tryouts), Returning (TRUE/FALSE dropdown), Include In Generated Rosters (TRUE/FALSE dropdown; blank means "use Profile Complete")
+- **Columns**: PlayerID, Full Name (formula), Team (dropdown seeded Blue/Gold; edit the list after tryouts), Returning (TRUE/FALSE dropdown), Include In Generated Rosters (TRUE/FALSE dropdown; blank means "included")
 - **Sync**: Menu → "Sync Extra Player Info" appends a row for every Signups PlayerID not already present; it never deletes or reorders rows.
 
 ### Final Forms (SPS Registration)
@@ -172,7 +172,7 @@ Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, s
 - **Show Statistics** - Totals for Players, Profile Complete, Include In Generated Rosters, each Final Forms flag, Newsletter subscriptions, and the grade distribution
 - **Find Emails Not Subscribed to Newsletter** - Identify roster emails that aren't Buttondown Newsletter subscribers
 - **Caretakers Not Subscribed to Newsletter** - Find Caretakers whose Buttondown subscriber status isn't "regular" (haven't joined, haven't confirmed, or unsubscribed)
-- **Analyze Signups** - Write the "Analyze Signups" sheet: signups with no SPS Student ID, Final Forms students with no signup, signups whose SPS Student ID is not in Final Forms, suspected duplicate signups, and signups not Profile Complete. It only reports; the portal's Final Forms Backfill does the joining.
+- **Analyze Signups** - Write the "Analyze Signups" sheet: signups with no SPS Student ID, Final Forms students not yet seeded or joined, signups whose SPS Student ID is not in Final Forms, suspected duplicate signups, signups not Profile Complete, and Seeded Signups the family has not finished. It only reports; the portal's Seed Signups from Final Forms (`/admin/final-forms`) does the joining and seeding.
 - **Full Name Diff** - Compare names across data sources
 
 ### Utilities
@@ -286,7 +286,7 @@ Roster readers look columns up by header name in row 1 of 📋 Roster; run "Gene
 - Run 🩺 Run Diagnostics: it checks the IMPORTRANGE resolved and that A2 of the Roster still holds the `=SORT(FILTER(` key formula (sorting the Roster in place breaks it; use filter views)
 
 ### Final Forms columns blank or FALSE for a Player
-The Player's Signups row has no SPS Student ID yet, or that ID is not in the latest export. Run "Analyze Signups" to see which; the portal's Final Forms Backfill does the joining. Run "Update Final Forms" to refresh the export.
+The Player's Signups row has no SPS Student ID yet, or that ID is not in the latest export. Run "Analyze Signups" to see which; the portal's Seed Signups from Final Forms does the joining. Run "Update Final Forms" to refresh the export.
 
 ### Newsletter status columns show "not a member" everywhere
 Run "Update Newsletter Subscribers" to populate the Newsletter Subscribers sheet.

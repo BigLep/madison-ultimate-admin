@@ -1,6 +1,6 @@
 # Coach Sheet
 
-The coach-facing Google Sheets workbook for a Madison Ultimate season and the Apps Script menu bound to it. It joins data mastered elsewhere (the family portal's Signups sheet, the district's Final Forms export, Buttondown) with a small set of coach-authored facts, and derives the roster and every printout from that join. Shared terms (Player, PlayerID, SPS Student ID, Caretaker, Newsletter, Final Forms Join, Final Forms Backfill, Seeded Field, Player Photo, Media Opt-Out) are defined in the portal's glossary at `../../madison-ultimate/CONTEXT.md` and mean the same thing here.
+The coach-facing Google Sheets workbook for a Madison Ultimate season and the Apps Script menu bound to it. It joins data mastered elsewhere (the family portal's Signups sheet, the district's Final Forms export, Buttondown) with a small set of coach-authored facts, and derives the roster and every printout from that join. Shared terms (Player, PlayerID, SPS Student ID, Caretaker, Newsletter, Final Forms Join, Final Forms Backfill, Seed Signups from Final Forms, Seeded Signup, Seeded Field, Profile Complete, Player Photo, Media Opt-Out) are defined in the portal's glossary at `../../madison-ultimate/CONTEXT.md` and mean the same thing here.
 
 ## Language
 
@@ -40,18 +40,18 @@ A practice roster or game roster prep sheet built from the Roster for one date, 
 _Avoid_: printout, roster copy
 
 **Include In Generated Rosters**:
-Whether a Player appears on Generated Rosters. Resolves to the coach's Extra Player Info value when one is set, otherwise to Profile Complete.
+Whether a Player appears on Generated Rosters. Resolves to the coach's Extra Player Info value when one is set, otherwise TRUE: every Player is included until a coach says otherwise.
 _Avoid_: active, dropped (those describe per-game Activation Status, a different concept)
 
 **Profile Complete**:
-A Player whose Signups row has Grade, Date of Birth, and Caretaker 1 Email. A row created at step 0 and abandoned is not Profile Complete and stays visible in the Roster so a coach can follow up.
+As defined by the portal: Player Info, Caretaker Info, and Photo Upload all done, written on the Signups row and passed through here, never computed in the coach sheet. A row abandoned at step 0, or a Seeded Signup the family has not finished, is not Profile Complete and stays visible in the Roster so a coach can follow up.
 _Avoid_: registered, signed up
 
 **Team**:
 The coach-assigned squad for the season (for example Blue or Gold), authored in Extra Player Info after tryouts.
 
 **Analyze Signups**:
-The coach sheet's report of Players whose Sources disagree or are incomplete: signups with no SPS Student ID, Final Forms students with no signup, signups whose SPS Student ID has left Final Forms, suspected duplicate signups, and signups not Profile Complete. It only reports; the portal's Final Forms Backfill does the joining.
+The coach sheet's report of Players whose Sources disagree or are incomplete: signups with no SPS Student ID, Final Forms students not yet seeded or joined, signups whose SPS Student ID has left Final Forms, suspected duplicate signups, signups not Profile Complete, and Seeded Signups the family has not finished. It only reports; the portal's Seed Signups from Final Forms does the joining and seeding.
 _Avoid_: reconciliation, Additional Info Analysis (the retired name-matching report this replaces)
 
 **Returning**:

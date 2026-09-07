@@ -60,7 +60,7 @@ Rules worth knowing:
 - **Grade** prefers Final Forms and falls back to Signups.
 - **Signup Gender** collapses the family's Gender Identification to Gx or Bx; **Gender Identification** is Signup Gender when set, else Final Forms Gender mapped Female to Gx and Male to Bx. Generated Rosters print Gender Identification.
 - Every Roster Boolean reads TRUE for "all is well" and FALSE for "needs attention". **Gender Default Handling** is FALSE when Final Forms Gender and Signup Gender disagree, or when Pronouns include anything outside he/him for a Bx or she/her for a Gx (the pronoun list is lowercased, the expected pronouns and separators are stripped, and anything left over flags). A prompt for a coach to check in, not a verdict. **Media OK** is FALSE when the family declared a Media Opt-Out.
-- **Profile Complete?** is TRUE when Grade, Date of Birth, and Caretaker 1 Email are all non-empty. **Include In Generated Rosters** is the Extra Player Info value when set, else Profile Complete?.
+- **Profile Complete?** is a passthrough of the portal's `Profile Complete` column (Player Info, Caretaker Info, and Photo Upload all done; portal ADR 0006), coerced to a boolean. **Include In Generated Rosters** is the Extra Player Info value when set, else TRUE (coach sheet ADR 0002).
 - **Final Forms Cleared?** is TRUE only when all forms are parent signed, all forms are student signed, and the physical is cleared; a missing SPS Student ID makes it FALSE.
 - **Student Personal Email** is blanked when its domain is seattleschools.org.
 - **Date of Birth** accepts the ISO text Signups stores (`DATEVALUE`) or a real date.
@@ -68,13 +68,13 @@ Rules worth knowing:
 
 ## Extra Player Info
 
-Header: `PlayerID, Full Name, Team, Returning, Include In Generated Rosters`. Full Name is a per-row XLOOKUP into the Roster. Team is a dropdown seeded Blue and Gold (seeded once; coaches edit the list after tryouts and the next sync leaves it alone). Returning and Include In Generated Rosters are TRUE/FALSE dropdowns with blank allowed; no checkboxes, because a checkbox cannot be blank and blank Include is what means "use Profile Complete".
+Header: `PlayerID, Full Name, Team, Returning, Include In Generated Rosters`. Full Name is a per-row XLOOKUP into the Roster. Team is a dropdown seeded Blue and Gold (seeded once; coaches edit the list after tryouts and the next sync leaves it alone). Returning and Include In Generated Rosters are TRUE/FALSE dropdowns with blank allowed; no checkboxes, because a checkbox cannot be blank and blank Include is what means "included".
 
 Sync Extra Player Info appends a row for each Signups PlayerID not already present (in Roster order) and never deletes or reorders. An existing tab with a different header is rewritten only while it has no data rows; otherwise the mismatch is reported as an error.
 
 ## Analyze Signups
 
-Reads Signups and Final Forms directly (not the Roster, so it works before the Roster exists) and writes or replaces the "Analyze Signups" sheet with a timestamp and five sections: signups with no SPS Student ID, Final Forms students with no signup, signups whose SPS Student ID is not in Final Forms, suspected duplicates (same normalized last name and birthdate, or same SPS Student ID), and signups not Profile Complete with the missing fields named. Name normalization follows the portal's rules (trim, lowercase, strip whitespace and apostrophes, fold accents, keep hyphens). It only reports; the portal's Final Forms Backfill does the joining.
+Reads Signups and Final Forms directly (not the Roster, so it works before the Roster exists) and writes or replaces the "Analyze Signups" sheet with a timestamp and six sections: signups with no SPS Student ID, Final Forms students not yet seeded or joined, signups whose SPS Student ID is not in Final Forms, suspected duplicates (same normalized last name and birthdate, or same SPS Student ID), signups not Profile Complete (as the portal wrote it, marked Seeded Signup or family-created), and Seeded Signups the family has not finished. Name normalization follows the portal's rules (trim, lowercase, strip whitespace and apostrophes, fold accents, keep hyphens). It only reports; the portal's Seed Signups from Final Forms does the joining and seeding.
 
 ## Technical implementation
 

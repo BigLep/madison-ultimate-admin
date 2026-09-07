@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.16';
+const SCRIPT_VERSION = '3.17';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -146,7 +146,9 @@ const SIGNUPS_HEADERS = {
   hopes: 'Hopes',
   otherInfo: 'Other Info',
   mediaOptOut: 'Media Opt-Out',
-  photoDriveFileId: 'Photo Drive File ID'
+  photoDriveFileId: 'Photo Drive File ID',
+  seededAt: 'Seeded At',
+  profileComplete: 'Profile Complete'
 };
 
 // Final Forms export columns at fixed positions (validated by finalforms-export).
@@ -370,15 +372,15 @@ const ROSTER_COLUMNS = [
     name: 'Include In Generated Rosters',
     type: 'Boolean',
     source: ROSTER_SOURCE.derived,
-    note: 'Extra Player Info value when one is set, else Profile Complete?. Generated Rosters include a Player only when this is TRUE.',
-    formula: (c) => c.arrayFormula(`LET(e,${c.lookupExtra('include')},IF(e="",${c.r('Profile Complete?')},e))`)
+    note: 'Extra Player Info value when one is set, else TRUE: every Player is on Generated Rosters unless a coach says otherwise (coach sheet ADR 0002).',
+    formula: (c) => c.arrayFormula(`LET(e,${c.lookupExtra('include')},IF(e="",TRUE,e))`)
   },
   {
     name: 'Profile Complete?',
     type: 'Boolean',
-    source: ROSTER_SOURCE.derived,
-    note: 'TRUE when Grade, Date of Birth, and Caretaker 1 Email are all non-empty. A signup abandoned at step 0 stays visible here so a coach can follow up.',
-    formula: (c) => c.arrayFormula(`(${c.r('Grade')}<>"")*(${c.r('Date of Birth')}<>"")*(${c.r('Caretaker 1 Email')}<>"")=1`)
+    source: ROSTER_SOURCE.signups,
+    note: 'Defined and written by the portal (Player Info, Caretaker Info, and Photo Upload all done; portal ADR 0006). Passed through, never computed here. A Seeded Signup starts FALSE until the family finishes.',
+    formula: (c) => c.arrayFormula(`UPPER(TO_TEXT(${c.lookupSignups('profileComplete')}))="TRUE"`)
   },
   {
     name: 'Are All Forms Parent Signed',

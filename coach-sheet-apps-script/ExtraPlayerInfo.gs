@@ -61,7 +61,7 @@ function syncExtraPlayerInfo() {
   console.log(`Extra Player Info: added ${missing.length}, total ${total}`);
   ui.alert('Extra Player Info Synced',
     `Added ${missing.length} PlayerID row(s); ${total} row(s) total.\n\n` +
-    `Fill in Team, Returning, and Include In Generated Rosters here. Blank Include means "use Profile Complete". Rows are never deleted or reordered by this sync.`,
+    `Fill in Team, Returning, and Include In Generated Rosters here. Blank Include means "included". Rows are never deleted or reordered by this sync.`,
     ui.ButtonSet.OK);
 }
 
@@ -124,7 +124,7 @@ function ensureExtraPlayerInfoSheet(ss) {
 /**
  * Dropdowns on the coach-authored columns. Blank stays allowed everywhere (a
  * list rule only judges non-empty input), which is what lets a blank Include mean
- * "use Profile Complete". No checkboxes: a checkbox cannot be blank.
+ * "included" (coach sheet ADR 0002). No checkboxes: a checkbox cannot be blank.
  *
  * The Team list is seeded once (Blue, Gold) and left alone afterwards so coaches
  * can edit the dropdown in the sheet after tryouts without the next sync undoing it.

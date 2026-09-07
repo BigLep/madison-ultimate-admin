@@ -1,6 +1,6 @@
 /**
  * Analyze Signups: the report of Players whose Sources disagree or are incomplete.
- * It only reports; the portal's Final Forms Backfill does the joining.
+ * It only reports; the portal's Seed Signups from Final Forms does the joining and seeding.
  *
  * Reads the Signups and Final Forms tabs directly (not the Roster), so it works
  * before the Roster is generated.
@@ -89,7 +89,7 @@ function analyzeSignupsData(signupsHeaders, signupsRows, finalFormsValues) {
     return headerIndex[name];
   };
   const idCol = col('playerId'), spsCol = col('spsStudentId'), prefCol = col('preferredFirstName'), lastCol = col('lastName');
-  const dobCol = col('dateOfBirth'), gradeCol = col('grade'), c1EmailCol = col('caretaker1Email');
+  const dobCol = col('dateOfBirth'), gradeCol = col('grade'), seededAtCol = col('seededAt'), profileCompleteCol = col('profileComplete');
 
   const players = signupsRows
     .map(row => ({
@@ -99,7 +99,8 @@ function analyzeSignupsData(signupsHeaders, signupsRows, finalFormsValues) {
       lastName: text(row[lastCol]),
       birthdate: normalizeBirthdate(row[dobCol]),
       grade: text(row[gradeCol]),
-      caretaker1Email: text(row[c1EmailCol])
+      seededAt: text(row[seededAtCol]),
+      profileComplete: text(row[profileCompleteCol]).toUpperCase() === 'TRUE'
     }))
     .filter(p => p.playerId);
 
@@ -141,24 +142,24 @@ function analyzeSignupsData(signupsHeaders, signupsRows, finalFormsValues) {
   groupBy(p => (p.birthdate && normalizeName(p.lastName)) ? `${normalizeName(p.lastName)}|${p.birthdate}` : '', () => 'same last name + birthdate');
   groupBy(p => p.spsStudentId, key => `same SPS Student ID ${key}`);
 
-  // 5. Not Profile Complete: which of Grade, Date of Birth, Caretaker 1 Email are missing.
+  // 5. Not Profile Complete, as the portal wrote it (Player Info, Caretaker Info, Photo Upload).
   const incomplete = players
-    .map(p => {
-      const missing = [];
-      if (!p.grade) missing.push('Grade');
-      if (!p.birthdate) missing.push('Date of Birth');
-      if (!p.caretaker1Email) missing.push('Caretaker 1 Email');
-      return missing.length ? [p.playerId, p.fullName, missing.join(', ')] : null;
-    })
-    .filter(Boolean);
+    .filter(p => !p.profileComplete)
+    .map(p => [p.playerId, p.fullName, p.seededAt ? 'Seeded Signup' : 'family-created']);
+
+  // 6. Seeded Signups the family has not finished: the outreach follow-up list.
+  const seededIncomplete = players
+    .filter(p => p.seededAt && !p.profileComplete)
+    .map(p => [p.playerId, p.fullName, p.seededAt]);
 
   return {
     sections: [
       { title: 'Signups with no SPS Student ID (Final Forms Join pending)', headers: ['PlayerID', 'Full Name', 'Signup details'], rows: noSpsId },
-      { title: 'Final Forms students with no signup', headers: ['SPS Student ID', 'Full Name (Final Forms)', 'Grade'], rows: noSignup },
+      { title: 'Final Forms students not yet seeded or joined', headers: ['SPS Student ID', 'Full Name (Final Forms)', 'Grade'], rows: noSignup },
       { title: 'Signups whose SPS Student ID is not in Final Forms', headers: ['PlayerID', 'Full Name', 'SPS Student ID'], rows: notInFinalForms },
       { title: 'Suspected duplicate signups', headers: ['PlayerID', 'Full Name', 'Why'], rows: duplicateRows },
-      { title: 'Signups not Profile Complete', headers: ['PlayerID', 'Full Name', 'Missing'], rows: incomplete }
+      { title: 'Signups not Profile Complete', headers: ['PlayerID', 'Full Name', 'Origin'], rows: incomplete },
+      { title: 'Seeded Signups not Profile Complete', headers: ['PlayerID', 'Full Name', 'Seeded At'], rows: seededIncomplete }
     ]
   };
 }
@@ -180,7 +181,7 @@ function writeAnalyzeSignupsSheet(ss, result) {
   const stamp = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd HH:mm');
   out.push([`Analyze Signups, generated ${stamp}`, '', '']);
   bold.push(out.length);
-  out.push(['Reads Signups and Final Forms directly. Fix a wrong value in its Source; the portal\'s Final Forms Backfill does the joining.', '', '']);
+  out.push(['Reads Signups and Final Forms directly. Fix a wrong value in its Source; the portal\'s Seed Signups from Final Forms does the joining and seeding.', '', '']);
 
   result.sections.forEach((section, index) => {
     out.push(['', '', '']);
