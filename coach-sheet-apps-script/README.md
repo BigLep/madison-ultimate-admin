@@ -61,7 +61,6 @@ To bind this script to a **new** spreadsheet, the usual path is duplicating the 
 4. In this repo, update `coach-sheet-apps-script/.clasp.json`: set `"scriptId"` to that Script ID (leave `rootDir` and `filePushOrder` as-is).
 5. **Update per-season values in `Code.gs`** before pushing:
    - `CONFIG.finalForms.folderId` — must point at **this season's** FinalForms exports Drive folder, and must match the `finalforms-export` GitHub Action's `DRIVE_FOLDER_ID` repo variable (`gh variable list -R BigLep/madison-ultimate-admin`). If these two drift apart, "Update Final Forms" silently imports the wrong season's data with no error.
-   - `CONFIG.mailingList.folderId` — same idea, for the mailing list source (see note below; this is being migrated off Google Groups/CSV to Buttondown).
    - `CONFIG.gameRosterPrep.hasTeam` — `true` if this season uses teams (e.g. A/B squads) and the roster has a Team column; `false` to omit it from game roster prep sheets.
    - `CONFIG.gameRosterPrep.hasActivationStatus` — `true` if Game Availability has an Activation Status column per date (Active/Inactive/TBD) and you want it on the coach game roster prep sheet (sorted first); `false` to omit it.
 6. **Increment `SCRIPT_VERSION`**, then from `coach-sheet-apps-script/` run:
@@ -100,8 +99,7 @@ The script expects these sheets to exist (created manually or via the menu):
 | `📋 Roster` | Main roster with player data and formulas |
 | `Final Forms` | Imported CSV data from SPS Final Forms |
 | `Additional Info` | Imported questionnaire responses (via IMPORTRANGE) |
-| `Newsletter Subscribers` | Imported Buttondown subscriber list (email + status) |
-| `Mailing List` | Legacy: imported CSV of Google Groups membership. Google Groups was retired in spring 2026; kept only because `findMissingEmails`, `findPendingParents`, and some roster formula columns still read it. |
+| `Newsletter Subscribers` | Imported Buttondown subscriber list (email + status); the mailing-list system of record. Google Groups was retired in spring 2026. |
 | `Practice Availability` | Player availability for practices |
 | `Game Availability` | Player availability for games |
 
@@ -131,7 +129,7 @@ The `source` row (row 3) controls how columns are handled:
 |--------|----------|
 | `Final Forms` | Populated by XLOOKUP formulas from Final Forms sheet |
 | `Additional Info` | Populated by INDEX/MATCH from questionnaire data |
-| `Mailing List` | Populated by VLOOKUP from mailing list |
+| `Newsletter Subscribers Buttondown status` | Populated by VLOOKUP from the Newsletter Subscribers sheet |
 | `Manual` | User-entered data, preserved during roster regeneration |
 | `Formula` | Custom formulas, preserved during roster regeneration |
 | (empty) | Preserved during roster regeneration |
@@ -152,12 +150,13 @@ The `source` row (row 3) controls how columns are handled:
 - **Import**: Auto-updates via IMPORTRANGE
 - **Join Key**: Full Name (must match roster's "Full Name" column exactly)
 
-### Mailing List (Google Groups)
+### Newsletter Subscribers (Buttondown)
 
-- **Source**: CSV export from Google Groups
-- **Location**: Google Drive folder (configured in `CONFIG.mailingList.folderId`)
-- **Import**: Menu → "Update Mailing List" (auto-discovers most recent CSV)
-- **Lookup**: Email address → membership status ("member", "invited", "not a member")
+- **Source**: Buttondown Subscribers API
+- **Access**: `BUTTONDOWN_API_KEY` script property (see [Script Properties](#script-properties-secrets))
+- **Import**: Menu → "Update Newsletter Subscribers" (paginates through all subscribers)
+- **Lookup**: Email address → status (`"regular"` = subscribed, `"unactivated"` = pending confirmation, `"unsubscribed"`, or `"not a member"` if not a subscriber at all)
+- Google Groups was retired as the mailing-list system of record in spring 2026; there is no CSV import anymore.
 
 ## Menu Functions
 
@@ -167,12 +166,11 @@ The `source` row (row 3) controls how columns are handled:
 ### Roster Management
 - **Generate Fresh Roster** - Rebuild all formulas (preserves Manual/Formula columns)
 - **Clear Roster Data** - Clear data rows, keep metadata and Manual/Formula columns
-- **Refresh All Data** - Update Final Forms and Mailing List imports
+- **Refresh All Data** - Update Final Forms and Newsletter Subscribers imports
 
 ### Data Import
 - **Update Final Forms** - Import latest Final Forms CSV
 - **Update Newsletter Subscribers** - Import the full Buttondown subscriber list (email + status) into the Newsletter Subscribers sheet. Requires the `BUTTONDOWN_API_KEY` script property (see [Script Properties](#script-properties-secrets)).
-- **Update Mailing List (legacy)** - Import latest Google Groups CSV export. Google Groups was retired as the mailing-list system of record in spring 2026; this is kept only because `findMissingEmails`, `findPendingParents`, and some roster formula columns still read its sheet. Prefer Update Newsletter Subscribers for current mailing-list status.
 
 ### Sheet Builders
 - **Build Practice Roster** - Create roster with practice availability columns
@@ -183,8 +181,8 @@ The `source` row (row 3) controls how columns are handled:
 
 ### Analysis Tools
 - **Show Statistics** - Display roster completion stats
-- **Find Emails Not on Mailing List** - Identify missing mailing list signups
-- **Parents Not Members of Mailing List** - Find parents who haven't joined
+- **Find Emails Not on Mailing List** - Identify roster emails that aren't Buttondown newsletter subscribers
+- **Parents Not Members of Mailing List** - Find parents whose Buttondown subscriber status isn't "regular" (haven't joined, haven't confirmed, or unsubscribed)
 - **Analyze Additional Info Responses** - Check questionnaire matching
 - **Full Name Diff** - Compare names across data sources
 
@@ -274,6 +272,8 @@ The "Full Name" column is a manually-maintained join key for Additional Info loo
 | File | Purpose |
 |------|---------|
 | `Code.gs` | Main entry point, menu, core roster functions |
+| `Diagnostics.gs` | Run Diagnostics setup checks |
+| `NewsletterSubscribers.gs` | Update Newsletter Subscribers (Buttondown import) |
 | `Availability.gs` | Practice/game availability sheet builders |
 | `ManagedConditionalFormatting.gs` | Shared whole-sheet CF for availability/activation values (availability tabs + roster prep) |
 | `BuildPracticeRoster.gs` | Practice roster generation |
@@ -296,8 +296,8 @@ The "Full Name" column is a manually-maintained join key for Additional Info loo
 The script requires specific column headers. Check that the required column exists in row 1 of the roster sheet.
 
 ### Formulas showing errors
-- Ensure Final Forms and Mailing List sheets have data
-- Run "Update Final Forms" and "Update Mailing List" to refresh imports
+- Ensure Final Forms and Newsletter Subscribers sheets have data
+- Run "Update Final Forms" and "Update Newsletter Subscribers" to refresh imports
 - Check that Student ID column has values (populated during "Generate Fresh Roster")
 
 ### Additional Info not matching

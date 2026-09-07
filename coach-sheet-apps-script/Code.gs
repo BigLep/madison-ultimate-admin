@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.4';
+const SCRIPT_VERSION = '3.5';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -35,14 +35,8 @@ const CONFIG = {
     sheetName: 'Additional Info',
     rangeToImport: 'Form Responses 1!A:Z'
   },
-  // Legacy: Google Groups CSV export. Google Groups was retired as the mailing
-  // list system of record in spring 2026 (see newsletterSubscribers/buttondown
-  // below); this remains only because findMissingEmails, findPendingParents, and
-  // the roster's "MailingList Email address" formula columns still read it.
-  mailingList: {
-    folderId: '1pAeQMEqiA9QdK9G5yRXsqgbNVzEU7R1E',
-    sheetName: 'Mailing List'
-  },
+  // Google Groups was retired as the mailing-list system of record in spring 2026.
+  // Buttondown (newsletterSubscribers/buttondown below) is the real source now.
   newsletterSubscribers: {
     sheetName: 'Newsletter Subscribers'
   },
@@ -96,9 +90,6 @@ const CONFIG = {
     areAllFormsParentSigned: 'Are All Forms Parent Signed',
     areAllFormsStudentSigned: 'Are All Forms Student Signed',
     physicalCleared: 'Physical Cleared',
-    parent1EmailOnMailingList: 'Parent 1 Email On Mailing List?',
-    parent2EmailOnMailingList: 'Parent 2 Email On Mailing List?',
-    studentPersonalEmailOnMailingList: 'Student Personal Email On Mailing List?',
     includeInGeneratedRosters: 'Include In Generated Rosters'
   },
 
@@ -164,7 +155,7 @@ function generateRoster() {
     message += '\n\n⚠️ Warning: Could not access Final Forms to populate Student IDs';
   }
   
-  message += '\n\nNext Steps:\n1. Run "Update Mailing List" to populate email status columns\n2. Formulas will automatically pull data as students are added\n\nNote: Columns are matched by header name, so you can safely reorder columns and regenerate.';
+  message += '\n\nNext Steps:\n1. Run "Update Newsletter Subscribers" to populate email status columns\n2. Formulas will automatically pull data as students are added\n\nNote: Columns are matched by header name, so you can safely reorder columns and regenerate.';
   
   SpreadsheetApp.getUi().alert('Roster Generated!', message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
@@ -331,9 +322,9 @@ function buildRosterSheet(spreadsheet) {
     {
       name: 'Student Personal Email On Mailing List?',
       type: 'Enum',
-      source: 'MailingList Email address',
-      note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
-      formula: `=IFERROR(VLOOKUP(STUDENT_PERSONAL_EMAIL_COLUMN,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
+      source: 'Newsletter Subscribers Buttondown status',
+      note: 'Returns the Buttondown subscriber status ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), or "not a member" if the email is not a subscriber at all',
+      formula: `=IFERROR(VLOOKUP(STUDENT_PERSONAL_EMAIL_COLUMN,'Newsletter Subscribers'!$A$2:$B,2,FALSE),"not a member")`
     },
     {
       name: 'Are All Forms Parent Signed',
@@ -401,9 +392,9 @@ function buildRosterSheet(spreadsheet) {
     {
       name: 'Parent 1 Email On Mailing List?',
       type: 'Enum',
-      source: 'MailingList Email address',
-      note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
-      formula: `=IFERROR(VLOOKUP(PARENT1_EMAIL_COLUMN,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
+      source: 'Newsletter Subscribers Buttondown status',
+      note: 'Returns the Buttondown subscriber status ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), or "not a member" if the email is not a subscriber at all',
+      formula: `=IFERROR(VLOOKUP(PARENT1_EMAIL_COLUMN,'Newsletter Subscribers'!$A$2:$B,2,FALSE),"not a member")`
     },
     {
       name: 'Parent 2 First Name',
@@ -429,9 +420,9 @@ function buildRosterSheet(spreadsheet) {
     {
       name: 'Parent 2 Email On Mailing List?',
       type: 'Enum',
-      source: 'MailingList Email address',
-      note: 'Returns "not a member", "invited", "member", etc. based on Group status column',
-      formula: `=IFERROR(VLOOKUP(PARENT2_EMAIL_COLUMN,'Mailing List'!$A$3:$C,3,FALSE),"not a member")`
+      source: 'Newsletter Subscribers Buttondown status',
+      note: 'Returns the Buttondown subscriber status ("regular" = subscribed, "unactivated" = pending confirmation, "unsubscribed"), or "not a member" if the email is not a subscriber at all',
+      formula: `=IFERROR(VLOOKUP(PARENT2_EMAIL_COLUMN,'Newsletter Subscribers'!$A$2:$B,2,FALSE),"not a member")`
     },
     {
       name: 'Player Pronouns (select all that apply)',
@@ -687,7 +678,6 @@ function createCustomMenu() {
     .addSeparator()
     .addItem('🔄 Refresh All Data', 'refreshAllData')
     .addItem('📊 Update Final Forms', 'updateFinalForms')
-    .addItem('📧 Update Mailing List (legacy)', 'updateMailingList')
     .addItem('📬 Update Newsletter Subscribers', 'updateNewsletterSubscribers')
     .addSeparator()
     .addItem('🏗️ Build Custom Sheet', 'buildCustomSheet')
@@ -718,10 +708,10 @@ function createCustomMenu() {
  */
 function refreshAllData() {
   updateFinalForms();
-  updateMailingList();
+  updateNewsletterSubscribers();
   // Additional Info updates automatically via IMPORTRANGE
   SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert('Data Refreshed', 'Final Forms and Mailing List data have been updated.', SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert('Data Refreshed', 'Final Forms and Newsletter Subscribers data have been updated.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 /**
@@ -1058,58 +1048,6 @@ function updateFinalForms() {
 }
 
 /**
- * Update Mailing List data
- */
-function updateMailingList() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.mailingList.sheetName);
-  
-  if (!sheet) {
-    SpreadsheetApp.getUi().alert('Error', 'Mailing List sheet not found.', SpreadsheetApp.getUi().ButtonSet.OK);
-    return;
-  }
-  
-  try {
-    // Get existing data for comparison
-    const lastRow = sheet.getLastRow();
-    const oldData = lastRow > 0 ? sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues() : null;
-    
-    // Get the most recent CSV file from the mailing list folder
-    const mostRecentFile = findMostRecentCsvFile(CONFIG.mailingList.folderId);
-    
-    if (!mostRecentFile) {
-      SpreadsheetApp.getUi().alert('Error', 'No CSV files found in the mailing list folder.', SpreadsheetApp.getUi().ButtonSet.OK);
-      return;
-    }
-    
-    console.log(`Using most recent mailing list file: ${mostRecentFile.getName()} (${mostRecentFile.getLastUpdated()})`);
-    
-    const csvData = mostRecentFile.getBlob().getDataAsString();
-    const csvArray = Utilities.parseCsv(csvData);
-    
-    // Report differences
-    const diff = reportDataDifferences(oldData, csvArray, 'Mailing List');
-    
-    sheet.clear();
-    if (csvArray.length > 0) {
-      sheet.getRange(1, 1, csvArray.length, csvArray[0].length).setValues(csvArray);
-    }
-    
-    const fileName = mostRecentFile.getName();
-    const emailCount = csvArray.length - 1; // Subtract 1 for header row
-    
-    console.log(`✅ Updated Mailing List from: ${fileName}`);
-    
-    SpreadsheetApp.getUi().alert('Mailing List Updated!', 
-      `Successfully imported ${emailCount} emails from:\n${fileName}\n\nChange: ${diff.difference >= 0 ? '+' : ''}${diff.difference} emails`, 
-      SpreadsheetApp.getUi().ButtonSet.OK);
-  } catch (e) {
-    console.error('Error updating Mailing List:', e);
-    SpreadsheetApp.getUi().alert('Error', `Could not update Mailing List data:\n${e.toString()}\n\nCheck the folder ID in CONFIG.mailingList.folderId`, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
-/**
  * Show statistics about the roster
  */
 function showStatistics() {
@@ -1183,14 +1121,16 @@ function showStatistics() {
       statsData.additionalInfo++;
     }
     
-    // Check mailing list status
+    // Check newsletter subscription status ("regular" = actively subscribed in Buttondown).
+    // Note: this previously compared to the boolean `true`, which the mailing-list
+    // column never returns (it's a status string), so these counts were always 0.
     if (parent1MailingCol) {
       const parent1Status = rosterSheet.getRange(i, parent1MailingCol).getValue();
-      if (parent1Status === true) statsData.parent1OnList++;
+      if (parent1Status === 'regular') statsData.parent1OnList++;
     }
     if (parent2MailingCol) {
       const parent2Status = rosterSheet.getRange(i, parent2MailingCol).getValue();
-      if (parent2Status === true) statsData.parent2OnList++;
+      if (parent2Status === 'regular') statsData.parent2OnList++;
     }
     
     // Count grade distribution
@@ -1226,29 +1166,29 @@ function showStatistics() {
 }
 
 /**
- * Find all email addresses in roster that are not on the mailing list
+ * Find all email addresses in roster that are not Buttondown newsletter subscribers
  * Excludes Seattle School email addresses
  */
 function findMissingEmails() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
-  const mailingSheet = ss.getSheetByName(CONFIG.mailingList.sheetName);
-  
+  const mailingSheet = ss.getSheetByName(CONFIG.newsletterSubscribers.sheetName);
+
   if (!rosterSheet || !mailingSheet) {
-    SpreadsheetApp.getUi().alert('Error: Could not find Roster or Mailing List sheets');
+    SpreadsheetApp.getUi().alert('Error: Could not find Roster or Newsletter Subscribers sheets');
     return;
   }
-  
-  // Get all email addresses from mailing list (column A, starting from row 3)
-  const mailingListData = mailingSheet.getRange('A3:A').getValues();
+
+  // Get all email addresses from Newsletter Subscribers (column A, header in row 1, data from row 2)
+  const mailingListData = mailingSheet.getRange('A2:A').getValues();
   const mailingListEmails = new Set(
     mailingListData
       .flat()
       .filter(email => email && email.toString().trim())
       .map(email => email.toString().toLowerCase().trim())
   );
-  
-  console.log(`Found ${mailingListEmails.size} emails in mailing list`);
+
+  console.log(`Found ${mailingListEmails.size} emails in Newsletter Subscribers`);
   
   // Find email columns in roster (looking for columns with "Email" in header)
   const headers = rosterSheet.getRange('1:1').getValues()[0];
@@ -1412,8 +1352,8 @@ function showMissingEmailsDialog(missingEmails, emailList) {
 }
 
 /**
- * Find all parents/caretakers who are not members of the mailing list
- * Shows those with any status other than "member" (includes "invited" and "not a member")
+ * Find all parents/caretakers who are not active Buttondown newsletter subscribers
+ * Shows those with any status other than "regular" (includes "unactivated", "unsubscribed", and "not a member")
  */
 function findPendingParents() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1467,7 +1407,7 @@ function findPendingParents() {
       const firstName = rosterSheet.getRange(row, parent1FirstCol).getValue();
       const lastName = rosterSheet.getRange(row, parent1LastCol).getValue();
       
-      if (status && status !== 'member' && email && firstName && !seenEmails.has(email.toLowerCase())) {
+      if (status && status !== 'regular' && email && firstName && !seenEmails.has(email.toLowerCase())) {
         seenEmails.add(email.toLowerCase());
         pendingParents.push({
           firstName: firstName.toString().trim(),
@@ -1487,7 +1427,7 @@ function findPendingParents() {
       const firstName = rosterSheet.getRange(row, parent2FirstCol).getValue();
       const lastName = rosterSheet.getRange(row, parent2LastCol).getValue();
       
-      if (status && status !== 'member' && email && firstName && !seenEmails.has(email.toLowerCase())) {
+      if (status && status !== 'regular' && email && firstName && !seenEmails.has(email.toLowerCase())) {
         seenEmails.add(email.toLowerCase());
         pendingParents.push({
           firstName: firstName.toString().trim(),

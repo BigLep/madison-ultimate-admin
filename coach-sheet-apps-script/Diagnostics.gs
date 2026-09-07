@@ -72,11 +72,6 @@ function runDiagnostics() {
   // Only written by "Convert to Actual Attendance"; that function already warns
   // gracefully if missing, so treat it as a warning here rather than a failure.
   checkSheet('Attendance (used by Convert to Actual Attendance)', CONFIG.attendance.sheetName, false);
-  // Legacy Google Groups CSV import (Code.gs CONFIG.mailingList comment has context).
-  // Not required: Buttondown/Newsletter Subscribers is the real mailing-list source
-  // now, but findMissingEmails, findPendingParents, and some roster formula columns
-  // still read this sheet, so flag it as a warning rather than dropping the check.
-  checkSheet('Mailing List import target (legacy, still read by findMissingEmails/findPendingParents/roster formulas)', CONFIG.mailingList.sheetName, false);
 
   // Drive folders the "Update ..." importers read the newest CSV from.
   checkFolder('Final Forms exports', CONFIG.finalForms.folderId);
