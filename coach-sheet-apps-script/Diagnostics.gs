@@ -27,15 +27,6 @@ function runDiagnostics() {
     }
   }
 
-  function checkExternalSpreadsheet(label, spreadsheetId) {
-    try {
-      const extSs = SpreadsheetApp.openById(spreadsheetId);
-      results.push({ pass: true, required: true, line: `✅ ${label} spreadsheet accessible: "${extSs.getName()}"` });
-    } catch (e) {
-      results.push({ pass: false, required: true, line: `❌ ${label} spreadsheet NOT accessible (${spreadsheetId}): ${e.message}` });
-    }
-  }
-
   function checkButtondownReadAccess() {
     const apiKey = PropertiesService.getScriptProperties().getProperty(CONFIG.buttondown.apiKeyProperty);
     if (!apiKey) {
@@ -75,9 +66,6 @@ function runDiagnostics() {
 
   // Drive folders the "Update ..." importers read the newest CSV from.
   checkFolder('Final Forms exports', CONFIG.finalForms.folderId);
-
-  // External spreadsheets this script pulls data from.
-  checkExternalSpreadsheet('Additional Info questionnaire', CONFIG.additionalInfo.spreadsheetId);
 
   // Script properties / external APIs (secrets set via Project Settings > Script
   // Properties, not committed to git). Add a check here whenever a new integration

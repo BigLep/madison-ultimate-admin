@@ -1,6 +1,6 @@
 /**
  * Build Email List Module
- * Creates email lists from Full Names by looking up parent/caregiver emails
+ * Creates email lists from Full Names by looking up Caretaker emails in the Roster
  */
 
 /**
@@ -174,7 +174,7 @@ function createEmailListHtml() {
 John Smith
 Jane Doe
 Bob Johnson"></textarea>
-          <div class="note">Enter student full names exactly as they appear in the roster</div>
+          <div class="note">Enter Player Full Names exactly as they appear in the Roster</div>
         </div>
 
         <div class="buttons">
@@ -199,7 +199,7 @@ Bob Johnson"></textarea>
               Building Email List...
             </div>
             <div style="font-size: 14px; color: #666; margin-top: 8px;">
-              Looking up parent/caregiver emails
+              Looking up Caretaker emails
             </div>
           </div>
         </div>
@@ -300,20 +300,20 @@ function processEmailList(fullNamesText) {
 
     // Find required column indices
     const fullNameColIndex = headerRow.indexOf(CONFIG.columns.fullName);
-    const parent1EmailIndex = headerRow.indexOf(CONFIG.columns.parent1Email);
-    const parent2EmailIndex = headerRow.indexOf(CONFIG.columns.parent2Email);
+    const caretaker1EmailIndex = headerRow.indexOf(CONFIG.columns.caretaker1Email);
+    const caretaker2EmailIndex = headerRow.indexOf(CONFIG.columns.caretaker2Email);
 
     if (fullNameColIndex === -1) {
       throw new Error(`${CONFIG.columns.fullName} column not found in roster`);
     }
-    if (parent1EmailIndex === -1) {
-      throw new Error(`${CONFIG.columns.parent1Email} column not found in roster`);
+    if (caretaker1EmailIndex === -1) {
+      throw new Error(`${CONFIG.columns.caretaker1Email} column not found in roster`);
     }
-    if (parent2EmailIndex === -1) {
-      throw new Error(`${CONFIG.columns.parent2Email} column not found in roster`);
+    if (caretaker2EmailIndex === -1) {
+      throw new Error(`${CONFIG.columns.caretaker2Email} column not found in roster`);
     }
 
-    console.log(`📍 Found columns - Full Name: ${fullNameColIndex}, Parent 1 Email: ${parent1EmailIndex}, Parent 2 Email: ${parent2EmailIndex}`);
+    console.log(`📍 Found columns - Full Name: ${fullNameColIndex}, Caretaker 1 Email: ${caretaker1EmailIndex}, Caretaker 2 Email: ${caretaker2EmailIndex}`);
 
     // Collect emails for each student
     const emailSet = new Set();
@@ -332,16 +332,16 @@ function processEmailList(fullNamesText) {
           found = true;
           foundStudents.push(targetName);
 
-          // Get parent emails
-          const parent1Email = row[parent1EmailIndex];
-          const parent2Email = row[parent2EmailIndex];
+          // Get Caretaker emails
+          const caretaker1Email = row[caretaker1EmailIndex];
+          const caretaker2Email = row[caretaker2EmailIndex];
 
           // Add valid emails to set (automatically deduplicates)
-          if (parent1Email && parent1Email.toString().trim() && isValidEmail(parent1Email.toString().trim())) {
-            emailSet.add(parent1Email.toString().trim().toLowerCase());
+          if (caretaker1Email && caretaker1Email.toString().trim() && isValidEmail(caretaker1Email.toString().trim())) {
+            emailSet.add(caretaker1Email.toString().trim().toLowerCase());
           }
-          if (parent2Email && parent2Email.toString().trim() && isValidEmail(parent2Email.toString().trim())) {
-            emailSet.add(parent2Email.toString().trim().toLowerCase());
+          if (caretaker2Email && caretaker2Email.toString().trim() && isValidEmail(caretaker2Email.toString().trim())) {
+            emailSet.add(caretaker2Email.toString().trim().toLowerCase());
           }
 
           break; // Found the student, move to next one
