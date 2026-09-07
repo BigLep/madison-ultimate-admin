@@ -82,6 +82,11 @@ Everything below was run against the live "2026 Fall Coach Sheets" workbook on 2
 - **WP4 grep**: `grep -rn "Additional Info\|additionalInfo\|FIRST_DATA_ROW\b\|parent1Email\|StudentID'" *.gs` returns nothing apart from `ROSTER_FIRST_DATA_ROW` and the Final Forms header literal.
 - **Node harness**: 18 formula assertions and 7 Analyze Signups assertions pass against the committed code; every `.gs` file passes `node --check`.
 
+### Follow-ups completed after Steven's go-ahead (2026-09-07)
+
+- Deleted photo-mapper/ and its root README mention in its own commit. The gitignored service account key file under photo-mapper/backend/ was left on disk for Steven to remove or revoke.
+- Purged the five named test rows from the portal's Signups sheet and their orphaned Extra Player Info rows; Signups, Roster, and Extra Player Info each hold 75 rows and every Extra Player Info Full Name resolves. Three rows that look like tests but are not named as such (Bob Larson g94df, A E qk4mx, Big Loep tt3t7) were left for Steven.
+
 ### Not verified
 
 - Build Practice Roster and Build Game Roster Prep end-to-end (D14).
