@@ -7,11 +7,14 @@ Google Apps Script tools for managing the Madison Middle School Ultimate Frisbee
 ## Purpose
 
 This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") that automates:
-- Importing and syncing player data from Final Forms registration
-- Tracking mailing list membership status
+- Generating the 📋 Roster as a formula-only view of every Player in Signups, joined to Final Forms, Extra Player Info, and Newsletter Subscribers ([ADR 0001](./docs/adr/0001-roster-keyed-by-signups-playerid.md))
+- Importing Final Forms registration data and the Buttondown Newsletter subscriber list
+- Keeping the coach-authored Extra Player Info tab in sync with Signups
 - Building practice and game rosters with availability
-- Generating email lists for parent communication
-- Analyzing data quality and missing information
+- Generating email lists for Caretaker communication
+- Reporting on Signups whose Sources disagree or are incomplete (Analyze Signups)
+
+Vocabulary (Player, PlayerID, Source, Signups, Extra Player Info, Profile Complete, and so on) is defined in [CONTEXT.md](./CONTEXT.md); code, headers, and menu text use those terms.
 
 ## Prerequisites
 
@@ -35,7 +38,7 @@ This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") th
 
 ## Deployment
 
-1. **Increment `SCRIPT_VERSION`** in `Code.gs` **before every push**, not after — this is a standing rule, not optional:
+1. **Increment `SCRIPT_VERSION`** in `Code.gs` **before every push**, not after; this is a standing rule, not optional:
    ```javascript
    const SCRIPT_VERSION = '3.4';  // Increment the x in 3.x for each release
    ```
@@ -56,21 +59,21 @@ To bind this script to a **new** spreadsheet, the usual path is duplicating the 
 1. Open the new season's spreadsheet in Drive.
 2. **Extensions → Apps Script**. This opens the script editor for the project already bound to that sheet (via duplication) or creates a new one (via a blank sheet).
 3. In the script editor, open **Project settings** (gear icon) and copy the **Script ID** from the URL (`https://script.google.com/u/0/home/projects/<scriptId>/edit`).
-   - **There is no API or CLI shortcut for this step.** `gog`'s Apps Script commands (and the underlying Apps Script/Drive APIs) all require a Script ID you already have — none of them can look up "the script bound to spreadsheet X." The Apps Script editor UI is the only way to discover a newly-duplicated bound script's ID.
+   - **There is no API or CLI shortcut for this step.** `gog`'s Apps Script commands (and the underlying Apps Script/Drive APIs) all require a Script ID you already have; none of them can look up "the script bound to spreadsheet X." The Apps Script editor UI is the only way to discover a newly-duplicated bound script's ID.
    - The duplicated project's internal title stays whatever the source project was called (e.g. still "2026 Spring Coach Sheet Admin" after duplicating for fall); consider renaming it in Project settings for clarity, though this is cosmetic and doesn't affect deployment.
 4. In this repo, update `coach-sheet-apps-script/.clasp.json`: set `"scriptId"` to that Script ID (leave `rootDir` and `filePushOrder` as-is).
 5. **Update per-season values in `Code.gs`** before pushing:
-   - `CONFIG.finalForms.folderId` — must point at **this season's** FinalForms exports Drive folder, and must match the `finalforms-export` GitHub Action's `DRIVE_FOLDER_ID` repo variable (`gh variable list -R BigLep/madison-ultimate-admin`). If these two drift apart, "Update Final Forms" silently imports the wrong season's data with no error.
-   - `CONFIG.gameRosterPrep.hasTeam` — `true` if this season uses teams (e.g. A/B squads) and the roster has a Team column; `false` to omit it from game roster prep sheets.
-   - `CONFIG.gameRosterPrep.hasActivationStatus` — `true` if Game Availability has an Activation Status column per date (Active/Inactive/TBD) and you want it on the coach game roster prep sheet (sorted first); `false` to omit it.
+   - `CONFIG.finalForms.folderId`: must point at **this season's** FinalForms exports Drive folder, and must match the `finalforms-export` GitHub Action's `DRIVE_FOLDER_ID` repo variable (`gh variable list -R BigLep/madison-ultimate-admin`). If these two drift apart, "Update Final Forms" silently imports the wrong season's data with no error.
+   - `CONFIG.gameRosterPrep.hasTeam`: `true` if this season uses teams (e.g. A/B squads) and the roster has a Team column; `false` to omit it from game roster prep sheets.
+   - `CONFIG.gameRosterPrep.hasActivationStatus`: `true` if Game Availability has an Activation Status column per date (Active/Inactive/TBD) and you want it on the coach game roster prep sheet (sorted first); `false` to omit it.
 6. **Increment `SCRIPT_VERSION`**, then from `coach-sheet-apps-script/` run:
    ```bash
    clasp push
    ```
 7. Back in the spreadsheet, refresh the page; the 🥏 Madison Ultimate menu should appear.
-8. **Confirm required sheets exist.** Duplicating a spreadsheet copies every tab, including data sheets the script itself writes into (e.g. **Final Forms**) that look like leftover imported data and are easy to delete by mistake during season cleanup — don't delete a sheet during setup without first grepping `Code.gs` for its name to check whether the script depends on it.
-9. **Set any required Script Properties** (see below) — these are per-project, not copied by duplicating the spreadsheet, so they must be re-entered on every new bound script.
-10. **Run 🩺 Run Diagnostics** from the menu as the final step. It checks that required sheets exist, configured Drive folders/spreadsheets are reachable, and required Script Properties are set — this is the "confirm everything is configured correctly" step for a new season, and the fast way to catch the kind of drift described above before a coach hits it mid-season.
+8. **Confirm required sheets exist.** Duplicating a spreadsheet copies every tab, including data sheets the script itself writes into (e.g. **Final Forms**) that look like leftover imported data and are easy to delete by mistake during season cleanup; don't delete a sheet during setup without first grepping `Code.gs` for its name to check whether the script depends on it.
+9. **Set any required Script Properties** (see below); these are per-project, not copied by duplicating the spreadsheet, so they must be re-entered on every new bound script.
+10. **Run 🩺 Run Diagnostics** from the menu as the final step. It checks that required sheets exist, configured Drive folders/spreadsheets are reachable, and required Script Properties are set; this is the "confirm everything is configured correctly" step for a new season, and the fast way to catch the kind of drift described above before a coach hits it mid-season.
 
 ## Script Properties (secrets)
 
@@ -80,7 +83,7 @@ Some integrations need credentials that must never be committed to this repo. Th
 2. **Project Settings** (gear icon) → **Script Properties** → **Add script property**.
 3. Enter the property name and value, then read it in code with `PropertiesService.getScriptProperties().getProperty('NAME')`.
 
-Script Properties are scoped to the Apps Script project (not the spreadsheet), so duplicating the spreadsheet for a new season does **not** carry them over — they must be re-added on the newly bound project each season. `🩺 Run Diagnostics` checks that required properties are set (and, for Buttondown, that the key actually works).
+Script Properties are scoped to the Apps Script project (not the spreadsheet), so duplicating the spreadsheet for a new season does **not** carry them over; they must be re-added on the newly bound project each season. `🩺 Run Diagnostics` checks that required properties are set (and, for Buttondown, that the key actually works).
 
 ### Required properties
 
@@ -96,66 +99,50 @@ The script expects these sheets to exist (created manually or via the menu):
 
 | Sheet Name | Purpose |
 |------------|---------|
-| `📋 Roster` | Main roster with player data and formulas |
+| `📋 Roster` | Formula-only view of every Player; rewritten by Generate Fresh Roster |
+| `2026 Fall Signups` | Read-only IMPORTRANGE mirror of the portal's Signups sheet (one row per Player, keyed by PlayerID). Its A1 holds the IMPORTRANGE; `CONFIG.signups.sheetName` names the tab, so rename both together each season. |
+| `Extra Player Info` | Coach-authored per-player facts (Team, Returning, Include In Generated Rosters), keyed by PlayerID. Created and extended by Sync Extra Player Info. |
 | `Final Forms` | Imported CSV data from SPS Final Forms |
-| `Additional Info` | Imported questionnaire responses (via IMPORTRANGE) |
 | `Newsletter Subscribers` | Imported Buttondown subscriber list (email + status); the mailing-list system of record. Google Groups was retired in spring 2026. |
 | `Practice Availability` | Player availability for practices |
 | `Game Availability` | Player availability for games |
 
-### Roster layout (configurable)
+### Roster layout
 
-In `Code.gs`, **ROSTER_HEADER_ROW** (default 1) is the row that contains column headers (Full Name, etc.) in the 📋 Roster sheet. **ROSTER_FIRST_DATA_ROW** is the next row (header + 1) and is used when reading the roster for Build Practice Roster, Game Roster, Full Name Diff, and Additional Info analysis. Change these if your roster uses a different layout (e.g. set ROSTER_HEADER_ROW to 5 and ROSTER_FIRST_DATA_ROW to 6 if you use 5 metadata rows).
+The 📋 Roster is one header row plus one array formula per column in row 2. Nothing is authored in it: every value traces to exactly one Source (Signups, Extra Player Info, Final Forms, Newsletter Subscribers) and a wrong value is fixed there. In `Code.gs`, `ROSTER_HEADER_ROW` is 1 and `ROSTER_FIRST_DATA_ROW` is 2; every reader (Build Practice Roster, Game Roster Prep, Full Name Diff, the reports) uses those two constants.
 
-### Roster Metadata Rows (1-5)
+Sort with filter views only. Data > Sort range or the basic filter's sort physically reorders cells and breaks the key formula in A2; Run Diagnostics checks that the key formula is intact.
 
-The roster sheet can use 5 metadata rows before player data:
-
-| Row | Purpose | Example |
-|-----|---------|---------|
-| 1 | Column headers | "First Name", "Grade", etc. |
-| 2 | Data type | "String", "Email", "Boolean" |
-| 3 | Data source | "Final Forms", "Manual", "Formula" |
-| 4 | Notes | Implementation details |
-| 5 | Repeat headers | For pivot table compatibility |
-
-**Row 6+** contains player data.
-
-### Column Source Types
-
-The `source` row (row 3) controls how columns are handled:
-
-| Source | Behavior |
-|--------|----------|
-| `Final Forms` | Populated by XLOOKUP formulas from Final Forms sheet |
-| `Additional Info` | Populated by INDEX/MATCH from questionnaire data |
-| `Newsletter Subscribers Buttondown status` | Populated by VLOOKUP from the Newsletter Subscribers sheet |
-| `Manual` | User-entered data, preserved during roster regeneration |
-| `Formula` | Custom formulas, preserved during roster regeneration |
-| (empty) | Preserved during roster regeneration |
+Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, source, note, formula). Adding or reordering a column means editing that list and running Generate Fresh Roster, which rewrites the header row, the header notes (hover a header to see its type, Source, and rule), and row 2. The plan that introduced this layout is in [docs/plans/2026-09-roster-rebuild.md](./docs/plans/2026-09-roster-rebuild.md).
 
 ## Data Sources
+
+### Signups (family portal)
+
+- **Source**: the portal's Signups sheet, mastered by the family portal (`../madison-ultimate`)
+- **Location**: the `2026 Fall Signups` tab, an IMPORTRANGE of that sheet (read-only here; refreshes on its own)
+- **Join Key**: PlayerID. The Roster's column A lists every PlayerID in Signups, sorted by Last Name then Preferred First Name, and every other column joins back by PlayerID.
+- **Headers referenced by name**: listed in `SIGNUPS_HEADERS` in `Code.gs`; the portal may reorder or add columns freely, and Run Diagnostics reports any referenced header that goes missing.
+
+### Extra Player Info (coach-authored)
+
+- **Source**: coaches, in the `Extra Player Info` tab
+- **Columns**: PlayerID, Full Name (formula), Team (dropdown seeded Blue/Gold; edit the list after tryouts), Returning (TRUE/FALSE dropdown), Include In Generated Rosters (TRUE/FALSE dropdown; blank means "use Profile Complete")
+- **Sync**: Menu → "Sync Extra Player Info" appends a row for every Signups PlayerID not already present; it never deletes or reorders rows.
 
 ### Final Forms (SPS Registration)
 
 - **Source**: CSV exports from SPS Final Forms system
 - **Location**: Google Drive folder (configured in `CONFIG.finalForms.folderId`)
 - **Import**: Menu → "Update Final Forms" (auto-discovers most recent CSV)
-- **Join Key**: Student ID (column A)
-
-### Additional Info Questionnaire
-
-- **Source**: Google Form responses
-- **Location**: Linked spreadsheet (configured in `CONFIG.additionalInfo.spreadsheetId`)
-- **Import**: Auto-updates via IMPORTRANGE
-- **Join Key**: Full Name (must match roster's "Full Name" column exactly)
+- **Join Key**: SPS Student ID (the Signups row's `SPS Student ID` against Final Forms column A, both coerced to text). Fixed export columns: StudentID A, Parent Signed P, Student Signed Q, Gender U, Grade W, Physical Clearance AB.
 
 ### Newsletter Subscribers (Buttondown)
 
 - **Source**: Buttondown Subscribers API
 - **Access**: `BUTTONDOWN_API_KEY` script property (see [Script Properties](#script-properties-secrets))
 - **Import**: Menu → "Update Newsletter Subscribers" (paginates through all subscribers)
-- **Lookup**: Email address → status (`"regular"` = subscribed, `"unactivated"` = pending confirmation, `"unsubscribed"`, or `"not a member"` if not a subscriber at all)
+- **Lookup**: Email address → status (`"regular"` = subscribed, `"unactivated"` = pending confirmation, `"unsubscribed"`, or `"not a member"` if not a subscriber at all); matched case-insensitively
 - Google Groups was retired as the mailing-list system of record in spring 2026; there is no CSV import anymore.
 
 ## Menu Functions
@@ -164,9 +151,9 @@ The `source` row (row 3) controls how columns are handled:
 - **Run Diagnostics** - Checks that required sheets exist, configured Drive folders/spreadsheets are reachable, and required Script Properties are set. Run this after deploying to a new season's spreadsheet, or any time something is misbehaving, before digging further.
 
 ### Roster Management
-- **Generate Fresh Roster** - Rebuild all formulas (preserves Manual/Formula columns)
-- **Clear Roster Data** - Clear data rows, keep metadata and Manual/Formula columns
-- **Refresh All Data** - Update Final Forms and Newsletter Subscribers imports
+- **Generate Fresh Roster** - Rewrite the 📋 Roster: header row, header notes, and the row 2 array formulas, all keyed by Signups PlayerID. Safe to run any time; nothing authored is lost because nothing is authored there.
+- **Sync Extra Player Info** - Create the Extra Player Info tab if missing, apply its dropdowns, and append a row for every Signups PlayerID not already present.
+- **Refresh All Data** - Update Final Forms and Newsletter Subscribers imports (Signups refreshes on its own through IMPORTRANGE)
 
 ### Data Import
 - **Update Final Forms** - Import latest Final Forms CSV
@@ -175,15 +162,15 @@ The `source` row (row 3) controls how columns are handled:
 ### Sheet Builders
 - **Build Practice Roster** - Create roster with practice availability columns
 - **Build Game Roster Prep Sheet** - Create game day roster (coach or parent view). If **Game Info** has multiple rows on the **same calendar date**, the prep sheet includes **all** of those games (see [Multiple events on one calendar day](#multiple-events-on-the-same-calendar-day-double-headers)).
-- **Build Email List** - Generate email lists for parent communication
+- **Build Email List** - Generate email lists (Caretaker 1 and 2 emails) for family communication
 - **Build Practice/Game Availability** - Create availability tracking sheets. For **multiple games on the same calendar day**, see **[Multiple events on one calendar day](#multiple-events-on-the-same-calendar-day-double-headers)** below. Normally each game date gets three columns (in order): *$Date* Availability, *$Date* Activation Status (dropdown: Active / Inactive / TBD with green/red/grey backgrounds), and *$Date* Note (free text). If there are multiple **Game Info** rows with the **same date**, the script adds a second (or third) set with **`(Game 2)`** / **`(Game 3)`** in the header so they match the player portal. Headers and cells use text wrapping.
 - **Build Custom Sheet** - Interactive builder for custom column selection
 
 ### Analysis Tools
-- **Show Statistics** - Display roster completion stats
-- **Find Emails Not on Mailing List** - Identify roster emails that aren't Buttondown newsletter subscribers
-- **Parents Not Members of Mailing List** - Find parents whose Buttondown subscriber status isn't "regular" (haven't joined, haven't confirmed, or unsubscribed)
-- **Analyze Additional Info Responses** - Check questionnaire matching
+- **Show Statistics** - Totals for Players, Profile Complete, Include In Generated Rosters, each Final Forms flag, Newsletter subscriptions, and the grade distribution
+- **Find Emails Not Subscribed to Newsletter** - Identify roster emails that aren't Buttondown Newsletter subscribers
+- **Caretakers Not Subscribed to Newsletter** - Find Caretakers whose Buttondown subscriber status isn't "regular" (haven't joined, haven't confirmed, or unsubscribed)
+- **Analyze Signups** - Write the "Analyze Signups" sheet: signups with no SPS Student ID, Final Forms students with no signup, signups whose SPS Student ID is not in Final Forms, suspected duplicate signups, and signups not Profile Complete. It only reports; the portal's Final Forms Backfill does the joining.
 - **Full Name Diff** - Compare names across data sources
 
 ### Utilities
@@ -218,7 +205,7 @@ You can schedule **several games on one calendar date** (same `M/D` in **Game In
 This section is also what people mean by **double-headers** (e.g. two league games Saturday, or pool play then finals the same day).
 
 **Game Info (📍Game Info)**  
-- Enter **one row per game**—not one row per calendar day. Reuse the same **Date** value for every game that day (e.g. two rows both `5/9`).
+- Enter **one row per game**, not one row per calendar day. Reuse the same **Date** value for every game that day (e.g. two rows both `5/9`).
 - Keep rows in **true game order** (earlier game first). The script and the portal assign “game 1” / “game 2” **in row order** for that date (same rule as the portal API).
 
 **Game Availability**  
@@ -230,17 +217,17 @@ After you add or change rows in Game Info, run **Build Game Availability**. For 
 | 2nd game | `5/9 Availability (Game 2)` | `5/9 Activation Status (Game 2)` | `5/9 Note (Game 2)` |
 | 3rd game | `5/9 Availability (Game 3)` | … | … |
 
-Do **not** use two identical headers like two columns both named `5/9 Availability`—the second game must use the **`(Game N)`** suffix so the portal can tell them apart.
+Do **not** use two identical headers like two columns both named `5/9 Availability`; the second game must use the **`(Game N)`** suffix so the portal can tell them apart.
 
 **Build Game Roster Prep**  
-The game picker lists **one option per Game Info row** (date plus label when present). Whichever row you pick, the prep sheet includes **every game on that calendar day** in order: for each game, *Activation Status* (if enabled in `CONFIG.gameRosterPrep`), *Availability*, and *Note*—for example two games on `5/16` produce `5/16 Activation Status`, `5/16 Availability`, `5/16 Note`, then `5/16 Activation Status (Game 2)`, `5/16 Availability (Game 2)`, `5/16 Note (Game 2)`.
+The game picker lists **one option per Game Info row** (date plus label when present). Whichever row you pick, the prep sheet includes **every game on that calendar day** in order: for each game, *Activation Status* (if enabled in `CONFIG.gameRosterPrep`), *Availability*, and *Note*; for example two games on `5/16` produce `5/16 Activation Status`, `5/16 Availability`, `5/16 Note`, then `5/16 Activation Status (Game 2)`, `5/16 Availability (Game 2)`, `5/16 Note (Game 2)`.
 
 **Practice roster “next game” columns**  
 When a practice roster includes columns for the next game after that practice, **find next game** uses the next Game Info row in order; if that day has two games, you get columns for the **first** game on that date (unless you change Game Info order intentionally).
 
-### Practice & Game Availability — dropdowns and cell colors
+### Practice & Game Availability: dropdowns and cell colors
 
-After **Build Practice Availability** or **Build Game Availability**, the script applies **data validation** in bulk (one shared rule type for all availability columns, and for games one shared rule for all activation columns—fewer duplicate rules than per-column). **Conditional formatting** fills cells by value: **one rule per distinct availability or activation value**, each rule’s range is the **entire sheet grid** (simple and reliable; only values that exactly match are colored). Rebuilding refreshes those managed rules so they do not stack.
+After **Build Practice Availability** or **Build Game Availability**, the script applies **data validation** in bulk (one shared rule type for all availability columns, and for games one shared rule for all activation columns, fewer duplicate rules than per-column). **Conditional formatting** fills cells by value: **one rule per distinct availability or activation value**, each rule’s range is the **entire sheet grid** (simple and reliable; only values that exactly match are colored). Rebuilding refreshes those managed rules so they do not stack.
 
 The same **managed** whole-sheet rules are applied to **Build Practice Roster Prep** and **Build Game Roster Prep** sheets when those tabs include practice date columns (`M/D`) and/or game-style `M/D Availability` / `M/D Activation Status` headers (see `ManagedConditionalFormatting.gs`).
 
@@ -255,17 +242,13 @@ Columns are discovered by header name at runtime, not by position. This means:
 - Formulas adapt to current column positions
 - New columns can be added anywhere
 
-### Student ID as Primary Key
+### PlayerID as the Roster key
 
-All Final Forms data uses XLOOKUP with Student ID:
-```javascript
-=IFERROR(XLOOKUP(StudentID,'Final Forms'!A:A,'Final Forms'!D:D),"")
-```
-This ensures formulas work correctly regardless of row sorting.
+The Roster's column A is a single formula listing every PlayerID in Signups; every other column is one array formula that joins by PlayerID (Signups, Extra Player Info), by SPS Student ID (Final Forms), or by email (Newsletter Subscribers), guarded by `IF($A2:$A="","",...)` so rows past the last Player stay blank. Signups column letters are resolved by header name when the Roster is generated. See [ADR 0001](./docs/adr/0001-roster-keyed-by-signups-playerid.md) for the reasoning and the options rejected.
 
-### Full Name as Additional Info Join Key
+### Full Name as the downstream key
 
-The "Full Name" column is a manually-maintained join key for Additional Info lookups. It must match the name format in the questionnaire responses exactly.
+Full Name (Preferred First Name followed by Last Name, derived in the Roster) is the human-readable key every Generated Roster, availability sheet, and email list uses to refer to a Player. Only the Roster itself is keyed by PlayerID.
 
 ## File Structure
 
@@ -273,6 +256,8 @@ The "Full Name" column is a manually-maintained join key for Additional Info loo
 |------|---------|
 | `Code.gs` | Main entry point, menu, core roster functions |
 | `Diagnostics.gs` | Run Diagnostics setup checks |
+| `ExtraPlayerInfo.gs` | Sync Extra Player Info |
+| `AnalyzeSignups.gs` | Analyze Signups report |
 | `NewsletterSubscribers.gs` | Update Newsletter Subscribers (Buttondown import) |
 | `Availability.gs` | Practice/game availability sheet builders |
 | `ManagedConditionalFormatting.gs` | Shared whole-sheet CF for availability/activation values (availability tabs + roster prep) |
@@ -281,7 +266,6 @@ The "Full Name" column is a manually-maintained join key for Additional Info loo
 | `BuildEmailList.gs` | Email list generation |
 | `SheetBuilder.gs` | Custom sheet builder |
 | `SheetBuilderUtils.gs` | Shared utilities |
-| `AdditionalInfoAnalysis.gs` | Questionnaire analysis |
 | `ConvertToAttendance.gs` | Attendance conversion |
 | `FormatSpruceUp.gs` | Formatting utilities |
 | `DeleteEmptyRowsColumns.gs` | Cleanup utilities |
@@ -292,16 +276,18 @@ The "Full Name" column is a manually-maintained join key for Additional Info loo
 
 ## Troubleshooting
 
-### "Column not found" errors
-The script requires specific column headers. Check that the required column exists in row 1 of the roster sheet.
+### "Column not found" or "missing header" errors
+Roster readers look columns up by header name in row 1 of 📋 Roster; run "Generate Fresh Roster" to restore the header row. Generate Fresh Roster itself names any Signups header it cannot find; check the portal's Signups sheet and the IMPORTRANGE in `2026 Fall Signups`!A1.
 
-### Formulas showing errors
-- Ensure Final Forms and Newsletter Subscribers sheets have data
-- Run "Update Final Forms" and "Update Newsletter Subscribers" to refresh imports
-- Check that Student ID column has values (populated during "Generate Fresh Roster")
+### Roster is empty or shows #REF!
+- Open the `2026 Fall Signups` tab; if A1 shows "You need to connect these sheets", click Allow access
+- Run 🩺 Run Diagnostics: it checks the IMPORTRANGE resolved and that A2 of the Roster still holds the `=SORT(FILTER(` key formula (sorting the Roster in place breaks it; use filter views)
 
-### Additional Info not matching
-The "Full Name" column must exactly match names in the questionnaire. Use "Full Name Diff" to identify mismatches.
+### Final Forms columns blank or FALSE for a Player
+The Player's Signups row has no SPS Student ID yet, or that ID is not in the latest export. Run "Analyze Signups" to see which; the portal's Final Forms Backfill does the joining. Run "Update Final Forms" to refresh the export.
+
+### Newsletter status columns show "not a member" everywhere
+Run "Update Newsletter Subscribers" to populate the Newsletter Subscribers sheet.
 
 ## See Also
 

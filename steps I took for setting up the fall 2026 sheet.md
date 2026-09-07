@@ -51,3 +51,10 @@ DONE: stripped all Google Groups CSV mailing-list plumbing out of Code.gs and re
 
 STILL OPEN (don't lose track):
 - Broader README refresh based on recent changes (menu docs, etc.) — Steven to specify what
+DONE (2026-09-07, autonomous run): fall 2026 roster rebuild per coach-sheet-apps-script/docs/plans/2026-09-roster-rebuild.md and ADR 0001. Generate Fresh Roster now writes a formula-only 📋 Roster keyed by Signups PlayerID; Sync Extra Player Info and Analyze Signups are new menu items; Additional Info is gone. Judgment calls and what was verified are in coach-sheet-apps-script/docs/plans/2026-09-roster-rebuild-decisions.md. Pushed as SCRIPT_VERSION 3.10.
+
+MANUAL STEPS STILL OPEN after the rebuild (Steven):
+- Purge the test rows in the portal's Signups sheet (last name TestCleared: GrillTest, Inspect, MobileTest; also RefreshTest TestFixture and any other fixtures). The Roster, Extra Player Info, and Analyze Signups pick the removal up on their own; Extra Player Info keeps its now-orphaned rows (sync never deletes), so delete those rows by hand.
+- Re-point the Roster Pivot source range at the 📋 Roster starting from row 1 (the old five metadata rows are gone).
+- After tryouts: set Team values in Extra Player Info (edit the Team dropdown list there if the squads are not Blue and Gold), then flip CONFIG.gameRosterPrep.hasTeam to true, bump SCRIPT_VERSION, clasp push.
+- Follow-up in its own commit: delete photo-mapper/ and its mention in the repo root README (no remaining use case; the portal ties Player Photos to PlayerID).

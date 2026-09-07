@@ -1,356 +1,115 @@
-# Madison Middle School Ultimate Frisbee Roster System - Design Document
+# Coach Sheet Apps Script: design
 
-## Project Overview
-This is a Google Sheets-based roster management system for the Madison Middle School Ultimate Frisbee team. The system combines data from multiple sources to create a comprehensive team roster with 50-100 players in grades 6-8.
+The coach-facing Google Sheets workbook for a Madison Ultimate season and the Apps Script menu bound to it. It joins data mastered elsewhere (the family portal's Signups sheet, the district's Final Forms export, Buttondown) with a small set of coach-authored facts, and derives the roster and every printout from that join. Vocabulary is in [CONTEXT.md](./CONTEXT.md); the reasoning behind the roster design is in [ADR 0001](./docs/adr/0001-roster-keyed-by-signups-playerid.md); the plan that implemented it is in [docs/plans/2026-09-roster-rebuild.md](./docs/plans/2026-09-roster-rebuild.md).
 
-**Seasons:** Fall 2025 (initial development), ready for future seasons
+**Seasons:** Fall 2025 (initial development, Final Forms keyed), Spring 2026, Fall 2026 (Signups keyed, this document).
 
-## Key Stakeholder
-- **Coach/Admin**: Manages the team roster, experienced in software engineering but not proficient in pandas/spreadsheets
-- **Contact**: Uses this system to track player information, parent contacts, and team logistics
+## System architecture
 
-## System Architecture
+### The workbook
 
-### Primary Google Sheet
-- **URL**: https://docs.google.com/spreadsheets/d/1ZZA5TxHu8nmtyNORm3xYtN5rzP3p1jtW178UgRcxLA8
-- **Main Tab**: "Roster" - Contains the combined data with metadata rows and formulas
-- **Supporting Tabs**: 
-  - "Final Forms" - Import of registration data
-  - "Additional Info" - Import of questionnaire responses
-  - "Mailing List" - Import of Google Groups membership
+One Google Sheet per season (fall 2026: "2026 Fall Coach Sheets"), duplicated from the prior season, with this script bound to it (see the README for how to re-point `.clasp.json` and the per-season `CONFIG` values). The tabs the script depends on are listed in the README's Required Sheets table and checked by Run Diagnostics.
 
-### Data Sources
+### Sources
 
-#### 1. SPS Final Forms (Primary Source)
-- **Location**: Google Drive folder - https://drive.google.com/drive/folders/1SnWCxDIn3FxJCvd1JcWyoeoOMscEsQcW
-- **Current File ID**: `1pWUIw2rM0MfNWnaC3Ltsz6Wj8_PGFHrH`
-- **Format**: CSV export with one row per player
-- **Key Fields**: Student info, parent/guardian contacts (2 sets), forms status, physical clearance
-- **Update Frequency**: Manual export, filename includes ISO8601 timestamp
-- **Determines**: The authoritative list of registered players
+Every authored fact lives in exactly one of four Sources. Nothing is authored in the Roster.
 
-#### 2. Additional Questionnaire (Google Form Responses)
-- **Sheet ID**: `1f_PPULjdg-5q2Gi0cXvWvGz1RbwYmUtADChLqwsHuNs`
-- **Format**: Google Sheets form responses, auto-updating
-- **Key Fields**: Jersey size, pronouns, experience, transportation needs, parent volunteer info
-- **Join Key**: Player name (First Last format)
+| Source | Mastered by | Tab | Key | How it arrives |
+|---|---|---|---|---|
+| Signups | Families, through the portal | `2026 Fall Signups` | PlayerID | IMPORTRANGE of the portal's Signups sheet; refreshes on its own; read-only here |
+| Extra Player Info | Coaches | `Extra Player Info` | PlayerID | Typed into the tab; rows added by Sync Extra Player Info |
+| Final Forms | The district | `Final Forms` | SPS Student ID | Update Final Forms imports the newest CSV from the Drive folder the finalforms-export automation writes to |
+| Newsletter Subscribers | Buttondown | `Newsletter Subscribers` | Email | Update Newsletter Subscribers pages through the Buttondown API |
 
-#### 3. Team Mailing List (Google Groups Export)
-- **Location**: Google Drive folder - https://drive.google.com/drive/folders/1pAeQMEqiA9QdK9G5yRXsqgbNVzEU7R1E
-- **Current File ID**: `1n0h81l31lsGvvSPrZUT5SOuS6jXT4h6E`
-- **Format**: CSV with one row per email address
-- **Key Fields**: Email address (Column A), Posting permissions (Column F)
-- **Purpose**: Track which parents/students are on the team mailing list with posting privileges
+Signups carries the SPS Student ID once the portal's Final Forms Join succeeds, which is what lets the Roster reach Final Forms by PlayerID alone.
 
-## Roster Structure
+## Roster structure
 
-### Metadata Rows (1-5)
-1. **Row 1**: Column Names (the field names)
-2. **Row 2**: Data Types (String, Boolean, Email, Date, etc.)
-3. **Row 3**: Data Sources (e.g., "FinalForms First Name")
-4. **Row 4**: Additional Notes (implementation notes and business rules)
-5. **Row 5**: Repeated Column Names (for pivot table selection convenience)
+The 📋 Roster is one header row plus one array formula per column in row 2:
 
-### Data Rows (6+)
-- **Row 6 onwards**: Student/player data with formulas that reference the imported data
+- **Row 1** is the header. Each header cell carries a note `Type: ... / Source: ... / <rule>` so the sheet explains itself without metadata rows.
+- **Row 2, column A** is the key formula: every non-empty PlayerID in Signups, sorted by Last Name then Preferred First Name.
+- **Row 2, every other column** is an `ARRAYFORMULA` guarded by `IF($A2:$A="","",...)` so rows past the last Player stay blank. It joins by PlayerID (Signups, Extra Player Info), by SPS Student ID (Final Forms), or by email (Newsletter Subscribers), or derives from sibling Roster columns.
 
-### Column Specifications (34 Standard Columns)
+Generate Fresh Roster clears contents, notes, and data validations, writes the header, notes, and row 2, ensures at least 300 rows, freezes row 1, bolds the header, and applies a date format to Date of Birth. Existing conditional formatting is left alone. `ROSTER_HEADER_ROW = 1` and `ROSTER_FIRST_DATA_ROW = 2` are the only layout constants readers use.
 
-#### Identity Columns (1-3)
-- **First Name** - From Final Forms
-- **Preferred Name** - Manual entry field
-- **Last Name** - From Final Forms
+### Column definitions
 
-#### Email Columns (4-6)
-- **Student SPS Email** - Only populated if domain is @seattleschools.org
-- **Student Personal Email** - Only if NOT @seattleschools.org AND not a parent email
-- **Student Personal Email On Mailing List?** - Boolean: TRUE if email is on list with "allowed" posting
+`ROSTER_COLUMNS` in `Code.gs` is the single source of truth: an ordered list of `{ name, type, source, note, formula }` where `formula` is a builder that receives resolved column letters. The 39 columns and their rules are tabulated in the plan. Adding or reordering a column means editing that list and running Generate Fresh Roster.
 
-#### Forms Status (7-9)
-- **Are All Forms Parent Signed** - Boolean from Final Forms
-- **Are All Forms Student Signed** - Boolean from Final Forms
-- **Physical Cleared** - Boolean: TRUE if status is "Cleared"
+`CONFIG.columns` holds the header names other files look up (`Full Name`, `Team`, `Gender Identification`, `Grade`, `Include In Generated Rosters`, the Caretaker email columns, and so on); every value there must be a `ROSTER_COLUMNS` name, and Run Diagnostics checks the live header row for all of them.
 
-#### Demographics (10-12)
-- **Gender** - From Final Forms
-- **Grade** - Number from Final Forms
-- **Date of Birth** - Date from Final Forms
+### Consequences
 
-#### Parent 1 Info (13-16)
-- **Parent 1 First Name**
-- **Parent 1 Last Name**
-- **Parent 1 Email**
-- **Parent 1 Email On Mailing List?** - Boolean: TRUE if on list with "allowed" posting
+- The Roster cannot be sorted or reordered in place: sorting the range would physically move the key formula. Coaches sort with filter views. Run Diagnostics checks that A2 still begins with `=SORT(FILTER(`.
+- A signup with no SPS Student ID shows blank or FALSE Final Forms columns rather than being hidden; a Final Forms student with no signup does not appear. Analyze Signups surfaces both.
+- Downstream sheets (availability, practice roster, game roster prep, email lists) stay keyed by Full Name; only the Roster is keyed by PlayerID.
 
-#### Parent 2 Info (17-20)
-- **Parent 2 First Name**
-- **Parent 2 Last Name**
-- **Parent 2 Email**
-- **Parent 2 Email On Mailing List?** - Boolean: TRUE if on list with "allowed" posting
+## Join logic
 
-#### Additional Info Form Data (21-34)
-- **Additional Info Questionnaire Filled Out?** - Boolean: TRUE if match found
-- **Player Pronouns** - From form
-- **Player Gender Identification** - Simplified to "Gx" or "Bx"
-- **Player Allergies**
-- **Competing Sports and Activities**
-- **Jersey Size**
-- **Playing Experience**
-- **Player hopes for the season**
-- **Other Player Info**
-- **Are you interested in helping coach?**
-- **Have you played or coached Ultimate before?**
-- **Have you played or coached other team sports?**
-- **Are you interested in helping in other ways?**
-- **Anything else you want to share?**
+| Target | Key | Formula shape |
+|---|---|---|
+| Signups | PlayerID | `IFERROR(XLOOKUP($A2:$A, Signups!$A:$A, Signups!$X:$X), "")` with `X` resolved from the Signups header name at generation time |
+| Extra Player Info | PlayerID | Same shape against the Extra Player Info tab; column letters come from `EXTRA_PLAYER_INFO_HEADERS` |
+| Final Forms | SPS Student ID | `IF($B2:$B="", <missing>, IFERROR(XLOOKUP(TO_TEXT($B2:$B), TO_TEXT('Final Forms'!$A:$A), 'Final Forms'!$X:$X), ""))`. Both sides are coerced with `TO_TEXT` because the CSV import stores StudentID as a number while Signups stores text; the inner guard stops a blank ID from matching a blank export row. `<missing>` is `""` for text and `FALSE` for the signature and clearance flags. Final Forms columns are fixed positions (StudentID A, Parent Signed P, Student Signed Q, Gender U, Grade W, Physical Clearance AB), validated by finalforms-export. |
+| Newsletter Subscribers | Email | `IF(email="", "", IFERROR(XLOOKUP(LOWER(email), LOWER(Subscribers!$A$2:$A), Subscribers!$B$2:$B), "not a member"))` |
+| Derived | Sibling Roster columns | Referenced by resolved letter, for example Full Name is `TRIM($C2:$C&" "&$E2:$E)` and Final Forms Cleared? is `($Q2:$Q=TRUE)*($R2:$R=TRUE)*($S2:$S=TRUE)=1` |
 
-## Technical Implementation
+Rules worth knowing:
 
-### Google Apps Script Files
+- **Grade** prefers Final Forms and falls back to Signups.
+- **Signup Gender** collapses the family's Gender Identification to Gx or Bx; **Gender Identification** is Signup Gender when set, else Final Forms Gender mapped Female to Gx and Male to Bx. Generated Rosters print Gender Identification.
+- **Profile Complete?** is TRUE when Grade, Date of Birth, and Caretaker 1 Email are all non-empty. **Include In Generated Rosters** is the Extra Player Info value when set, else Profile Complete?.
+- **Final Forms Cleared?** is TRUE only when all forms are parent signed, all forms are student signed, and the physical is cleared; a missing SPS Student ID makes it FALSE.
+- **Student Personal Email** is blanked when its domain is seattleschools.org.
+- **Date of Birth** accepts the ISO text Signups stores (`DATEVALUE`) or a real date.
+- **Photo Link** is a `HYPERLINK` to the Drive file when a Photo Drive File ID is present.
 
-The script is organized into multiple `.gs` files:
-- **`Code.gs`** - Main entry point, menu creation, core roster functions
-- **`Availability.gs`** - Practice and game availability sheet builders
-- **`BuildPracticeRoster.gs`** - Practice roster sheet generation
-- **`BuildGameRosterPrepSheet.gs`** - Game day roster preparation sheets
-- **`BuildEmailList.gs`** - Email list generation for parent communication
-- **`SheetBuilder.gs`** - Custom sheet builder utility
-- **`SheetBuilderUtils.gs`** - Shared utilities for sheet builders
-- **`AdditionalInfoAnalysis.gs`** - Analysis of questionnaire responses
-- **`ConvertToAttendance.gs`** - Convert availability to actual attendance
-- **`FormatSpruceUp.gs`** - Sheet formatting utilities
-- **`DeleteEmptyRowsColumns.gs`** - Cleanup utilities
-- **`OrganizeSheets.gs`** - Sheet tab organization
-- **`FullNameDiff.gs`** - Name matching analysis
+## Extra Player Info
 
-### Menu Functions (🥏 Madison Ultimate)
+Header: `PlayerID, Full Name, Team, Returning, Include In Generated Rosters`. Full Name is a per-row XLOOKUP into the Roster. Team is a dropdown seeded Blue and Gold (seeded once; coaches edit the list after tryouts and the next sync leaves it alone). Returning and Include In Generated Rosters are TRUE/FALSE dropdowns with blank allowed; no checkboxes, because a checkbox cannot be blank and blank Include is what means "use Profile Complete".
 
-#### Roster Management
-- **`generateRoster()`** - Build/rebuild roster with XLOOKUP formulas
-- **`clearRosterData()`** - Clear data rows while preserving metadata and Manual/Formula columns
-- **`refreshAllData()`** - Update all CSV data sources
+Sync Extra Player Info appends a row for each Signups PlayerID not already present (in Roster order) and never deletes or reorders. An existing tab with a different header is rewritten only while it has no data rows; otherwise the mismatch is reported as an error.
 
-#### Data Import
-- **`updateFinalForms()`** - Import latest Final Forms CSV (auto-discovers most recent file)
-- **`updateMailingList()`** - Import latest Mailing List CSV (auto-discovers most recent file)
+## Analyze Signups
 
-#### Sheet Builders
-- **`buildCustomSheet()`** - Interactive custom sheet builder
-- **`buildPracticeRoster()`** - Create/update practice roster with availability
-- **`buildGameRosterPrepSheet()`** - Create game day roster (coach or parent view)
-- **`buildEmailList()`** - Generate email lists for parent communication
-- **`buildPracticeAvailability()`** - Create practice availability tracking sheet
-- **`buildGameAvailability()`** - Create game availability tracking sheet
+Reads Signups and Final Forms directly (not the Roster, so it works before the Roster exists) and writes or replaces the "Analyze Signups" sheet with a timestamp and five sections: signups with no SPS Student ID, Final Forms students with no signup, signups whose SPS Student ID is not in Final Forms, suspected duplicates (same normalized last name and birthdate, or same SPS Student ID), and signups not Profile Complete with the missing fields named. Name normalization follows the portal's rules (trim, lowercase, strip whitespace and apostrophes, fold accents, keep hyphens). It only reports; the portal's Final Forms Backfill does the joining.
 
-#### Analysis & Utilities
-- **`showStatistics()`** - Display roster completion statistics
-- **`findMissingEmails()`** - Find emails not on mailing list
-- **`findPendingParents()`** - Find parents who haven't joined mailing list
-- **`analyzeAdditionalInfoResponses()`** - Analyze questionnaire response matching
-- **`fullNameDiff()`** - Compare names across data sources
+## Technical implementation
 
-#### Formatting & Cleanup
-- **`formatSpruceUp()`** - Apply consistent formatting
-- **`deleteEmptyRowsAndColumns()`** - Remove empty rows/columns
-- **`convertToActualAttendance()`** - Convert availability to attendance
-- **`organizeSheets()`** - Organize sheet tab order
+### Files
 
-#### Internal Utilities
-- **`getColumnLetter(columnNumber)`** - Convert column number to letter(s)
-- **`createCustomMenu()`** - Create the menu
-- **`onOpen()`** - Auto-create menu on sheet open
-- **`validateRosterMetadata()`** - Validate script/sheet metadata sync
-- **`findMostRecentCsvFile()`** - Find latest CSV in a Drive folder
-
-### Key Design Features
-
-#### 1. Dynamic Column Positioning
-- Columns are found by header name, not position
-- Users can reorder columns freely
-- Formulas adapt to current column positions
-- New columns can be added anywhere
-
-#### 2. Join Logic
-- **Primary Key for Final Forms**: Student ID (XLOOKUP-based formulas)
-- **Primary Key for Additional Info**: Full Name column (manually maintained join key)
-- **Parent Email Exclusion**: Student personal email must not match parent emails
-
-#### 3. Mailing List Status
-Uses VLOOKUP to check membership status (returns "member", "invited", "not a member", etc.)
-
-#### 4. Gender Simplification
-- "Girl-Matching/Gx/Non-binary" → "Gx"
-- "Boy-Matching/Bx/Non-binary" → "Bx"
-
-### Formula Patterns
-
-#### XLOOKUP with Student ID (Primary Pattern for Final Forms)
-```javascript
-=IFERROR(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!D:D),"")
-// A6 = Student ID column (dynamically replaced at runtime)
-```
-
-#### Conditional Field (SPS Email)
-```javascript
-=IFERROR(IF(REGEXMATCH(XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),"@seattleschools\\.org"),XLOOKUP(A6,'Final Forms'!A:A,'Final Forms'!F:F),""),"")
-```
-
-#### Lookup from Additional Info (using Full Name)
-```javascript
-=IFERROR(INDEX('Additional Info'!C:C,MATCH(E6,'Additional Info'!B:B,0)),"")
-// E6 = Full Name column (dynamically replaced at runtime)
-```
-
-#### Mailing List Status Check
-```javascript
-=IFERROR(VLOOKUP(email,'Mailing List'!$A$3:$C,3,FALSE),"not a member")
-```
-
-**Note:** All column references (A6, E6, etc.) are placeholders that get replaced with actual column letters at runtime based on dynamic column discovery.
-
-## Current File Structure
-
-### Repository Structure
-```
-madison-ultimate-admin/
-├── coach-sheet-apps-script/     # Google Apps Script files
-│   ├── Code.gs                  # Main script with core functions
-│   ├── Availability.gs          # Practice/game availability builders
-│   ├── BuildPracticeRoster.gs   # Practice roster generation
-│   ├── BuildGameRosterPrepSheet.gs # Game roster generation
-│   ├── BuildEmailList.gs        # Email list generation
-│   ├── SheetBuilder.gs          # Custom sheet builder
-│   ├── SheetBuilderUtils.gs     # Shared utilities
-│   ├── AdditionalInfoAnalysis.gs # Response analysis
-│   ├── ConvertToAttendance.gs   # Attendance conversion
-│   ├── FormatSpruceUp.gs        # Formatting utilities
-│   ├── DeleteEmptyRowsColumns.gs # Cleanup utilities
-│   ├── OrganizeSheets.gs        # Sheet organization
-│   ├── FullNameDiff.gs          # Name matching
-│   ├── appsscript.json          # Apps Script manifest
-│   ├── .clasp.json              # Clasp deployment config
-│   ├── AGENTS.md                # Agent instructions for deployment
-│   ├── README.md                # Quick reference
-│   ├── DESIGN.md                # This document
-│   └── Initial Requirements.md  # Original requirements
-└── photo-mapper/                # Photo-to-player mapping tool
-    ├── frontend/                # NextJS React app
-    └── backend/                 # Flask Python API
-```
+| File | Purpose |
+|---|---|
+| `Code.gs` | `CONFIG`, `SIGNUPS_HEADERS`, `ROSTER_COLUMNS`, Generate Fresh Roster, menu, Final Forms import, statistics, newsletter reports |
+| `Diagnostics.gs` | Run Diagnostics setup checks |
+| `ExtraPlayerInfo.gs` | Sync Extra Player Info |
+| `AnalyzeSignups.gs` | Analyze Signups report |
+| `NewsletterSubscribers.gs` | Buttondown subscriber import |
+| `Availability.gs`, `ManagedConditionalFormatting.gs` | Practice and game availability sheets and their shared formatting rules |
+| `BuildPracticeRoster.gs`, `BuildGameRosterPrepSheet.gs`, `SheetBuilder.gs`, `SheetBuilderUtils.gs` | Generated Rosters and the custom sheet builder, keyed by Full Name |
+| `BuildEmailList.gs` | Caretaker email lists from Full Names |
+| `ApplyActivationStatusFromRoster.gs`, `ConvertToAttendance.gs` | Game-day activation and attendance helpers |
+| `CreatePracticeCalendarEvents.gs`, `CreateGameCalendarEvents.gs`, `ExportGameInfoToMarkdown.gs` | Calendar sync and exports |
+| `FormatSpruceUp.gs`, `DeleteEmptyRowsColumns.gs`, `OrganizeSheets.gs`, `FullNameDiff.gs` | Utilities |
 
 ### Deployment
-Uses `clasp` for deployment to Google Apps Script:
-```bash
-clasp push  # Deploy changes (remember to increment 2.x in SCRIPT_VERSION, Code.gs)
-```
 
-## Known Issues and Limitations
+`clasp push` from `coach-sheet-apps-script/`, after bumping `SCRIPT_VERSION` in `Code.gs` (the menu title shows the version, which is how you confirm the sheet picked up a push). Conventional Commits for every change. See the README for new-season setup and Script Properties.
 
-1. **No Fuzzy Matching** - Exact name matches only for Additional Info lookups
-2. **Manual Column Updates** - If new columns are added to source data, script needs updating
-3. **Performance** - Large rosters (>150 students) may be slow to regenerate
+### Testing
 
-## Completed Enhancements (Fall 2025)
+There is no Apps Script test runner in this repo. The pure seam is `resolveSignupsColumns`, `resolveRosterColumns`, `buildRosterFormulas`, and `analyzeSignupsData`: they take plain values and return strings or plain objects, so a Node harness can load `Code.gs` and `AnalyzeSignups.gs` with stubbed globals and assert exact formulas and report rows. After a push, Run Diagnostics, Generate Fresh Roster, Sync Extra Player Info, and Analyze Signups from the menu and read the tabs back (for example with `gog sheets get`) to compare against the Source tabs.
 
-- ✅ Automatic CSV file discovery (finds latest file by timestamp)
-- ✅ XLOOKUP-based formulas with Student ID as primary key
-- ✅ Practice and game availability tracking
-- ✅ Practice and game roster builders with multiple view options
-- ✅ Email list generation for parent communication
-- ✅ Mailing list status tracking (member/invited/not a member)
-- ✅ Additional Info response analysis
-- ✅ Sheet organization and formatting utilities
+## Key decisions
 
-## Future Enhancements
+- **Why Google Sheets and Apps Script?** Coach preference, easy sharing, no infrastructure.
+- **Why is the Roster keyed by Signups PlayerID?** Signups is the only Source that has every Player, and PlayerID is permanent. See ADR 0001 for the options rejected (Final Forms as key, an append-only value-writer, per-row formulas).
+- **Why formulas rather than written values?** A formula cannot clobber anything, needs no scheduled run, and shows a new signup within the IMPORTRANGE refresh window.
+- **Why header notes rather than metadata rows?** The column list in code is the source of truth; notes carry the same explanation without shifting the data down five rows.
+- **Why is Full Name still the downstream key?** Availability and Generated Rosters are read and printed by humans; re-keying them to PlayerID was deliberately not done.
 
-### Medium Priority
-1. Implement fuzzy name matching for better Additional Info join accuracy
-2. Add data validation rules for manual entry fields
-3. Create a configuration sheet for easier maintenance
+## Out of scope, noted
 
-### Low Priority
-1. Create a dashboard sheet with charts
-2. Add integration with team communication tools
-3. Implement automatic team assignment based on grade/experience
-
-## Testing Checklist
-
-When modifying the system, verify:
-- [ ] Roster generates without errors
-- [ ] Student ID column populates from Final Forms
-- [ ] XLOOKUP formulas pull correct data from Final Forms
-- [ ] Additional Info lookups work via Full Name
-- [ ] Mailing list status shows member/invited/not a member
-- [ ] Column reordering doesn't break formulas (dynamic positioning)
-- [ ] Manual and Formula source columns are preserved during clear
-- [ ] Statistics function shows accurate counts
-- [ ] Practice/Game roster builders work correctly
-- [ ] Gender identification shows Gx/Bx correctly
-
-## Development Notes
-
-### Development History
-- **Sept 2025**: Initial development - basic roster with ROW()-based formulas
-- **Oct-Nov 2025**: XLOOKUP migration, Student ID as primary key, availability tracking
-- **Dec 2025**: Game roster builders, email list generation, parent roster views
-
-### Key Decisions
-- **Why Google Sheets?** - Client preference, easy sharing, no infrastructure needed
-- **Why Apps Script?** - Native integration, no external dependencies
-- **Why metadata rows?** - Self-documenting, preserves context for future maintainers
-- **Why dynamic columns?** - Flexibility for coach to customize layout
-- **Why XLOOKUP with Student ID?** - Sort-safe formulas that don't break when roster is reordered
-- **Why Full Name as Additional Info join key?** - Google Form doesn't collect Student ID
-
-## Contact and Context
-- **Team**: Madison Middle School Ultimate Frisbee
-- **Size**: 50-100 players
-- **Grades**: 6-8
-- **Season Planning Doc**: https://docs.google.com/document/d/1A2F7ThHtcMm23bxk8-30rMT2svaqT3gMbRWeSR_QXXY
-
-## How to Resume Development
-
-1. **Clone the repository** and navigate to `coach-sheet-apps-script/`
-2. **Login to clasp**: `clasp login` (if not already authenticated)
-3. **Push to test**: `clasp push` (remember to increment 2.x in SCRIPT_VERSION, Code.gs)
-4. **Test in Google Sheets**: Open the spreadsheet and use the 🥏 Madison Ultimate menu
-5. **Review data sources**: CSV imports auto-discover the latest file by timestamp
-6. **Use the testing checklist** above to verify functionality
-
-## Critical Implementation Details
-
-### Student ID as Primary Key
-All Final Forms data uses XLOOKUP with Student ID:
-```javascript
-=IFERROR(XLOOKUP(StudentID,'Final Forms'!A:A,'Final Forms'!D:D),"")
-```
-This ensures formulas work correctly regardless of row ordering.
-
-### Full Name as Additional Info Join Key
-Additional Info uses the "Full Name" column (manually maintained) as the join key:
-```javascript
-=IFERROR(INDEX('Additional Info'!C:C,MATCH(FullName,'Additional Info'!B:B,0)),"")
-```
-
-### Dynamic Column Discovery
-All column positions are discovered at runtime by searching headers:
-```javascript
-const columnMap = new Map();
-headers.forEach((header, index) => columnMap.set(header, index + 1));
-const studentIdCol = columnMap.get('StudentID');
-```
-
-### Mailing List Status
-Uses VLOOKUP to get membership status from column C:
-```javascript
-=IFERROR(VLOOKUP(email,'Mailing List'!$A$3:$C,3,FALSE),"not a member")
-```
-Returns: "member", "invited", or "not a member"
-
-### Service Account (for photo-mapper)
-- Email: stevel@cedar-scene-471205-t3.iam.gserviceaccount.com
-- Used by photo-mapper tool for Drive/Sheets API access
-
----
-
-*Last updated: December 2025. Use this to understand the system architecture, make modifications, or hand off development.*
+- `photo-mapper/` read Full Name and StudentID from a roster. The portal now ties each Player Photo to a PlayerID, so the tool has no remaining use case; deleting it is a follow-up in its own commit.
+- Team values beyond Blue and Gold, and `CONFIG.gameRosterPrep.hasTeam`, wait for tryouts.
