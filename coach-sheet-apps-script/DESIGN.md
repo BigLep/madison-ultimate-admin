@@ -35,7 +35,7 @@ Generate Fresh Roster clears contents, notes, and data validations, writes the h
 
 ### Column definitions
 
-`ROSTER_COLUMNS` in `Code.gs` is the single source of truth: an ordered list of `{ name, type, source, note, formula }` where `formula` is a builder that receives resolved column letters. The 40 columns and their rules are tabulated in the plan (with its amendments section). Adding or reordering a column means editing that list and running Generate Fresh Roster.
+`ROSTER_COLUMNS` in `Code.gs` is the single source of truth: an ordered list of `{ name, type, source, note, formula }` where `formula` is a builder that receives resolved column letters. The 41 columns and their rules are tabulated in the plan (with its amendments section). Adding or reordering a column means editing that list and running Generate Fresh Roster.
 
 `CONFIG.columns` holds the header names other files look up (`Full Name`, `Team`, `Gender Identification`, `Grade`, `Include In Generated Rosters`, the Caretaker email columns, and so on); every value there must be a `ROSTER_COLUMNS` name, and Run Diagnostics checks the live header row for all of them.
 

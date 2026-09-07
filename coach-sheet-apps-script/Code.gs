@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.17';
+const SCRIPT_VERSION = '3.18';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -367,6 +367,16 @@ const ROSTER_COLUMNS = [
     source: ROSTER_SOURCE.extraPlayerInfo,
     note: 'Whether the Player played for Madison Ultimate in a prior season, authored in Extra Player Info.',
     formula: (c) => c.arrayFormula(c.lookupExtra('returning'))
+  },
+  {
+    name: 'Has Playing Experience',
+    type: 'Boolean',
+    source: `${ROSTER_SOURCE.extraPlayerInfo}, ${ROSTER_SOURCE.signups}`,
+    note: 'TRUE when Returning is TRUE, or when the Signups "Playing Experience" text reads as prior organized play: it mentions a season/year/grade, a team/club/camp/clinic, or Ultimate/Frisbee/DiscNW by name, or is just a bare number (years). Reads FALSE for blank text, an explicit "no/none/nope" answer, or "new to Ultimate"/"first season" phrasing, even if other sports are mentioned. A keyword heuristic, not a language model judgment, so it stays a live formula; check the edge cases in Extra Player Info before trusting a borderline row.',
+    formula: (c) => {
+      const returning = c.r('Returning');
+      return c.arrayFormula(`LET(ret,${returning}=TRUE,txt,TRIM(${c.lookupSignups('playingExperience')}),neg,REGEXMATCH(txt,"(?i)^(no|none|nope|not any|n/a)\\b")+REGEXMATCH(txt,"(?i)\\b(new (player|to ultimate|to frisbee|to the sport)|first (time|season|year))\\b"),num,REGEXMATCH(txt,"^\\d+\\.?$"),pos,REGEXMATCH(txt,"(?i)(season|year|grade|play|team|club|camp|tournament|league|frisbee|ultimate|disc\\s*nw|clinic|practice)"),ret+((txt<>"")*(neg=0)*((num=1)+(pos=1)>0))>0)`);
+    }
   },
   {
     name: 'Include In Generated Rosters',
