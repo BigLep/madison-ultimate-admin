@@ -50,7 +50,7 @@ DONE: stripped all Google Groups CSV mailing-list plumbing out of Code.gs and re
 - Verified with `grep -rn "updateMailingList\|CONFIG\.mailingList" *.gs` returning zero matches.
 
 STILL OPEN (don't lose track):
-- Broader README refresh based on recent changes (menu docs, etc.) — Steven to specify what
+- Broader README refresh based on recent changes (menu docs, etc.); Steven to specify what
 DONE (2026-09-07, autonomous run): fall 2026 roster rebuild per coach-sheet-apps-script/docs/plans/2026-09-roster-rebuild.md and ADR 0001. Generate Fresh Roster now writes a formula-only 📋 Roster keyed by Signups PlayerID; Sync Extra Player Info and Analyze Signups are new menu items; Additional Info is gone. Judgment calls and what was verified are in coach-sheet-apps-script/docs/plans/2026-09-roster-rebuild-decisions.md. Pushed as SCRIPT_VERSION 3.10.
 
 MANUAL STEPS STILL OPEN after the rebuild (Steven):
