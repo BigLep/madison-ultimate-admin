@@ -12,7 +12,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.0';
+const SCRIPT_VERSION = '3.1';
 
 // Constants
 const FIRST_DATA_ROW = 6; // First row for student data when roster has 5 metadata rows (generateRoster, etc.)
@@ -25,7 +25,9 @@ const ROSTER_FIRST_DATA_ROW = ROSTER_HEADER_ROW + 1;
 // Configuration
 const CONFIG = {
   finalForms: {
-    folderId: '1SnWCxDIn3FxJCvd1JcWyoeoOMscEsQcW', 
+    // Per-season: update to this season's FinalForms exports folder (same folder the
+    // finalforms-export automation's DRIVE_FOLDER_ID uploads into) before the season starts.
+    folderId: '1WgD4hY0fIZlQEBt7ekOlHIECA-HgOMIZ', // 2026 Fall Final Forms
     sheetName: 'Final Forms'
   },
   additionalInfo: {
