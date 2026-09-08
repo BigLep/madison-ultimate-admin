@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.19';
+const SCRIPT_VERSION = '3.20';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -668,11 +668,16 @@ function generateRoster() {
     }
   });
 
+  // Finish with Format Spruce Up's plain worker (not formatSpruceUp() itself, which
+  // targets whatever sheet is active and ends in its own UI alert) so a fresh Roster
+  // always comes out with banding, a filter, and frozen row/column already applied.
+  applySpruceUpFormatting(rosterSheet);
+
   SpreadsheetApp.flush();
   console.log(`Roster generated: ${headers.length} columns, formulas in row ${ROSTER_FIRST_DATA_ROW}`);
 
   ui.alert('Roster Generated',
-    `"${CONFIG.roster.sheetName}" now has ${headers.length} columns: a header row (hover a header for its type, Source, and rule) and array formulas in row ${ROSTER_FIRST_DATA_ROW} keyed by Signups PlayerID.\n\n` +
+    `"${CONFIG.roster.sheetName}" now has ${headers.length} columns: a header row (hover a header for its type, Source, and rule) and array formulas in row ${ROSTER_FIRST_DATA_ROW} keyed by Signups PlayerID. Format Spruce Up ran automatically: alternating row colors, a data filter, vertical centering, and frozen row 1 / column A.\n\n` +
     `Nothing is authored here; fix a wrong value in its Source (Signups, Extra Player Info, Final Forms, Newsletter Subscribers).\n\n` +
     `Sort with filter views only: sorting the range in place breaks the key formula.\n\n` +
     `Next: run "Sync Extra Player Info" so every PlayerID has a row for Team, Returning, and the Include override.`,

@@ -31,7 +31,7 @@ The 📋 Roster is one header row plus one array formula per column in row 2:
 - **Row 2, column A** is the key formula: every non-empty PlayerID in Signups, sorted by Last Name then Preferred First Name.
 - **Row 2, every other column** is an `ARRAYFORMULA` guarded by `IF($A2:$A="","",...)` so rows past the last Player stay blank. It joins by PlayerID (Signups, Extra Player Info), by SPS Student ID (Final Forms), or by email (Newsletter Subscribers), or derives from sibling Roster columns.
 
-Generate Fresh Roster clears contents, notes, and data validations, writes the header, notes, and row 2, ensures at least 300 rows, freezes row 1, bolds the header, and applies a date format to Date of Birth. Existing conditional formatting is left alone. `ROSTER_HEADER_ROW = 1` and `ROSTER_FIRST_DATA_ROW = 2` are the only layout constants readers use.
+Generate Fresh Roster clears contents, notes, and data validations, writes the header, notes, and row 2, ensures at least 300 rows, freezes row 1, bolds the header, applies a date format to Date of Birth, and finishes by running Format Spruce Up's formatting worker on the Roster (alternating row banding, a data filter, vertical centering, frozen row 1 and column A) so it never needs a separate manual pass. Existing conditional formatting is left alone. `ROSTER_HEADER_ROW = 1` and `ROSTER_FIRST_DATA_ROW = 2` are the only layout constants readers use.
 
 ### Column definitions
 
