@@ -1,6 +1,9 @@
 /**
  * Sync Extra Player Info: the one tab where coaches author per-player facts the
- * family cannot (Team, Returning, and the Include In Generated Rosters override).
+ * family cannot (Team, Returning, Number of Past Seasons, and the Include In
+ * Generated Rosters override). Full Name and Signup Playing Experience are
+ * per-row XLOOKUP formulas, not authored; the latter exists purely so a coach can
+ * see the Signups text next to Number of Past Seasons while filling it in.
  * Keyed by PlayerID; one row per Player, rows added by this sync rather than typed.
  * Never deletes or reorders rows.
  */
@@ -21,6 +24,12 @@ function syncExtraPlayerInfo() {
     ui.alert('Error', `Sheet "${CONFIG.signups.sheetName}" not found. Extra Player Info rows come from its PlayerID column.`, ui.ButtonSet.OK);
     return;
   }
+
+  const signupsHeaders = signupsSheet.getRange(1, 1, 1, Math.max(1, signupsSheet.getLastColumn())).getValues()[0];
+  const signupsLetters = resolveSignupsColumns(signupsHeaders);
+  const playingExperienceLetter = signupsLetters[SIGNUPS_HEADERS.playingExperience];
+  const playerIdLetter = signupsLetters[SIGNUPS_HEADERS.playerId];
+  const signupsName = `'${CONFIG.signups.sheetName.replace(/'/g, "''")}'`;
 
   const players = readSignupsPlayers(signupsSheet);
   const sheet = ensureExtraPlayerInfoSheet(ss);
@@ -47,7 +56,9 @@ function syncExtraPlayerInfo() {
       return [
         p.playerId,
         `=IFERROR(XLOOKUP($A${row},${rosterName}!$${idLetter}:$${idLetter},${rosterName}!$${fullNameLetter}:$${fullNameLetter}),"")`,
-        '', '', ''
+        '', '', '',
+        `=IFERROR(XLOOKUP($A${row},${signupsName}!$${playerIdLetter}:$${playerIdLetter},${signupsName}!$${playingExperienceLetter}:$${playingExperienceLetter}),"")`,
+        ''
       ];
     });
     if (sheet.getMaxRows() < startRow + rows.length - 1) {
@@ -61,7 +72,7 @@ function syncExtraPlayerInfo() {
   console.log(`Extra Player Info: added ${missing.length}, total ${total}`);
   ui.alert('Extra Player Info Synced',
     `Added ${missing.length} PlayerID row(s); ${total} row(s) total.\n\n` +
-    `Fill in Team, Returning, and Include In Generated Rosters here. Blank Include means "included". Rows are never deleted or reordered by this sync.`,
+    `Fill in Team, Returning, Number of Past Seasons, and Include In Generated Rosters here (Signup Playing Experience is a read-only reference for spot-checking Number of Past Seasons). Blank Include means "included". Rows are never deleted or reordered by this sync.`,
     ui.ButtonSet.OK);
 }
 
@@ -149,6 +160,12 @@ function applyExtraPlayerInfoValidations(sheet) {
     .build();
   column(EXTRA_PLAYER_INFO_LETTERS.returning).setDataValidation(booleanRule);
   column(EXTRA_PLAYER_INFO_LETTERS.include).setDataValidation(booleanRule);
+
+  column(EXTRA_PLAYER_INFO_LETTERS.numberOfPastSeasons).setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireNumberGreaterThanOrEqualTo(0)
+    .setAllowInvalid(false)
+    .setHelpText('Seasons of prior organized Ultimate play, read from Signup Playing Experience. Leave blank if not yet reviewed.')
+    .build());
 }
 
 /**

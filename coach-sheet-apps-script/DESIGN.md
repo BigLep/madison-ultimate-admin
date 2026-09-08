@@ -35,7 +35,7 @@ Generate Fresh Roster clears contents, notes, and data validations, writes the h
 
 ### Column definitions
 
-`ROSTER_COLUMNS` in `Code.gs` is the single source of truth: an ordered list of `{ name, type, source, note, formula }` where `formula` is a builder that receives resolved column letters. The 41 columns and their rules are tabulated in the plan (with its amendments section). Adding or reordering a column means editing that list and running Generate Fresh Roster.
+`ROSTER_COLUMNS` in `Code.gs` is the single source of truth: an ordered list of `{ name, type, source, note, formula }` where `formula` is a builder that receives resolved column letters. The 42 columns and their rules are tabulated in the plan (with its amendments section). Adding or reordering a column means editing that list and running Generate Fresh Roster.
 
 `CONFIG.columns` holds the header names other files look up (`Full Name`, `Team`, `Gender Identification`, `Grade`, `Include In Generated Rosters`, the Caretaker email columns, and so on); every value there must be a `ROSTER_COLUMNS` name, and Run Diagnostics checks the live header row for all of them.
 
@@ -68,7 +68,7 @@ Rules worth knowing:
 
 ## Extra Player Info
 
-Header: `PlayerID, Full Name, Team, Returning, Include In Generated Rosters`. Full Name is a per-row XLOOKUP into the Roster. Team is a dropdown seeded Blue and Gold (seeded once; coaches edit the list after tryouts and the next sync leaves it alone). Returning and Include In Generated Rosters are TRUE/FALSE dropdowns with blank allowed; no checkboxes, because a checkbox cannot be blank and blank Include is what means "included".
+Header: `PlayerID, Full Name, Team, Returning, Number of Past Seasons, Signup Playing Experience, Include In Generated Rosters`. Full Name and Signup Playing Experience are per-row XLOOKUPs (into the Roster and Signups respectively, by PlayerID), not authored; Signup Playing Experience exists only so a coach filling in Number of Past Seasons can see the source text right next to it. Team is a dropdown seeded Blue and Gold (seeded once; coaches edit the list after tryouts and the next sync leaves it alone). Returning and Include In Generated Rosters are TRUE/FALSE dropdowns with blank allowed; no checkboxes, because a checkbox cannot be blank and blank Include is what means "included". Number of Past Seasons is a non-negative number with blank allowed, meaning "not yet reviewed" rather than zero.
 
 Sync Extra Player Info appends a row for each Signups PlayerID not already present (in Roster order) and never deletes or reorders. An existing tab with a different header is rewritten only while it has no data rows; otherwise the mismatch is reported as an error.
 

@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.18';
+const SCRIPT_VERSION = '3.19';
 
 // Roster layout: row 1 holds the column headers, row 2 holds the array formulas
 // that fill every data row below it. Readers (Build Practice Roster, Game Roster
@@ -162,7 +162,7 @@ const FINAL_FORMS_LETTERS = {
 };
 
 // Extra Player Info header row, in column order. Sync Extra Player Info creates it.
-const EXTRA_PLAYER_INFO_HEADERS = ['PlayerID', 'Full Name', 'Team', 'Returning', 'Include In Generated Rosters'];
+const EXTRA_PLAYER_INFO_HEADERS = ['PlayerID', 'Full Name', 'Team', 'Returning', 'Number of Past Seasons', 'Signup Playing Experience', 'Include In Generated Rosters'];
 
 // Column letters of the Extra Player Info tab, derived from the header order above.
 const EXTRA_PLAYER_INFO_LETTERS = {
@@ -170,6 +170,8 @@ const EXTRA_PLAYER_INFO_LETTERS = {
   fullName: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Full Name') + 1),
   team: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Team') + 1),
   returning: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Returning') + 1),
+  numberOfPastSeasons: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Number of Past Seasons') + 1),
+  signupPlayingExperience: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Signup Playing Experience') + 1),
   include: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Include In Generated Rosters') + 1)
 };
 
@@ -369,14 +371,18 @@ const ROSTER_COLUMNS = [
     formula: (c) => c.arrayFormula(c.lookupExtra('returning'))
   },
   {
+    name: 'Number of Past Seasons',
+    type: 'Number',
+    source: ROSTER_SOURCE.extraPlayerInfo,
+    note: 'Coach-authored count of seasons of prior organized Ultimate play, read from the Signups "Playing Experience" text and entered in Extra Player Info (which also carries that text alongside it for spot-checking). Blank means not yet reviewed, not zero.',
+    formula: (c) => c.arrayFormula(c.lookupExtra('numberOfPastSeasons'))
+  },
+  {
     name: 'Has Playing Experience',
     type: 'Boolean',
-    source: `${ROSTER_SOURCE.extraPlayerInfo}, ${ROSTER_SOURCE.signups}`,
-    note: 'TRUE when Returning is TRUE, or when the Signups "Playing Experience" text reads as prior organized play: it mentions a season/year/grade, a team/club/camp/clinic, or Ultimate/Frisbee/DiscNW by name, or is just a bare number (years). Reads FALSE for blank text, an explicit "no/none/nope" answer, or "new to Ultimate"/"first season" phrasing, even if other sports are mentioned. A keyword heuristic, not a language model judgment, so it stays a live formula; check the edge cases in Extra Player Info before trusting a borderline row.',
-    formula: (c) => {
-      const returning = c.r('Returning');
-      return c.arrayFormula(`LET(ret,${returning}=TRUE,txt,TRIM(${c.lookupSignups('playingExperience')}),neg,REGEXMATCH(txt,"(?i)^(no|none|nope|not any|n/a)\\b")+REGEXMATCH(txt,"(?i)\\b(new (player|to ultimate|to frisbee|to the sport)|first (time|season|year))\\b"),num,REGEXMATCH(txt,"^\\d+\\.?$"),pos,REGEXMATCH(txt,"(?i)(season|year|grade|play|team|club|camp|tournament|league|frisbee|ultimate|disc\\s*nw|clinic|practice)"),ret+((txt<>"")*(neg=0)*((num=1)+(pos=1)>0))>0)`);
-    }
+    source: ROSTER_SOURCE.extraPlayerInfo,
+    note: 'TRUE when Returning is TRUE or Number of Past Seasons is greater than zero, else FALSE (including when Number of Past Seasons is blank/not yet reviewed).',
+    formula: (c) => c.arrayFormula(`(${c.r('Returning')}=TRUE)+(N(${c.r('Number of Past Seasons')})>0)>0`)
   },
   {
     name: 'Include In Generated Rosters',
