@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.24';
+const SCRIPT_VERSION = '3.25';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -163,7 +163,7 @@ const FINAL_FORMS_LETTERS = {
 // Extra Player Info header row, in column order. Sync Extra Player Info creates it.
 // Tryout Group and Signup Grade were added directly in the live sheet (coach-typed
 // during tryouts) before the code caught up; this list now matches that live order.
-const EXTRA_PLAYER_INFO_HEADERS = ['PlayerID', 'Full Name', 'Team', 'Returning', 'Number of Past Seasons', 'Signup Playing Experience', 'Tryout Group', 'Signup Grade', 'Include In Generated Rosters'];
+const EXTRA_PLAYER_INFO_HEADERS = ['PlayerID', 'Full Name', 'Team', 'Returning', 'Number of Past Seasons', 'Signup Playing Experience', 'Tryout Group', 'Tryout ID', 'Signup Grade', 'Include In Generated Rosters'];
 
 // Column letters of the Extra Player Info tab, derived from the header order above.
 const EXTRA_PLAYER_INFO_LETTERS = {
@@ -174,6 +174,7 @@ const EXTRA_PLAYER_INFO_LETTERS = {
   numberOfPastSeasons: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Number of Past Seasons') + 1),
   signupPlayingExperience: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Signup Playing Experience') + 1),
   tryoutGroup: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Tryout Group') + 1),
+  tryoutId: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Tryout ID') + 1),
   signupGrade: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Signup Grade') + 1),
   include: getColumnLetter(EXTRA_PLAYER_INFO_HEADERS.indexOf('Include In Generated Rosters') + 1)
 };
@@ -524,6 +525,13 @@ const ROSTER_COLUMNS = [
     source: ROSTER_SOURCE.extraPlayerInfo,
     note: 'Coach-assigned tryout group, authored in Extra Player Info.',
     formula: (c) => c.rowFormula(c.lookupExtra('tryoutGroup'))
+  },
+  {
+    name: 'Tryout ID',
+    type: 'Number',
+    source: ROSTER_SOURCE.extraPlayerInfo,
+    note: 'Three-digit id for referencing a Player on tryout printouts, authored in Extra Player Info: first digit is Grade (6, 7, or 8), remaining two digits are a sequence assigned within that Grade and gender (00-49 for Bx, 50-99 for Gx) by Full Name alphabetically. A fixed assignment, not recomputed by the Roster, so it stays stable once printed.',
+    formula: (c) => c.rowFormula(c.lookupExtra('tryoutId'))
   }
 ];
 
