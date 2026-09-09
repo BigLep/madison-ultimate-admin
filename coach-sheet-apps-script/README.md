@@ -7,7 +7,7 @@ Google Apps Script tools for managing the Madison Middle School Ultimate Frisbee
 ## Purpose
 
 This script provides a custom menu in Google Sheets ("🥏 Madison Ultimate") that automates:
-- Generating the 📋 Roster as a formula-only view of every Player in Signups, joined to Final Forms, Extra Player Info, and Newsletter Subscribers ([ADR 0001](./docs/adr/0001-roster-keyed-by-signups-playerid.md))
+- Generating the 📋 Roster as a formula-only view of every Player in Signups, joined to Final Forms, Extra Player Info, and Newsletter Subscribers ([ADR 0001](./docs/adr/0001-roster-keyed-by-signups-playerid.md), [ADR 0003](./docs/adr/0003-roster-per-row-formulas.md))
 - Importing Final Forms registration data and the Buttondown Newsletter subscriber list
 - Keeping the coach-authored Extra Player Info tab in sync with Signups
 - Building practice and game rosters with availability
@@ -109,13 +109,13 @@ The script expects these sheets to exist (created manually or via the menu):
 
 ### Roster layout
 
-The 📋 Roster is one header row plus one array formula per column in row 2. Nothing is authored in it: every value traces to exactly one Source (Signups, Extra Player Info, Final Forms, Newsletter Subscribers) and a wrong value is fixed there. In `Code.gs`, `ROSTER_HEADER_ROW` is 1 and `ROSTER_FIRST_DATA_ROW` is 2; every reader (Build Practice Roster, Game Roster Prep, Full Name Diff, the reports) uses those two constants.
+The 📋 Roster is one header row plus one row per Player: the PlayerID as a plain value in column A and a formula in every other cell that looks up that row's PlayerID. Nothing is authored in it: every value traces to exactly one Source (Signups, Extra Player Info, Final Forms, Newsletter Subscribers) and a wrong value is fixed there. In `Code.gs`, `ROSTER_HEADER_ROW` is 1 and `ROSTER_FIRST_DATA_ROW` is 2; every reader (Build Practice Roster, Game Roster Prep, Full Name Diff, the reports) uses those two constants.
 
-Sort with filter views only. Data > Sort range or the basic filter's sort physically reorders cells and breaks the key formula in A2; Run Diagnostics checks that the key formula is intact.
+Sort and filter however you like: filter views, the basic filter, or Data > Sort range all work because every row is self-contained (this is why the Roster moved from array formulas to per-row formulas, see [ADR 0003](./docs/adr/0003-roster-per-row-formulas.md)). The trade-off is that column A is values, so a new or removed Signup only reaches the Roster when you run Generate Fresh Roster again; Run Diagnostics compares the Roster's PlayerIDs with Signups and reports when the Roster is stale.
 
 Every Boolean column reads TRUE for "all is well" and FALSE for "something needs a coach's attention": Profile Complete?, the three Final Forms flags and Final Forms Cleared?, Include In Generated Rosters, Gender Default Handling (FALSE when Final Forms and Signup gender disagree or the pronouns are off-pattern for the Gx/Bx), and Media OK (FALSE when the family opted out of media). Filter any Boolean column to FALSE to get a to-do list.
 
-Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, source, note, formula). Adding or reordering a column means editing that list and running Generate Fresh Roster, which rewrites the header row, the header notes (hover a header to see its type, Source, and rule), and row 2. The plan that introduced this layout is in [docs/plans/2026-09-roster-rebuild.md](./docs/plans/2026-09-roster-rebuild.md).
+Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, source, note, formula). Adding or reordering a column means editing that list and running Generate Fresh Roster, which rewrites the header row, the header notes (hover a header to see its type, Source, and rule), and every data row. The plan that introduced this layout is in [docs/plans/2026-09-roster-rebuild.md](./docs/plans/2026-09-roster-rebuild.md).
 
 ## Data Sources
 
@@ -123,7 +123,7 @@ Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, s
 
 - **Source**: the portal's Signups sheet, mastered by the family portal (`../madison-ultimate`)
 - **Location**: the `2026 Fall Signups` tab, an IMPORTRANGE of that sheet (read-only here; refreshes on its own)
-- **Join Key**: PlayerID. The Roster's column A lists every PlayerID in Signups, sorted by Last Name then Preferred First Name, and every other column joins back by PlayerID.
+- **Join Key**: PlayerID. The Roster's column A lists every PlayerID in Signups (written as values, initially sorted by Last Name then Preferred First Name), and every other column joins back by the PlayerID on its own row.
 - **Headers referenced by name**: listed in `SIGNUPS_HEADERS` in `Code.gs`; the portal may reorder or add columns freely, and Run Diagnostics reports any referenced header that goes missing.
 
 ### Extra Player Info (coach-authored)
@@ -153,7 +153,7 @@ Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, s
 - **Run Diagnostics** - Checks that required sheets exist (including Extra Player Info with its header row), that the Signups IMPORTRANGE resolved and carries every header the Roster formulas reference, that the Roster header row has every defined column and its A2 key formula is intact, that the Final Forms Drive folder is reachable, and that the Buttondown key works. Run this after deploying to a new season's spreadsheet, or any time something is misbehaving, before digging further.
 
 ### Roster Management
-- **Generate Fresh Roster** - Rewrite the 📋 Roster: header row, header notes, and the row 2 array formulas, all keyed by Signups PlayerID. Safe to run any time; nothing authored is lost because nothing is authored there.
+- **Generate Fresh Roster** - Rewrite the 📋 Roster: header row, header notes, PlayerID values in column A, and per-row formulas everywhere else, all keyed by Signups PlayerID. Safe to run any time; nothing authored is lost because nothing is authored there. Run it again whenever Signups gains or loses a Player (Run Diagnostics says when).
 - **Sync Extra Player Info** - Create the Extra Player Info tab if missing, apply its dropdowns, and append a row for every Signups PlayerID not already present.
 - **Refresh All Data** - Update Final Forms and Newsletter Subscribers imports (Signups refreshes on its own through IMPORTRANGE)
 
@@ -246,7 +246,7 @@ Columns are discovered by header name at runtime, not by position. This means:
 
 ### PlayerID as the Roster key
 
-The Roster's column A is a single formula listing every PlayerID in Signups; every other column is one array formula that joins by PlayerID (Signups, Extra Player Info), by SPS Student ID (Final Forms), or by email (Newsletter Subscribers), guarded by `IF($A2:$A="","",...)` so rows past the last Player stay blank. Signups column letters are resolved by header name when the Roster is generated. See [ADR 0001](./docs/adr/0001-roster-keyed-by-signups-playerid.md) for the reasoning and the options rejected.
+The Roster's column A holds every PlayerID in Signups as a plain value, one row per Player; every other cell is a per-row formula that joins by the PlayerID on its row (Signups, Extra Player Info), by SPS Student ID (Final Forms), or by email (Newsletter Subscribers), guarded by `IF($A<row>="","",...)`. They are plain formulas, not `ARRAYFORMULA`, so no scalar function is ever applied to a whole-column range (Sheets would implicitly intersect it with the current row and every lookup would miss); ranges go straight into XLOOKUP and only the single lookup key is converted. Sibling references are row-relative (`$F2` on row 2), so sorting the sheet in place keeps each row consistent. Signups column letters are resolved by header name when the Roster is generated. See [ADR 0001](./docs/adr/0001-roster-keyed-by-signups-playerid.md) for why PlayerID is the key and [ADR 0003](./docs/adr/0003-roster-per-row-formulas.md) for why the rows are per-row formulas rather than one array formula.
 
 ### Full Name as the downstream key
 
@@ -283,7 +283,7 @@ Roster readers look columns up by header name in row 1 of 📋 Roster; run "Gene
 
 ### Roster is empty or shows #REF!
 - Open the `2026 Fall Signups` tab; if A1 shows "You need to connect these sheets", click Allow access
-- Run 🩺 Run Diagnostics: it checks the IMPORTRANGE resolved and that A2 of the Roster still holds the `=SORT(FILTER(` key formula (sorting the Roster in place breaks it; use filter views)
+- Run 🩺 Run Diagnostics: it checks the IMPORTRANGE resolved, that the Roster's data rows still have the per-row formula shape, and that the Roster's PlayerIDs match Signups (if not, run "Generate Fresh Roster")
 
 ### Final Forms columns blank or FALSE for a Player
 The Player's Signups row has no SPS Student ID yet, or that ID is not in the latest export. Run "Analyze Signups" to see which; the portal's Seed Signups from Final Forms does the joining. Run "Update Final Forms" to refresh the export.
