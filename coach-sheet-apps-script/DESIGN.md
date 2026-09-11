@@ -75,6 +75,8 @@ Header: `PlayerID, Full Name, Team, Returning, Number of Past Seasons, Signup Pl
 
 Sync Extra Player Info appends a row for each Signups PlayerID not already present (in Roster order) and never deletes or reorders. An existing tab with a different header is rewritten only while it has no data rows; otherwise the mismatch is reported as an error.
 
+Assign Tryout IDs (its own menu item, `assignTryoutIds`) fills blank Tryout ID cells for Players who have a Tryout Group but no id yet, using the Roster's Grade and Gender Identification to place them in a bucket. It never touches an existing Tryout ID (an id may already be printed or handed out); a new Player extends their Grade/gender bucket at the next offset after that bucket's current highest id, and several new Players landing in the same bucket at once are ordered by Full Name. A Player whose Roster Grade or Gender Identification isn't resolved yet (6/7/8 and Bx/Gx) is reported and skipped rather than guessed at.
+
 ## Analyze Signups
 
 Reads Signups and Final Forms directly (not the Roster, so it works before the Roster exists) and writes or replaces the "Analyze Signups" sheet with a timestamp and six sections: signups with no SPS Student ID, Final Forms students not yet seeded or joined, signups whose SPS Student ID is not in Final Forms, suspected duplicates (same normalized last name and birthdate, or same SPS Student ID), signups not Profile Complete (as the portal wrote it, marked Seeded Signup or family-created), and Seeded Signups the family has not finished. Name normalization follows the portal's rules (trim, lowercase, strip whitespace and apostrophes, fold accents, keep hyphens). It only reports; the portal's Seed Signups from Final Forms does the joining and seeding.
@@ -87,7 +89,7 @@ Reads Signups and Final Forms directly (not the Roster, so it works before the R
 |---|---|
 | `Code.gs` | `CONFIG`, `SIGNUPS_HEADERS`, `ROSTER_COLUMNS`, Generate Fresh Roster, menu, Final Forms import, statistics, newsletter reports |
 | `Diagnostics.gs` | Run Diagnostics setup checks |
-| `ExtraPlayerInfo.gs` | Sync Extra Player Info |
+| `ExtraPlayerInfo.gs` | Sync Extra Player Info, Assign Tryout IDs |
 | `AnalyzeSignups.gs` | Analyze Signups report |
 | `NewsletterSubscribers.gs` | Buttondown subscriber import |
 | `Availability.gs`, `ManagedConditionalFormatting.gs` | Practice and game availability sheets and their shared formatting rules |

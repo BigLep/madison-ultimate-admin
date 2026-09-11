@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.25';
+const SCRIPT_VERSION = '3.26';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -769,6 +769,7 @@ function createCustomMenu() {
     .addSeparator()
     .addItem('📝 Generate Fresh Roster', 'generateRoster')
     .addItem('🧩 Sync Extra Player Info', 'syncExtraPlayerInfo')
+    .addItem('🔢 Assign Tryout IDs', 'assignTryoutIds')
     .addSeparator()
     .addItem('🔄 Refresh All Data', 'refreshAllData')
     .addItem('📊 Update Final Forms', 'updateFinalForms')

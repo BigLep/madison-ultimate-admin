@@ -4,7 +4,8 @@
  * ID, Signup Grade, and the Include In Generated Rosters override). Full Name
  * and Signup Playing Experience are per-row XLOOKUP formulas, not authored; the
  * latter exists purely so a coach can see the Signups text next to Number of
- * Past Seasons while filling it in.
+ * Past Seasons while filling it in. Assign Tryout IDs (assignTryoutIds, its own
+ * menu item) fills blank Tryout ID cells for Players with a Tryout Group set.
  * Keyed by PlayerID; one row per Player, rows added by this sync rather than typed.
  * Never deletes or reorders rows.
  */
@@ -75,6 +76,136 @@ function syncExtraPlayerInfo() {
     `Added ${missing.length} PlayerID row(s); ${total} row(s) total.\n\n` +
     `Fill in Team, Returning, Number of Past Seasons, Tryout Group, Tryout ID, Signup Grade, and Include In Generated Rosters here (Signup Playing Experience is a read-only reference for spot-checking Number of Past Seasons). Blank Include means "included". Rows are never deleted or reordered by this sync.`,
     ui.ButtonSet.OK);
+}
+
+/**
+ * Menu entry: fill blank Tryout ID cells in Extra Player Info for Players who
+ * have a Tryout Group but no Tryout ID yet. An existing Tryout ID is never
+ * touched or renumbered (it may already be printed or handed out); a new
+ * Player in a Grade/gender bucket gets the next offset after that bucket's
+ * current highest id, and when several new Players land in the same bucket
+ * at once they're assigned in Full Name order. Needs the Roster's Grade and
+ * Gender Identification, so a Player missing either is reported and skipped.
+ */
+function assignTryoutIds() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+
+  const sheet = ss.getSheetByName(CONFIG.extraPlayerInfo.sheetName);
+  if (!sheet) {
+    ui.alert('Error', `Sheet "${CONFIG.extraPlayerInfo.sheetName}" not found. Run "Sync Extra Player Info" first.`, ui.ButtonSet.OK);
+    return;
+  }
+  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+  if (!rosterSheet) {
+    ui.alert('Error', `Sheet "${CONFIG.roster.sheetName}" not found. Tryout ID needs its Grade and Gender Identification; run "Generate Fresh Roster" first.`, ui.ButtonSet.OK);
+    return;
+  }
+
+  const text = (v) => (v === null || v === undefined) ? '' : v.toString().trim();
+
+  const table = readRosterTable(rosterSheet);
+  const rIdCol = table.col(CONFIG.columns.playerId);
+  const rFullNameCol = table.col(CONFIG.columns.fullName);
+  const rGradeCol = table.col(CONFIG.columns.grade);
+  const rGenderCol = table.col(CONFIG.columns.genderIdentification);
+  const rosterByPlayerId = {};
+  table.rows.forEach(row => {
+    const pid = text(row[rIdCol]);
+    if (!pid) return;
+    rosterByPlayerId[pid] = { fullName: text(row[rFullNameCol]), grade: text(row[rGradeCol]), gender: text(row[rGenderCol]) };
+  });
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    ui.alert('No Players', 'Extra Player Info has no data rows. Run "Sync Extra Player Info" first.', ui.ButtonSet.OK);
+    return;
+  }
+  const width = EXTRA_PLAYER_INFO_HEADERS.length;
+  const values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+  const playerIdIdx = EXTRA_PLAYER_INFO_HEADERS.indexOf('PlayerID');
+  const tryoutGroupIdx = EXTRA_PLAYER_INFO_HEADERS.indexOf('Tryout Group');
+  const tryoutIdIdx = EXTRA_PLAYER_INFO_HEADERS.indexOf('Tryout ID');
+  const VALID_GRADES = ['6', '7', '8'];
+  const BUCKET_SIZE = 50; // offsets 0-49 for Bx, 50-99 for Gx within a Grade
+
+  // Highest existing offset already used in each Grade/gender bucket, on a
+  // shared 0-49 local scale (a Gx id's local offset is its id mod 100, minus 50).
+  const maxLocalOffset = {};
+  values.forEach(row => {
+    const num = Number(row[tryoutIdIdx]);
+    if (row[tryoutIdIdx] === '' || row[tryoutIdIdx] === null || !Number.isFinite(num)) return;
+    const grade = Math.floor(num / 100);
+    const withinHundred = num - grade * 100;
+    const gender = withinHundred < BUCKET_SIZE ? 'Bx' : 'Gx';
+    const localOffset = withinHundred < BUCKET_SIZE ? withinHundred : withinHundred - BUCKET_SIZE;
+    const key = `${grade}-${gender}`;
+    if (maxLocalOffset[key] === undefined || localOffset > maxLocalOffset[key]) maxLocalOffset[key] = localOffset;
+  });
+
+  // Candidates: a Tryout Group set, no Tryout ID yet, and a Roster Grade/Gender
+  // Identification that resolves to 6/7/8 and Bx/Gx.
+  const candidates = [];
+  const skipped = [];
+  values.forEach((row, i) => {
+    const playerId = text(row[playerIdIdx]);
+    if (!playerId) return;
+    const hasTryoutId = row[tryoutIdIdx] !== '' && row[tryoutIdIdx] !== null && row[tryoutIdIdx] !== undefined;
+    if (text(row[tryoutGroupIdx]) === '' || hasTryoutId) return;
+    const info = rosterByPlayerId[playerId] || { fullName: playerId, grade: '', gender: '' };
+    if (VALID_GRADES.indexOf(info.grade) === -1 || ['Bx', 'Gx'].indexOf(info.gender) === -1) {
+      skipped.push(info);
+      return;
+    }
+    candidates.push({ rowIndex: i, fullName: info.fullName, grade: info.grade, gender: info.gender });
+  });
+
+  if (candidates.length === 0) {
+    ui.alert('No New Tryout IDs Needed',
+      skipped.length === 0
+        ? 'Every Player with a Tryout Group already has a Tryout ID.'
+        : `Every Player with a Tryout Group and a resolvable Grade/Gender already has a Tryout ID. ${skipped.length} Player(s) still need a Grade and/or Gender Identification before an id can be assigned: ${skipped.map(s => s.fullName).join(', ')}.`,
+      ui.ButtonSet.OK);
+    return;
+  }
+
+  // Group by Grade/gender, sort each group by Full Name, assign the next local
+  // offset after that bucket's current highest; never renumber an existing id.
+  const byBucket = {};
+  candidates.forEach(c => (byBucket[`${c.grade}-${c.gender}`] = byBucket[`${c.grade}-${c.gender}`] || []).push(c));
+
+  const overflow = [];
+  Object.keys(byBucket).forEach(key => {
+    const [grade, gender] = key.split('-');
+    const base = Number(grade) * 100 + (gender === 'Bx' ? 0 : BUCKET_SIZE);
+    let nextLocalOffset = (maxLocalOffset[key] === undefined ? -1 : maxLocalOffset[key]) + 1;
+    byBucket[key]
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' }))
+      .forEach(c => {
+        if (nextLocalOffset >= BUCKET_SIZE) { overflow.push(c); return; }
+        c.tryoutId = base + nextLocalOffset;
+        values[c.rowIndex][tryoutIdIdx] = c.tryoutId;
+        nextLocalOffset++;
+      });
+  });
+
+  const assigned = candidates.filter(c => c.tryoutId !== undefined);
+  if (assigned.length > 0) {
+    sheet.getRange(2, tryoutIdIdx + 1, values.length, 1).setValues(values.map(row => [row[tryoutIdIdx]]));
+    SpreadsheetApp.flush();
+  }
+
+  console.log(`Assigned ${assigned.length} Tryout ID(s), skipped ${skipped.length}, overflow ${overflow.length}`);
+  let message = assigned.length > 0
+    ? `Assigned ${assigned.length} new Tryout ID(s):\n\n${assigned.sort((a, b) => a.tryoutId - b.tryoutId).map(c => `${c.tryoutId}: ${c.fullName}`).join('\n')}`
+    : 'No Tryout IDs could be assigned.';
+  if (skipped.length > 0) {
+    message += `\n\n${skipped.length} Player(s) skipped, no resolvable Grade/Gender yet: ${skipped.map(s => s.fullName).join(', ')}.`;
+  }
+  if (overflow.length > 0) {
+    message += `\n\n${overflow.length} Player(s) could not be assigned, their Grade/gender bucket is full (past 49 players): ${overflow.map(c => c.fullName).join(', ')}.`;
+  }
+  ui.alert('Tryout IDs Assigned', message, ui.ButtonSet.OK);
 }
 
 /**
