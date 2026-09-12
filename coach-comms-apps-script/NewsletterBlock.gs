@@ -6,6 +6,20 @@
 
 const IMAGE_UPLOAD_PLACEHOLDER = '<COPY PASTE IN IMAGE>';
 
+// Markdown heading prefix for each DocumentApp.ParagraphHeading value that isn't
+// NORMAL. TITLE/SUBTITLE map to h1/h2: Buttondown drafts don't have a separate
+// title field, so a Doc's Title/Subtitle paragraph is just the biggest heading.
+const HEADING_PREFIXES = {
+  [DocumentApp.ParagraphHeading.TITLE]: '# ',
+  [DocumentApp.ParagraphHeading.SUBTITLE]: '## ',
+  [DocumentApp.ParagraphHeading.HEADING1]: '# ',
+  [DocumentApp.ParagraphHeading.HEADING2]: '## ',
+  [DocumentApp.ParagraphHeading.HEADING3]: '### ',
+  [DocumentApp.ParagraphHeading.HEADING4]: '#### ',
+  [DocumentApp.ParagraphHeading.HEADING5]: '##### ',
+  [DocumentApp.ParagraphHeading.HEADING6]: '###### '
+};
+
 /**
  * The email address of the first Person chip found in a table row, or null.
  * Used on the To row: a filled recipient is a Person chip; an empty slot is a
@@ -35,42 +49,63 @@ function findPersonEmailInElement(element) {
  * Markdown for a Newsletter Block's body row. The body cell spans both table
  * columns, but iterates every cell in the row defensively rather than assuming
  * which index holds the content.
+ *
+ * Builds a list of block-level chunks (a heading/paragraph, or a run of
+ * consecutive list items collapsed into one list) and joins them with a blank
+ * line, since Markdown requires a blank line between paragraphs regardless of
+ * whether the source Doc happened to have an empty paragraph there. Empty
+ * paragraphs are dropped rather than preserved: blank-line spacing is now
+ * structural, not copied from the Doc.
  */
 function rowToMarkdown(row, apiKey) {
-  const lines = [];
+  const blocks = [];
+  let listBuffer = [];
+  const flushList = () => {
+    if (listBuffer.length > 0) blocks.push(listBuffer.join('\n'));
+    listBuffer = [];
+  };
+
   for (let c = 0; c < row.getNumCells(); c++) {
     const cell = row.getCell(c);
     for (let i = 0; i < cell.getNumChildren(); i++) {
       const child = cell.getChild(i);
       const type = child.getType();
       if (type === DocumentApp.ElementType.PARAGRAPH) {
-        lines.push(containerInlineMarkdown(child.asParagraph(), apiKey).trimEnd());
+        flushList();
+        const paragraph = child.asParagraph();
+        const text = containerInlineMarkdown(paragraph, apiKey);
+        if (text.trim() === '') continue; // empty Doc paragraph: spacing only, not content
+        const headingPrefix = HEADING_PREFIXES[paragraph.getHeading()];
+        blocks.push(headingPrefix ? `${headingPrefix}${text}` : text);
       } else if (type === DocumentApp.ElementType.LIST_ITEM) {
         const item = child.asListItem();
         const indent = '  '.repeat(item.getNestingLevel());
-        lines.push(`${indent}- ${containerInlineMarkdown(item, apiKey).trimEnd()}`);
+        listBuffer.push(`${indent}- ${containerInlineMarkdown(item, apiKey)}`);
       } else if (type === DocumentApp.ElementType.TABLE) {
         // Neither sampled Newsletter Block has a nested table in its body; flagged
         // rather than silently dropped if one ever does.
-        lines.push('<UNSUPPORTED NESTED TABLE, COPY/PASTE THIS SECTION MANUALLY>');
+        flushList();
+        blocks.push('<UNSUPPORTED NESTED TABLE, COPY/PASTE THIS SECTION MANUALLY>');
       }
       // Anything else (horizontal rule, page break) is skipped silently.
     }
   }
-  // Collapse runs of blank lines (from consecutive empty paragraphs) down to one.
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  flushList();
+  return blocks.join('\n\n').trim();
 }
 
 /**
  * Markdown for every child of a Paragraph or ListItem: text runs (bold/italic/link)
- * and inline images, concatenated in order.
+ * and inline images, concatenated in order. A Paragraph/ListItem is one logical
+ * line, so any literal "\n" that shows up (Google's paragraph-terminator character,
+ * occasionally carried inside a styled run) is stripped rather than treated as content.
  */
 function containerInlineMarkdown(container, apiKey) {
   let out = '';
   for (let i = 0; i < container.getNumChildren(); i++) {
     out += elementInlineMarkdown(container.getChild(i), apiKey);
   }
-  return out;
+  return out.replace(/\n/g, '');
 }
 
 function elementInlineMarkdown(element, apiKey) {
