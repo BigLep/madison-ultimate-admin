@@ -1,0 +1,11 @@
+{
+  "scriptId": "1wbdb1nRkBPk0NK7VGMe5mXtitq0PZvOGYtQURudSIsHwkaC_Lmljxj_l",
+  "rootDir": ".",
+  "parentId": "1NQjYhd73R1eCzVT1zz_zVrsgIfHJaSFDqCP5p38hGwM",
+  "filePushOrder": [
+    "appsscript.json",
+    "Code.gs",
+    "NewsletterBlock.gs",
+    "ButtondownApi.gs"
+  ]
+}
