@@ -1,0 +1,16 @@
+{
+  "name": "compare-markdown",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compares NewsletterBlock.gs's hand-rolled Docs-to-Markdown walker against real Turndown-on-HTML-export, for evaluating converter changes against the Communications Doc's actual content.",
+  "main": "compare.js",
+  "scripts": {
+    "compare": "node compare.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
+  }
+}
