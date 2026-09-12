@@ -4,7 +4,10 @@
  * Markdown for the Buttondown Draft body.
  */
 
-const IMAGE_UPLOAD_PLACEHOLDER = '<COPY PASTE IN IMAGE>';
+// No angle brackets: Buttondown's editor parses "<...>" as an HTML tag even in
+// Markdown mode, which swallows surrounding content into a bogus element.
+const IMAGE_UPLOAD_PLACEHOLDER = 'COPY_PASTE_IN_IMAGE';
+const NESTED_TABLE_PLACEHOLDER = 'COPY_PASTE_IN_TABLE';
 
 // Markdown heading prefix for each DocumentApp.ParagraphHeading value that isn't
 // NORMAL. TITLE/SUBTITLE map to h1/h2: Buttondown drafts don't have a separate
@@ -82,10 +85,10 @@ function rowToMarkdown(row, apiKey) {
         const indent = '  '.repeat(item.getNestingLevel());
         listBuffer.push(`${indent}- ${containerInlineMarkdown(item, apiKey)}`);
       } else if (type === DocumentApp.ElementType.TABLE) {
-        // Neither sampled Newsletter Block has a nested table in its body; flagged
-        // rather than silently dropped if one ever does.
+        // A nested table in the body isn't converted; flagged with a visible
+        // placeholder rather than silently dropped.
         flushList();
-        blocks.push('<UNSUPPORTED NESTED TABLE, COPY/PASTE THIS SECTION MANUALLY>');
+        blocks.push(NESTED_TABLE_PLACEHOLDER);
       }
       // Anything else (horizontal rule, page break) is skipped silently.
     }

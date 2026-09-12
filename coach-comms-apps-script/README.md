@@ -10,7 +10,7 @@ Apps Script bound to the season's Communications Doc. Adds a menu item that conv
 
 ## Usage
 
-Click anywhere inside a Newsletter Block (Insert > Building Blocks > Email Draft, addressed to `drafts@mg.buttondown.email`), then run `🥏 Madison Ultimate > 📬 Send Newsletter Block to Buttondown`. It creates an unsent Buttondown Draft and shows a dialog with a link to review/send it there.
+Click anywhere inside a Newsletter Block (Insert > Building Blocks > Email Draft, addressed to `drafts@mg.buttondown.email`), then run `🥏 Madison Ultimate > 📬 Send Newsletter Block to Buttondown`. It creates an unsent Buttondown Draft and shows a dialog with a link to review/send it there, plus the exact Markdown that was sent (so you can sanity-check the conversion without leaving the Doc).
 
 ## Markdown conversion
 
@@ -18,10 +18,15 @@ Click anywhere inside a Newsletter Block (Insert > Building Blocks > Email Draft
 
 If the walker's output quality degrades in practice as the doc's content gets more varied (nested lists, tables in a body, exotic formatting), the documented fallback is a local (non-Apps-Script) command-line tool that pulls the doc's content and runs real Turndown against it, at the cost of losing the in-doc menu convenience and needing custom Turndown rules for the HTML-export problems above.
 
-## Known limitations (v1.2)
+### Buttondown's own format auto-detection (the "Test 1" bug)
+
+Getting good Markdown out of the walker wasn't sufficient on its own: Buttondown's `/v1/emails` API auto-detects whether a `body` is Markdown ("plaintext" mode, their default) or raw HTML ("fancy" mode), switching to fancy mode as soon as it sees anything resembling an HTML tag. Their Markdown renderer also passes raw HTML straight through unescaped ("all HTML is valid Markdown"), so this bit twice: our own `<UNSUPPORTED TABLE>`-style placeholders got parsed as literal HTML tags (visibly swallowing the rest of the email into a bogus element), and even without that, real bold/heading/italic Markdown syntax risked being auto-detected into fancy mode and rendered as literal escaped characters (`\#`, `\*\*`) instead of formatting. Fixed two ways: placeholders no longer use angle brackets (`COPY_PASTE_IN_IMAGE` / `COPY_PASTE_IN_TABLE`), and `createButtondownDraft` now prepends the literal first line `<!-- buttondown-editor-mode: plaintext -->` to force Markdown parsing regardless of auto-detection. See [Buttondown's editor modes docs](https://docs.buttondown.com/editor-modes).
+
+## Known limitations (v1.3)
 
 - **Cursor-based, not a picker.** The menu action always acts on the block your cursor is currently inside; it doesn't scan the doc for other Newsletter Blocks. Simplest to build first per the grilling session; a picker (list every Newsletter Block, pick one) was the discussed alternative if this turns out to be error-prone in practice.
 - **No "already sent" tracking.** Running this twice on the same block just creates a second Buttondown Draft. Cheap to notice and delete in Buttondown's dashboard; deliberately not built.
-- **Images are attempted, not guaranteed.** An inline image is uploaded to Buttondown's `/v1/images` endpoint and referenced by its hosted URL. The exact multipart field name that endpoint expects (`image` here) is inferred from Buttondown's docs, not yet verified against a real upload. If it fails, the image is replaced with the placeholder text `<COPY PASTE IN IMAGE>` instead of erroring out — check for that placeholder in the draft before sending, and fix the field name in `ButtondownApi.gs`'s `uploadButtondownImage` once you've confirmed the correct one from a real failed attempt's error message.
+- **Images are attempted, not guaranteed.** An inline image is uploaded to Buttondown's `/v1/images` endpoint and referenced by its hosted URL. The exact multipart field name that endpoint expects (`image` here) is inferred from Buttondown's docs, not yet verified against a real upload. If it fails, the image is replaced with the placeholder text `COPY_PASTE_IN_IMAGE` instead of erroring out — check for that placeholder in the draft before sending, and fix the field name in `ButtondownApi.gs`'s `uploadButtondownImage` once you've confirmed the correct one from a real failed attempt's error message.
+- **Nested tables aren't converted.** A table inside a Newsletter Block's body (not the block's own 5-row To/Cc/Bcc/Subject/body structure) is replaced with the placeholder text `COPY_PASTE_IN_TABLE`; check for it and paste the table in by hand. Neither placeholder uses angle brackets on purpose: Buttondown's editor parses `<...>` as an HTML tag even in Markdown mode, which swallowed surrounding content into a bogus element the first time this was tried.
 - **No Markdown escaping.** Plain prose containing literal `*`, `_`, `[`, or `]` will be misinterpreted as Markdown formatting by Buttondown. Not seen in either real Newsletter Block sampled while designing this, but worth knowing if a draft renders oddly.
 - **Draft URL is inferred.** The link shown after creating a draft (`https://buttondown.com/emails/<id>`) is a guess at Buttondown's dashboard URL pattern, not confirmed against their docs. If it 404s, the draft still exists; find it from the Buttondown dashboard's Drafts list instead.

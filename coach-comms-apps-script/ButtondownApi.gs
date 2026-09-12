@@ -8,16 +8,24 @@
  * (includes "id" when the request succeeds).
  */
 function createButtondownDraft(apiKey, subject, bodyMarkdown) {
-  // Buttondown rejects a body starting with "---" as YAML frontmatter unless told
-  // otherwise. A Newsletter Block body would only start that way by coincidence
-  // (e.g. opening with a horizontal rule), so guard against it rather than fail.
-  const safeBody = bodyMarkdown.startsWith('---') ? `​\n${bodyMarkdown}` : bodyMarkdown;
+  // Without this, Buttondown auto-detects the body's format and switches to raw-HTML
+  // ("fancy") interpretation as soon as it spots anything resembling an HTML tag
+  // (which our own COPY_PASTE_IN_TABLE-style placeholders no longer do, but coach-
+  // authored content might). Under fancy mode our Markdown syntax doesn't get
+  // parsed at all: "#", "**", "_" show up as literal escaped characters instead of
+  // headings/bold/italic. This must be the literal first line of the body.
+  const modeComment = '<!-- buttondown-editor-mode: plaintext -->';
+  // Buttondown also rejects a body starting with "---" as YAML frontmatter unless
+  // told otherwise; moot now that the mode comment is always the real first line,
+  // kept as defense in depth in case that check looks past leading comment lines.
+  const safeMarkdown = bodyMarkdown.startsWith('---') ? `​\n${bodyMarkdown}` : bodyMarkdown;
+  const body = `${modeComment}\n${safeMarkdown}`;
 
   const response = UrlFetchApp.fetch(`${CONFIG.buttondown.apiBase}/emails`, {
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: `Token ${apiKey}` },
-    payload: JSON.stringify({ subject, body: safeBody, status: 'draft' }),
+    payload: JSON.stringify({ subject, body, status: 'draft' }),
     muteHttpExceptions: true
   });
   const code = response.getResponseCode();

@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '1.2';
+const SCRIPT_VERSION = '1.3';
 
 const CONFIG = {
   buttondown: {
@@ -95,17 +95,18 @@ function sendNewsletterBlockToButtondown() {
   try {
     const draft = createButtondownDraft(apiKey, subject, bodyMarkdown);
     const draftUrl = draft.id ? `https://buttondown.com/emails/${draft.id}` : null;
-    showDraftCreatedDialog(subject, draftUrl);
+    showDraftCreatedDialog(subject, draftUrl, bodyMarkdown);
   } catch (e) {
     ui.alert('Error', `Could not create the Buttondown draft:\n${e.toString()}`, ui.ButtonSet.OK);
   }
 }
 
 /**
- * ui.alert() can't render a clickable link, so this uses a small HTML dialog
- * instead when a draft URL is available.
+ * ui.alert() can't render a clickable link or a scrollable text area, so this uses
+ * a small HTML dialog instead: the draft link plus the exact Markdown that was sent,
+ * so a coach can sanity-check the conversion without leaving the Doc.
  */
-function showDraftCreatedDialog(subject, draftUrl) {
+function showDraftCreatedDialog(subject, draftUrl, bodyMarkdown) {
   const ui = DocumentApp.getUi();
   if (!draftUrl) {
     ui.alert('Buttondown Draft Created',
@@ -117,8 +118,10 @@ function showDraftCreatedDialog(subject, draftUrl) {
     `<div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;">` +
     `<p><strong>Subject:</strong> ${escapeHtml(subject)}</p>` +
     `<p><a href="${escapeHtml(draftUrl)}" target="_blank">Review and send it in Buttondown</a></p>` +
+    `<p style="margin-bottom:4px;"><strong>Markdown sent:</strong></p>` +
+    `<textarea readonly style="width:100%;height:280px;box-sizing:border-box;font-family:monospace;font-size:12px;">${escapeHtml(bodyMarkdown)}</textarea>` +
     `</div>`
-  ).setWidth(380).setHeight(120);
+  ).setWidth(480).setHeight(440);
   ui.showModalDialog(html, 'Buttondown Draft Created');
 }
 
