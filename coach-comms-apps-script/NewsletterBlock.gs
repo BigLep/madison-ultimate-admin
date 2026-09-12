@@ -53,16 +53,26 @@ function findPersonEmailInElement(element) {
  * columns, but iterates every cell in the row defensively rather than assuming
  * which index holds the content.
  *
- * Builds a list of block-level chunks (a heading/paragraph, or a run of
- * consecutive list items collapsed into one list) and joins them with a blank
- * line, since Markdown requires a blank line between paragraphs regardless of
- * whether the source Doc happened to have an empty paragraph there. Empty
- * paragraphs are dropped rather than preserved: blank-line spacing is now
- * structural, not copied from the Doc.
+ * Builds a list of block-level chunks and joins them with a blank line, since
+ * Markdown requires one between paragraphs. Within a chunk, lines are joined
+ * differently depending on why they're together:
+ *   - a run of paragraphs with no empty Doc paragraph between them is one loose
+ *     chunk, joined with a Markdown hard break ("  \n") so they render as
+ *     separate lines close together, matching how they look in the Doc (e.g. a
+ *     sign-off line directly above a signature line);
+ *   - a run of consecutive list items is one list, joined with a plain "\n".
+ * An empty Doc paragraph itself becomes a blank line: it ends whatever chunk
+ * came before it, and the next paragraph starts a new one, so it's not carried
+ * into the output as visible content, only as a separator.
  */
 function rowToMarkdown(row, apiKey) {
   const blocks = [];
+  let paragraphLines = [];
   let listBuffer = [];
+  const flushParagraph = () => {
+    if (paragraphLines.length > 0) blocks.push(paragraphLines.join('  \n'));
+    paragraphLines = [];
+  };
   const flushList = () => {
     if (listBuffer.length > 0) blocks.push(listBuffer.join('\n'));
     listBuffer = [];
@@ -74,25 +84,38 @@ function rowToMarkdown(row, apiKey) {
       const child = cell.getChild(i);
       const type = child.getType();
       if (type === DocumentApp.ElementType.PARAGRAPH) {
-        flushList();
         const paragraph = child.asParagraph();
         const text = containerInlineMarkdown(paragraph, apiKey);
-        if (text.trim() === '') continue; // empty Doc paragraph: spacing only, not content
+        if (text.trim() === '') {
+          // Empty Doc paragraph: ends the current chunk, carries no content of its own.
+          flushParagraph();
+          flushList();
+          continue;
+        }
+        flushList();
         const headingPrefix = HEADING_PREFIXES[paragraph.getHeading()];
-        blocks.push(headingPrefix ? `${headingPrefix}${text}` : text);
+        if (headingPrefix) {
+          flushParagraph(); // a heading is always its own chunk
+          blocks.push(`${headingPrefix}${text}`);
+        } else {
+          paragraphLines.push(text);
+        }
       } else if (type === DocumentApp.ElementType.LIST_ITEM) {
+        flushParagraph();
         const item = child.asListItem();
         const indent = '  '.repeat(item.getNestingLevel());
         listBuffer.push(`${indent}- ${containerInlineMarkdown(item, apiKey)}`);
       } else if (type === DocumentApp.ElementType.TABLE) {
         // A nested table in the body isn't converted; flagged with a visible
         // placeholder rather than silently dropped.
+        flushParagraph();
         flushList();
         blocks.push(NESTED_TABLE_PLACEHOLDER);
       }
       // Anything else (horizontal rule, page break) is skipped silently.
     }
   }
+  flushParagraph();
   flushList();
   return blocks.join('\n\n').trim();
 }
