@@ -33,6 +33,11 @@ const HEADING_PREFIXES = {
   HEADING_4: '#### ', HEADING_5: '##### ', HEADING_6: '###### '
 };
 
+function rgbColorToHex(rgbColor) {
+  const channel = (v) => Math.round((v || 0) * 255).toString(16).padStart(2, '0');
+  return `#${channel(rgbColor.red)}${channel(rgbColor.green)}${channel(rgbColor.blue)}`;
+}
+
 function textRunsToMarkdown(elements) {
   let out = '';
   for (const el of elements) {
@@ -42,6 +47,10 @@ function textRunsToMarkdown(elements) {
     if (ts.bold) piece = `**${piece}**`;
     if (ts.italic) piece = `_${piece}_`;
     if (ts.link && ts.link.url) piece = `[${piece}](${ts.link.url})`;
+    if (ts.backgroundColor && ts.backgroundColor.color && ts.backgroundColor.color.rgbColor) {
+      const hex = rgbColorToHex(ts.backgroundColor.color.rgbColor);
+      piece = `<mark style="background-color:${hex}">${piece}</mark>`;
+    }
     out += piece;
   }
   return out.replace(/\n/g, '');

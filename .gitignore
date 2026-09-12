@@ -2,6 +2,7 @@
 .*
 !.gitignore
 !.clasp.json
+!.claspignore
 !.github/
 
 # Personal Information - Do not commit sensitive data

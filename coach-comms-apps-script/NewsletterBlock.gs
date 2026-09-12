@@ -146,7 +146,11 @@ function elementInlineMarkdown(element, apiKey) {
 }
 
 /**
- * A Text element's runs, each wrapped for bold/italic/link. Does not escape
+ * A Text element's runs, each wrapped for bold/italic/link/highlight. Markdown has
+ * no highlight syntax, so a highlighted run is wrapped in a literal <mark> tag
+ * instead: Buttondown passes raw HTML straight through even in Markdown mode (see
+ * README's "Buttondown's own format auto-detection" section), so this renders as
+ * an actual highlight rather than showing up as literal tag text. Does not escape
  * Markdown-special characters in plain prose (*, _, [, ]); fine for the sentence-
  * style content these blocks actually contain, but a known limitation.
  */
@@ -165,6 +169,8 @@ function textRunsToMarkdown(text) {
     if (text.isItalic(start)) piece = `_${piece}_`;
     const link = text.getLinkUrl(start);
     if (link) piece = `[${piece}](${link})`;
+    const highlight = text.getBackgroundColor(start);
+    if (highlight) piece = `<mark style="background-color:${highlight}">${piece}</mark>`;
     out += piece;
   }
   return out;

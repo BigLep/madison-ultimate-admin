@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '1.4';
+const SCRIPT_VERSION = '1.5';
 
 const CONFIG = {
   buttondown: {
