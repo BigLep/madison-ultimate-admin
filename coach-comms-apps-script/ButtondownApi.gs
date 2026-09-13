@@ -21,11 +21,24 @@ function createButtondownDraft(apiKey, subject, bodyMarkdown) {
   const safeMarkdown = bodyMarkdown.startsWith('---') ? `​\n${bodyMarkdown}` : bodyMarkdown;
   const body = `${modeComment}\n${safeMarkdown}`;
 
+  const payload = { subject, body, status: 'draft' };
+  const seasonTag = CONFIG.buttondown.currentSeasonTag;
+  if (seasonTag && seasonTag.id) {
+    // Defaults every draft's audience to the current season's roster tag (tag
+    // membership is managed elsewhere, outside this script). Buttondown's filters
+    // key subscribers by tag id, not name; only evaluated when the draft is sent,
+    // so this is safe to set on a draft, not just a scheduled/sent email.
+    payload.filters = {
+      predicate: 'and',
+      filters: [{ field: 'subscriber.tags', operator: 'contains', value: seasonTag.id }]
+    };
+  }
+
   const response = UrlFetchApp.fetch(`${CONFIG.buttondown.apiBase}/emails`, {
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: `Token ${apiKey}` },
-    payload: JSON.stringify({ subject, body, status: 'draft' }),
+    payload: JSON.stringify(payload),
     muteHttpExceptions: true
   });
   const code = response.getResponseCode();

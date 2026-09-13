@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '1.5';
+const SCRIPT_VERSION = '1.6';
 
 const CONFIG = {
   buttondown: {
@@ -18,7 +18,14 @@ const CONFIG = {
     // not committed here. Can reuse the same Buttondown API key already set for
     // coach-sheet-apps-script's Newsletter Subscribers sync (drafting requires the
     // same account, though a scoped key with write access is preferable if available).
-    apiKeyProperty: 'BUTTONDOWN_API_KEY'
+    apiKeyProperty: 'BUTTONDOWN_API_KEY',
+    // Per-season: update to this season's roster tag (managed separately, outside
+    // this script; see coach-sheet-apps-script for tag maintenance). Drafts default
+    // to this tag as their audience filter. Find a tag's id via GET /v1/tags.
+    currentSeasonTag: {
+      id: 'sub_tag_7qt2rqt2ay9jevzck0wnabqwbm',
+      label: '2026-fall-roster'
+    }
   },
   newsletterBlock: {
     // The Insert > Building Blocks > Email Draft address that marks a block as
@@ -114,9 +121,14 @@ function showDraftCreatedDialog(subject, draftUrl, bodyMarkdown) {
       ui.ButtonSet.OK);
     return;
   }
+  const seasonTag = CONFIG.buttondown.currentSeasonTag;
+  const audienceLine = seasonTag && seasonTag.label
+    ? `<p><strong>Audience:</strong> subscribers tagged "${escapeHtml(seasonTag.label)}"</p>`
+    : '';
   const html = HtmlService.createHtmlOutput(
     `<div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;">` +
     `<p><strong>Subject:</strong> ${escapeHtml(subject)}</p>` +
+    audienceLine +
     `<p><a href="${escapeHtml(draftUrl)}" target="_blank">Review and send it in Buttondown</a></p>` +
     `<p style="margin-bottom:4px;"><strong>Markdown sent:</strong></p>` +
     `<textarea readonly style="width:100%;height:280px;box-sizing:border-box;font-family:monospace;font-size:12px;">${escapeHtml(bodyMarkdown)}</textarea>` +
