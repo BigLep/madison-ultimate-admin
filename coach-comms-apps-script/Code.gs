@@ -9,7 +9,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '1.6';
+const SCRIPT_VERSION = '1.7';
 
 const CONFIG = {
   buttondown: {
@@ -24,7 +24,7 @@ const CONFIG = {
     // to this tag as their audience filter. Find a tag's id via GET /v1/tags.
     currentSeasonTag: {
       id: 'sub_tag_7qt2rqt2ay9jevzck0wnabqwbm',
-      label: '2026-fall-roster'
+      label: '2026-fall'
     }
   },
   newsletterBlock: {

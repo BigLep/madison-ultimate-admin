@@ -14,7 +14,7 @@ Click anywhere inside a Newsletter Block (Insert > Building Blocks > Email Draft
 
 ## Audience (season tag)
 
-Every draft is created with a `filters` audience of `CONFIG.buttondown.currentSeasonTag` (in `Code.gs`), currently `2026-fall-roster` (Buttondown tag id `sub_tag_7qt2rqt2ay9jevzck0wnabqwbm`). This only sets the draft's default audience in Buttondown; it doesn't change until you send it, and you can always change the audience yourself in Buttondown before sending. **This script does not maintain tag membership** (who actually has `2026-fall-roster`), that's managed separately (see `coach-sheet-apps-script`); this only picks which existing tag a new draft defaults to targeting. Update `currentSeasonTag` here each season (find a tag's id via Buttondown's `GET /v1/tags`).
+Every draft is created with a `filters` audience of `CONFIG.buttondown.currentSeasonTag` (in `Code.gs`), currently `2026-fall` (Buttondown tag id `sub_tag_7qt2rqt2ay9jevzck0wnabqwbm`). This only sets the draft's default audience in Buttondown; it doesn't change until you send it, and you can always change the audience yourself in Buttondown before sending. **This script does not maintain tag membership** (who actually has `2026-fall`), that's managed separately (see `coach-sheet-apps-script`); this only picks which existing tag a new draft defaults to targeting. Update `currentSeasonTag` here each season (find a tag's id via Buttondown's `GET /v1/tags`).
 
 ## Markdown conversion
 
