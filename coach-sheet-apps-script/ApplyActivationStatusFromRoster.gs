@@ -109,7 +109,7 @@ function showApplyActivationStatusDialog() {
         '<select id="src">' +
         optionsHtml +
         '</select>' +
-        '<div class="note">Each Full Name on the source sheet updates that player’s cell in Game Availability for this column (Active, Inactive, or TBD only).</div>' +
+        '<div class="note">Each player row on the source sheet (matched by PlayerID, or by Full Name on an older sheet) updates that player’s cell in Game Availability for this column (Active, Inactive, or TBD only).</div>' +
         '<div class="buttons">' +
         '<button class="btn btn-primary" onclick="runApply()">Apply</button>' +
         '<button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>' +
@@ -190,15 +190,29 @@ function applyActivationStatusFromRosterSheet(sourceSheetName, activationHeader)
 
   const lastColSrc = sourceSheet.getLastColumn();
   const srcHeaders = sourceSheet.getRange(1, 1, 1, lastColSrc).getValues()[0];
+  let colId = -1;
   let colName = -1;
   let colAct = -1;
   for (let i = 0; i < srcHeaders.length; i++) {
     const h = strCell_(srcHeaders[i]);
+    if (h === CONFIG.columns.playerId) colId = i + 1;
     if (h === CONFIG.columns.fullName) colName = i + 1;
     if (headerText_(srcHeaders[i]) === activationHeader) colAct = i + 1;
   }
-  if (colName < 0) throw new Error('Source sheet needs a "' + CONFIG.columns.fullName + '" column.');
   if (colAct < 0) throw new Error('Source sheet needs column "' + activationHeader + '".');
+
+  // Join on PlayerID when both sheets carry one (printouts built by 3.29 or later keep a hidden
+  // PlayerID column; availability sheets built by 3.28 or later have it in column A). Otherwise
+  // fall back to Full Name, case-insensitively.
+  const gaIdCol = findHeaderColumn1Based_(gaSheet, CONFIG.columns.playerId);
+  const gaNameCol = findHeaderColumn1Based_(gaSheet, CONFIG.columns.fullName);
+  const byId = colId > 0 && gaIdCol > 0;
+  if (!byId) {
+    if (colName < 0) throw new Error('Source sheet needs a "' + CONFIG.columns.playerId + '" or "' + CONFIG.columns.fullName + '" column.');
+    if (gaNameCol < 0) throw new Error('Column "' + CONFIG.columns.fullName + '" not found in Game Availability.');
+    console.warn('⚠️ Joining by Full Name: "' + sourceSheetName + '" or Game Availability has no ' + CONFIG.columns.playerId + ' column.');
+  }
+  const normalize = byId ? function (v) { return strCell_(v); } : function (v) { return strCell_(v).toLowerCase(); };
 
   const allowed = {};
   GAME_ACTIVATION_STATUS_OPTIONS.forEach(function (o) {
@@ -208,35 +222,32 @@ function applyActivationStatusFromRosterSheet(sourceSheetName, activationHeader)
   const lastRowSrc = sourceSheet.getLastRow();
   if (lastRowSrc < 2) return { updated: 0, skipped: 0 };
 
-  const names = sourceSheet.getRange(2, colName, lastRowSrc, colName).getValues();
-  const acts = sourceSheet.getRange(2, colAct, lastRowSrc, colAct).getValues();
+  const keys = sourceSheet.getRange(2, byId ? colId : colName, lastRowSrc - 1, 1).getValues();
+  const acts = sourceSheet.getRange(2, colAct, lastRowSrc - 1, 1).getValues();
 
   const gaLast = gaSheet.getLastRow();
   if (gaLast < 2) throw new Error('Game Availability has no data rows.');
 
-  // Full Name is found by header (column A of Game Availability holds PlayerID).
-  const gaNameCol = findHeaderColumn1Based_(gaSheet, CONFIG.columns.fullName);
-  if (gaNameCol < 0) throw new Error('Column "' + CONFIG.columns.fullName + '" not found in Game Availability.');
-  const gaNames = gaSheet.getRange(2, gaNameCol, gaLast, 1).getValues();
-  const rowByName = {};
-  for (let i = 0; i < gaNames.length; i++) {
-    const nm = strCell_(gaNames[i][0]);
-    if (nm) rowByName[nm.toLowerCase()] = i;
+  const gaKeys = gaSheet.getRange(2, byId ? gaIdCol : gaNameCol, gaLast - 1, 1).getValues();
+  const rowByKey = {};
+  for (let i = 0; i < gaKeys.length; i++) {
+    const k = normalize(gaKeys[i][0]);
+    if (k) rowByKey[k] = i;
   }
 
-  const outCol = gaSheet.getRange(2, gaCol, gaLast, gaCol).getValues();
+  const outCol = gaSheet.getRange(2, gaCol, gaLast - 1, 1).getValues();
 
   let updated = 0;
   let skipped = 0;
 
-  for (let r = 0; r < names.length; r++) {
-    const name = strCell_(names[r][0]);
+  for (let r = 0; r < keys.length; r++) {
+    const key = normalize(keys[r][0]);
     const status = strCell_(acts[r][0]);
-    if (!name || !status || !allowed[status]) {
+    if (!key || !status || !allowed[status]) {
       skipped++;
       continue;
     }
-    const ix = rowByName[name.toLowerCase()];
+    const ix = rowByKey[key];
     if (ix === undefined) {
       skipped++;
       continue;
@@ -245,7 +256,7 @@ function applyActivationStatusFromRosterSheet(sourceSheetName, activationHeader)
     outCol[ix][0] = status;
   }
 
-  gaSheet.getRange(2, gaCol, gaLast, gaCol).setValues(outCol);
+  gaSheet.getRange(2, gaCol, gaLast - 1, 1).setValues(outCol);
 
   return { updated: updated, skipped: skipped };
 }

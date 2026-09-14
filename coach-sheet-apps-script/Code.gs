@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.28';
+const SCRIPT_VERSION = '3.29';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -101,14 +101,17 @@ const CONFIG = {
 
   // Shared base column structure for roster printouts (Practice Roster and Game Roster Prep)
   // Header order is driven by rosterPrintoutBaseColumnKeys (not Object.keys order).
-  rosterPrintoutBaseColumnKeys: ['number', 'fullName', 'team', 'gender', 'grade'],
+  rosterPrintoutBaseColumnKeys: ['number', 'fullName', 'team', 'gender', 'grade', 'playerId'],
   rosterPrintoutBaseColumns: {
-    // Base columns (always present): # | Full Name | Team | Gender | Grade
+    // Base columns (always present): # | Full Name | Team | Gender | Grade | PlayerID
+    // PlayerID is the row's key (written as a value, hidden after the build); Full Name, Team,
+    // Gender, and Grade are Roster lookups on it, and every availability cell is looked up by it.
     number: { name: '#', index: 1 },
     fullName: { name: 'Full Name', index: 2 },
     team: { name: 'Team', index: 3 },
     gender: { name: 'Gender', index: 4 },
-    grade: { name: 'Grade', index: 5 }
+    grade: { name: 'Grade', index: 5 },
+    playerId: { name: 'PlayerID', index: 6 }
     // Additional columns (availability, notes) are added dynamically after these base columns
   },
 

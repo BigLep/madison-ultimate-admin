@@ -29,6 +29,92 @@ function isIncludedInGeneratedRosters(cellValue) {
 }
 
 /**
+ * House-style lookup formula for one cell of a PlayerID-keyed sheet, the same shape as the
+ * Roster's own derived columns: blank when the row has no key, blank when the key is not found,
+ * otherwise the looked-up value. Row 2 keyed by A, looking up Full Name (F) in the Roster:
+ *   =IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 Roster'!$F:$F),""))
+ * @param {string} keyLetter - Column letter (on the sheet holding the formula) of the lookup key
+ * @param {number} row - 1-based sheet row the formula lives on
+ * @param {string} sheetName - Sheet to look up in (unquoted; quotes are added and escaped here)
+ * @param {string} sheetKeyLetter - That sheet's key column letter
+ * @param {string} sheetValueLetter - That sheet's value column letter
+ * @return {string}
+ */
+function playerIdLookupFormula(keyLetter, row, sheetName, sheetKeyLetter, sheetValueLetter) {
+  const quoted = `'${String(sheetName).replace(/'/g, "''")}'`;
+  const key = `$${keyLetter}${row}`;
+  return `=IF(${key}="","",IFERROR(XLOOKUP(${key},${quoted}!$${sheetKeyLetter}:$${sheetKeyLetter},${quoted}!$${sheetValueLetter}:$${sheetValueLetter}),""))`;
+}
+
+/**
+ * Fill one printout column (rows 2..numRows+1) with per-row playerIdLookupFormula formulas.
+ * No-op when colIndex or sheetValueLetter is missing (the column is not part of this build).
+ * @return {boolean} whether anything was written
+ */
+function fillLookupColumn(sheet, colIndex, numRows, keyLetter, sheetName, sheetKeyLetter, sheetValueLetter) {
+  if (!colIndex || !sheetValueLetter || numRows <= 0) return false;
+  const formulas = [];
+  for (let i = 0; i < numRows; i++) {
+    formulas.push([playerIdLookupFormula(keyLetter, i + 2, sheetName, sheetKeyLetter, sheetValueLetter)]);
+  }
+  sheet.getRange(2, colIndex, numRows, 1).setFormulas(formulas);
+  return true;
+}
+
+/**
+ * How a printout joins to an availability sheet: on PlayerID when the availability sheet has a
+ * PlayerID column (every sheet built by 3.28 or later), otherwise on Full Name (an older sheet).
+ * @param {Object} availColumns - From findAvailabilityColumns (playerIdColumn, fullNameColumn)
+ * @param {string} playerIdLetter - The printout's PlayerID column letter
+ * @param {string} fullNameLetter - The printout's Full Name column letter
+ * @return {{keyLetter: string, sheetKeyLetter: string}}
+ */
+function availabilityJoin(availColumns, playerIdLetter, fullNameLetter) {
+  if (availColumns.playerIdColumn) {
+    return { keyLetter: playerIdLetter, sheetKeyLetter: availColumns.playerIdColumn };
+  }
+  console.warn(`⚠️ Availability sheet has no "${AVAILABILITY_ROW_HEADERS.playerId}" column; joining by Full Name. Run Build Practice/Game Availability to add it.`);
+  return { keyLetter: fullNameLetter, sheetKeyLetter: availColumns.fullNameColumn };
+}
+
+/**
+ * Seed the player rows of a printout (practice roster, game roster prep) from the Roster: one row
+ * per Player whose Include In Generated Rosters is not FALSE, PlayerID written as a value in
+ * playerIdColumn and Full Name as a Roster formula keyed by it in fullNameColumn. PlayerID is the
+ * only per-player value a printout holds; everything else is a lookup on it (ADR 0004).
+ * @param {Sheet} targetSheet
+ * @param {Sheet} rosterSheet
+ * @param {number} startRow - First data row on the printout (2)
+ * @param {number} playerIdColumn - 1-based printout column for PlayerID
+ * @param {number} fullNameColumn - 1-based printout column for Full Name
+ * @return {{rowCount: number, playerIdLetter: string, fullNameLetter: string, rosterIdLetter: string}}
+ */
+function seedPrintoutPlayerRows(targetSheet, rosterSheet, startRow, playerIdColumn, fullNameColumn) {
+  const table = readRosterTable(rosterSheet);
+  const idCol = table.col(CONFIG.columns.playerId);
+  const includeCol = table.headers.indexOf(CONFIG.columns.includeInGeneratedRosters);
+  const ids = [];
+  table.rows.forEach(row => {
+    const id = (row[idCol] === null || row[idCol] === undefined) ? '' : String(row[idCol]).trim();
+    if (!id) return;
+    if (includeCol !== -1 && !isIncludedInGeneratedRosters(row[includeCol])) return;
+    ids.push(id);
+  });
+  if (ids.length === 0) {
+    throw new Error('No student data found in roster');
+  }
+
+  const playerIdLetter = getColumnLetter(playerIdColumn);
+  const rosterIdLetter = getColumnLetter(table.col(CONFIG.columns.playerId) + 1);
+  const rosterNameLetter = getColumnLetter(table.col(CONFIG.columns.fullName) + 1);
+  targetSheet.getRange(startRow, playerIdColumn, ids.length, 1).setValues(ids.map(id => [id]));
+  targetSheet.getRange(startRow, fullNameColumn, ids.length, 1).setFormulas(
+    ids.map((id, i) => [playerIdLookupFormula(playerIdLetter, startRow + i, CONFIG.roster.sheetName, rosterIdLetter, rosterNameLetter)])
+  );
+  return { rowCount: ids.length, playerIdLetter: playerIdLetter, fullNameLetter: getColumnLetter(fullNameColumn), rosterIdLetter: rosterIdLetter };
+}
+
+/**
  * Copy Full Name column from roster to a specific column in new sheet
  * @param {Sheet} targetSheet - The sheet to copy Full Name to
  * @param {Sheet} rosterSheet - The source roster sheet

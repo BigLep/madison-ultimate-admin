@@ -550,29 +550,12 @@ const AVAILABILITY_ROW_HEADERS = {
 };
 
 /**
- * House-style Roster lookup for one per-player availability cell, the same shape as the Roster's
- * own derived columns: blank when the row has no PlayerID, blank when the PlayerID is not in the
- * Roster, otherwise the Roster value. Row 2 with PlayerID in A and Full Name in Roster column F:
- *   =IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 Roster'!$F:$F),""))
- * @param {string} keyLetter - Availability sheet column letter of PlayerID
- * @param {number} row - 1-based sheet row the formula lives on
- * @param {string} rosterKeyLetter - Roster column letter of PlayerID
- * @param {string} rosterValueLetter - Roster column letter of the value to show
- * @return {string}
- */
-function availabilityRosterFormula_(keyLetter, row, rosterKeyLetter, rosterValueLetter) {
-  const rosterName = `'${CONFIG.roster.sheetName.replace(/'/g, "''")}'`;
-  const key = `$${keyLetter}${row}`;
-  return `=IF(${key}="","",IFERROR(XLOOKUP(${key},${rosterName}!$${rosterKeyLetter}:$${rosterKeyLetter},${rosterName}!$${rosterValueLetter}:$${rosterValueLetter}),""))`;
-}
-
-/**
  * Seed and repair the per-player rows of an availability sheet from the Roster.
  *
  * Rule: every Roster player whose Include In Generated Rosters is TRUE and whose PlayerID is not
  * already in the sheet's PlayerID column gets one appended row. PlayerID is the only per-player
  * value written; Full Name, Grade, and Gender Identification are per-row Roster XLOOKUP formulas
- * keyed by that row's PlayerID (availabilityRosterFormula_), so they stay live as the Roster
+ * keyed by that row's PlayerID (playerIdLookupFormula), so they stay live as the Roster
  * changes and can never drift from it. Rows are never deleted or reordered, the same rule Sync
  * Extra Player Info follows, so flag cut players FALSE before the first build. An existing row
  * with a Full Name but a blank PlayerID is filled when exactly one Roster player has that Full
@@ -631,7 +614,7 @@ function seedAvailabilityRows_(ss, sheet) {
     { header: AVAILABILITY_ROW_HEADERS.grade, rosterLetter: rosterLetter(CONFIG.columns.grade) },
     { header: AVAILABILITY_ROW_HEADERS.genderIdentification, rosterLetter: rosterLetter(CONFIG.columns.genderIdentification) }
   ].filter(d => columns[d.header]).map(d => ({ col: columns[d.header], rosterLetter: d.rosterLetter }));
-  const formulaFor = (row, d) => availabilityRosterFormula_(playerIdLetter, row, rosterIdLetter, d.rosterLetter);
+  const formulaFor = (row, d) => playerIdLookupFormula(playerIdLetter, row, CONFIG.roster.sheetName, rosterIdLetter, d.rosterLetter);
 
   // Existing rows: collect PlayerIDs, fill blanks by unambiguous Full Name, then (re)write the
   // derived cells of every row that has a PlayerID as formulas.

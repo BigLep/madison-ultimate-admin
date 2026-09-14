@@ -528,8 +528,12 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
       dataRange.setBorder(false, false, false, false, false, false);
     }
 
-    // Update headers with new dates (in case the practice date changed)
-    const headers = ['#', 'Full Name', 'Grade', 'Gender', 'Team', practiceDate, `${practiceDate} Note`];
+    // Update headers with new dates (in case the practice date changed). Base columns come from
+    // CONFIG so their order matches populatePracticeRosterData.
+    const headers = CONFIG.rosterPrintoutBaseColumnKeys.map(function (key) {
+      return CONFIG.rosterPrintoutBaseColumns[key].name;
+    });
+    headers.push(practiceDate, `${practiceDate} Note`);
 
     // Add next game columns if found (Activation Status, Availability, Note)
     if (nextGameInfo) {
@@ -539,7 +543,11 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
       headers.push(gameHeaders.noteHeader);
     }
 
-    // Update header row (preserve formatting but update text)
+    // Update header row (preserve formatting but update text). A sheet built before the PlayerID
+    // column existed is one column narrower than the new layout.
+    if (existingSheet.getMaxColumns() < headers.length) {
+      existingSheet.insertColumnsAfter(existingSheet.getMaxColumns(), headers.length - existingSheet.getMaxColumns());
+    }
     const headerRange = existingSheet.getRange(1, 1, 1, headers.length);
     headerRange.setValues([headers]);
 
@@ -551,9 +559,10 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
       console.log('🎮 No next game found after this practice');
     }
 
-    // Populate with fresh data using existing functions
-    const fullNameInfo = copyFullNameColumnToColumn(existingSheet, rosterSheet, 2, 2);
-    console.log(`📊 Copied ${fullNameInfo.rowCount} students from roster`);
+    // Seed PlayerID (value) and Full Name (Roster formula) rows from the Roster
+    const playerIdCol = CONFIG.rosterPrintoutBaseColumns.playerId.index;
+    const fullNameInfo = seedPrintoutPlayerRows(existingSheet, rosterSheet, 2, playerIdCol, CONFIG.rosterPrintoutBaseColumns.fullName.index);
+    console.log(`📊 Seeded ${fullNameInfo.rowCount} students from roster`);
 
     if (fullNameInfo.rowCount > 0) {
       const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
@@ -576,6 +585,11 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
       // Add borders at group changes (where # = 1)
       addGroupBorders(existingSheet, fullNameInfo.rowCount);
     }
+
+    // PlayerID is the key, not something to print: hide it (a sheet built before 3.29 had the
+    // availability dropdown in this column, so drop any validation left there).
+    existingSheet.getRange(2, playerIdCol, Math.max(existingSheet.getMaxRows() - 1, 1), 1).clearDataValidations();
+    existingSheet.hideColumns(playerIdCol);
 
     console.log(`✅ Practice roster "${sheetName}" updated successfully`);
 
@@ -669,12 +683,11 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     
     console.log(`📍 Found availability columns: ${availColumns.availabilityColumn} and ${availColumns.noteColumn || 'none'}`);
     
-    // Copy Full Name column to column B (column 2) from roster using shared utility
-    const fullNameInfo = copyFullNameColumnToColumn(newSheet, rosterSheet, 2, 2); // startRow=2, targetColumn=2
-    console.log(`📊 Copied ${fullNameInfo.rowCount} students from roster`);
+    // Seed PlayerID (value) and Full Name (Roster formula) rows from the Roster
+    const fullNameInfo = seedPrintoutPlayerRows(newSheet, rosterSheet, 2, CONFIG.rosterPrintoutBaseColumns.playerId.index, CONFIG.rosterPrintoutBaseColumns.fullName.index);
+    console.log(`📊 Seeded ${fullNameInfo.rowCount} students from roster`);
     
     const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
-    const nonEmptyFullNames = {length: fullNameInfo.rowCount}; // For backward compatibility
     
     // Populate other columns with XLOOKUP formulas
     populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, practiceAvailabilitySheet, availColumns, fullNameInfo.rowCount, gameAvailabilitySheet, nextGameInfo);
@@ -755,6 +768,9 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
       gameNoteRange.setWrap(true);
     }
     
+    // PlayerID is the key, not something to print: hide it
+    newSheet.hideColumns(CONFIG.rosterPrintoutBaseColumns.playerId.index);
+
     // Set print settings
     console.log('🖨️ Configuring print settings...');
     configurePrintSettings(newSheet);
@@ -787,129 +803,71 @@ function findPracticeAvailabilityColumns(practiceAvailabilitySheet, practiceDate
 }
 
 /**
- * Populate practice roster data with XLOOKUP formulas
+ * Populate practice roster data with per-row lookup formulas keyed by the row's PlayerID
+ * (CONFIG.rosterPrintoutBaseColumns.playerId): Team, Gender, and Grade from the Roster;
+ * availability, note, and next-game cells from the availability sheets (joined on PlayerID,
+ * or on Full Name for an availability sheet built before it had a PlayerID column).
  * @param {Sheet} newSheet - The new practice roster sheet
  * @param {Sheet} rosterSheet - The source roster sheet
  * @param {Array} rosterHeaderRow - Header row from roster sheet
  * @param {Sheet} practiceAvailabilitySheet - The practice availability sheet
- * @param {Object} availColumns - Availability column letters
+ * @param {Object} availColumns - From findPracticeAvailabilityColumns
  * @param {number} numRows - Number of data rows
  * @param {Sheet} gameAvailabilitySheet - The game availability sheet (optional)
  * @param {Object} nextGameInfo - Next game information (optional)
  */
 function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, practiceAvailabilitySheet, availColumns, numRows, gameAvailabilitySheet = null, nextGameInfo = null) {
   if (numRows === 0) return;
-  
+
   const rosterSheetName = CONFIG.roster.sheetName;
   const practiceAvailSheetName = 'Practice Availability';
-  
-  // Find "Full Name" column for XLOOKUP key (column B in the practice roster)
-  const rosterFullNameColIndex = rosterHeaderRow.indexOf(CONFIG.columns.fullName) + 1;
-  if (rosterFullNameColIndex === 0) {
-    throw new Error(`${CONFIG.columns.fullName} column not found in Roster sheet`);
-  }
-  const rosterFullNameCol = getColumnLetter(rosterFullNameColIndex);
-  console.log(`📍 Using ${CONFIG.columns.fullName} column ${rosterFullNameCol} for XLOOKUP key`);
-
-  const colTeam = CONFIG.rosterPrintoutBaseColumns.team.index;
-  const colGender = CONFIG.rosterPrintoutBaseColumns.gender.index;
-  const colGrade = CONFIG.rosterPrintoutBaseColumns.grade.index;
+  const base = CONFIG.rosterPrintoutBaseColumns;
   const baseColCount = CONFIG.rosterPrintoutBaseColumnKeys.length;
+  const playerIdLetter = getColumnLetter(base.playerId.index);
+  const fullNameLetter = getColumnLetter(base.fullName.index);
 
-  // Team (must match header column colTeam)
-  const teamColIndex = rosterHeaderRow.indexOf(CONFIG.columns.team) + 1;
-  if (teamColIndex > 0) {
-    const teamCol = getColumnLetter(teamColIndex);
-    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${teamCol}:${teamCol}),"")`;
-    newSheet.getRange(2, colTeam).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, colTeam).copyTo(newSheet.getRange(3, colTeam, numRows - 1, 1));
-    }
-    console.log(`✅ Populated Team column with XLOOKUP from column ${teamCol}`);
-  } else {
-    console.warn(`⚠️ Team column not found in Roster sheet - available columns: ${rosterHeaderRow.join(', ')}`);
+  // Roster columns by header; every Roster lookup is keyed by the row's PlayerID.
+  const rosterLetter = (name) => {
+    const i = rosterHeaderRow.indexOf(name);
+    return i === -1 ? null : getColumnLetter(i + 1);
+  };
+  const rosterIdLetter = rosterLetter(CONFIG.columns.playerId);
+  if (!rosterIdLetter) {
+    throw new Error(`${CONFIG.columns.playerId} column not found in Roster sheet`);
   }
-
-  // Gender (from "Gender Identification")
-  const genderColIndex = rosterHeaderRow.indexOf(CONFIG.columns.genderIdentification) + 1;
-  if (genderColIndex > 0) {
-    const genderCol = getColumnLetter(genderColIndex);
-    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${genderCol}:${genderCol}),"")`;
-    newSheet.getRange(2, colGender).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, colGender).copyTo(newSheet.getRange(3, colGender, numRows - 1, 1));
+  const fromRoster = (colIndex, header) => {
+    const letter = rosterLetter(header);
+    if (!letter) {
+      console.warn(`⚠️ ${header} column not found in Roster sheet - available columns: ${rosterHeaderRow.join(', ')}`);
+      return;
     }
-    console.log(`✅ Populated Gender column with XLOOKUP from column ${genderCol}`);
-  } else {
-    console.warn(`⚠️ Gender Identification column not found in Roster sheet - available columns: ${rosterHeaderRow.join(', ')}`);
-  }
+    fillLookupColumn(newSheet, colIndex, numRows, playerIdLetter, rosterSheetName, rosterIdLetter, letter);
+    console.log(`✅ Populated ${header} column with XLOOKUP from Roster column ${letter}`);
+  };
+  fromRoster(base.team.index, CONFIG.columns.team);
+  fromRoster(base.gender.index, CONFIG.columns.genderIdentification);
+  fromRoster(base.grade.index, CONFIG.columns.grade);
 
-  // Grade
-  const gradeColIndex = rosterHeaderRow.indexOf(CONFIG.columns.grade) + 1;
-  if (gradeColIndex > 0) {
-    const gradeCol = getColumnLetter(gradeColIndex);
-    const formula = `=IFERROR(XLOOKUP(B2,'${rosterSheetName}'!${rosterFullNameCol}:${rosterFullNameCol},'${rosterSheetName}'!${gradeCol}:${gradeCol}),"")`;
-    newSheet.getRange(2, colGrade).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, colGrade).copyTo(newSheet.getRange(3, colGrade, numRows - 1, 1));
+  const fromAvailability = (colIndex, sheetName, join, valueLetter, label) => {
+    if (fillLookupColumn(newSheet, colIndex, numRows, join.keyLetter, sheetName, join.sheetKeyLetter, valueLetter)) {
+      console.log(`✅ Populated ${label} column with XLOOKUP`);
     }
-    console.log(`✅ Populated Grade column with XLOOKUP`);
-  }
+  };
 
-  // Practice Availability column (first column after base columns)
-  const practiceAvailabilityColumnIndex = baseColCount + 1;
-  if (availColumns.availabilityColumn) {
-    const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!${availColumns.fullNameColumn}:${availColumns.fullNameColumn},'${practiceAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
-    newSheet.getRange(2, practiceAvailabilityColumnIndex).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, practiceAvailabilityColumnIndex).copyTo(newSheet.getRange(3, practiceAvailabilityColumnIndex, numRows - 1, 1));
-    }
-    console.log(`✅ Populated Practice Availability column with XLOOKUP`);
-  }
+  // Practice Availability columns (first two after the base columns)
+  const practiceJoin = availabilityJoin(availColumns, playerIdLetter, fullNameLetter);
+  fromAvailability(baseColCount + 1, practiceAvailSheetName, practiceJoin, availColumns.availabilityColumn, 'Practice Availability');
+  fromAvailability(baseColCount + 2, practiceAvailSheetName, practiceJoin, availColumns.noteColumn, 'Practice Availability Note');
 
-  // Practice Availability Note column (second column after base columns)
-  const practiceNoteColumnIndex = baseColCount + 2;
-  if (availColumns.noteColumn) {
-    const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!${availColumns.fullNameColumn}:${availColumns.fullNameColumn},'${practiceAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
-    newSheet.getRange(2, practiceNoteColumnIndex).setFormula(formula);
-    if (numRows > 1) {
-      newSheet.getRange(2, practiceNoteColumnIndex).copyTo(newSheet.getRange(3, practiceNoteColumnIndex, numRows - 1, 1));
-    }
-    console.log(`✅ Populated Practice Availability Note column with XLOOKUP`);
-  }
-
-  // Add next game columns if available (Activation Status, Availability, Note)
+  // Next game columns if available (Activation Status, Availability, Note)
   if (nextGameInfo && gameAvailabilitySheet) {
     const gameAvailSheetName = 'Game Availability';
     const nextGameColumns = findGameAvailabilityColumns(gameAvailabilitySheet, nextGameInfo.formattedDate, nextGameInfo.ordinalForDate || 1);
-    const nextGameActivationColIndex = baseColCount + 3;
-    const nextGameAvailabilityColIndex = baseColCount + 4;
-    const nextGameNoteColIndex = baseColCount + 5;
-
-    if (nextGameColumns.activationStatusColumn) {
-      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${nextGameColumns.fullNameColumn}:${nextGameColumns.fullNameColumn},'${gameAvailSheetName}'!${nextGameColumns.activationStatusColumn}:${nextGameColumns.activationStatusColumn}),"")`;
-      newSheet.getRange(2, nextGameActivationColIndex).setFormula(formula);
-      if (numRows > 1) {
-        newSheet.getRange(2, nextGameActivationColIndex).copyTo(newSheet.getRange(3, nextGameActivationColIndex, numRows - 1, 1));
-      }
-      console.log(`✅ Populated Next Game Activation Status column (${nextGameInfo.formattedDate}) with XLOOKUP`);
-    }
-    if (nextGameColumns.availabilityColumn) {
-      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${nextGameColumns.fullNameColumn}:${nextGameColumns.fullNameColumn},'${gameAvailSheetName}'!${nextGameColumns.availabilityColumn}:${nextGameColumns.availabilityColumn}),"")`;
-      newSheet.getRange(2, nextGameAvailabilityColIndex).setFormula(formula);
-      if (numRows > 1) {
-        newSheet.getRange(2, nextGameAvailabilityColIndex).copyTo(newSheet.getRange(3, nextGameAvailabilityColIndex, numRows - 1, 1));
-      }
-      console.log(`✅ Populated Next Game Availability column (${nextGameInfo.formattedDate}) with XLOOKUP`);
-    }
-    if (nextGameColumns.noteColumn) {
-      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${nextGameColumns.fullNameColumn}:${nextGameColumns.fullNameColumn},'${gameAvailSheetName}'!${nextGameColumns.noteColumn}:${nextGameColumns.noteColumn}),"")`;
-      newSheet.getRange(2, nextGameNoteColIndex).setFormula(formula);
-      if (numRows > 1) {
-        newSheet.getRange(2, nextGameNoteColIndex).copyTo(newSheet.getRange(3, nextGameNoteColIndex, numRows - 1, 1));
-      }
-      console.log(`✅ Populated Next Game Note column (${nextGameInfo.formattedDate} Note) with XLOOKUP`);
-    }
+    const gameJoin = availabilityJoin(nextGameColumns, playerIdLetter, fullNameLetter);
+    const date = nextGameInfo.formattedDate;
+    fromAvailability(baseColCount + 3, gameAvailSheetName, gameJoin, nextGameColumns.activationStatusColumn, `Next Game Activation Status (${date})`);
+    fromAvailability(baseColCount + 4, gameAvailSheetName, gameJoin, nextGameColumns.availabilityColumn, `Next Game Availability (${date})`);
+    fromAvailability(baseColCount + 5, gameAvailSheetName, gameJoin, nextGameColumns.noteColumn, `Next Game Note (${date})`);
   }
 }
 
@@ -1086,13 +1044,14 @@ function findGameAvailabilityColumns(gameAvailabilitySheet, gameDate, ordinalFor
  * @param {string} dateString - Date in format "M/D"
  * @param {string} sheetType - Type of sheet for logging (e.g., 'Practice Availability', 'Game Availability')
  * @param {number} [ordinalForDate] - Game Availability only: 2+ for double-header columns (e.g. "5/9 Availability (Game 2)")
- * @return {Object} Object with fullNameColumn (letter of the sheet's Full Name header; the XLOOKUP key the prep sheets use, since column A holds PlayerID), availabilityColumn, noteColumn, activationStatusColumn (letters), availabilityHeader, noteHeader, activationHeader (exact header strings; activation only for Game Availability)
+ * @return {Object} Object with playerIdColumn (letter of the sheet's PlayerID header, null on an older sheet without one), fullNameColumn (letter of its Full Name header), availabilityColumn, noteColumn, activationStatusColumn (letters), availabilityHeader, noteHeader, activationHeader (exact header strings; activation only for Game Availability)
  */
 function findAvailabilityColumns(availabilitySheet, dateString, sheetType, ordinalForDate) {
   ordinalForDate = ordinalForDate || 1;
   const headerRow = availabilitySheet.getRange(1, 1, 1, availabilitySheet.getLastColumn()).getValues()[0];
   const expected = getAvailabilityColumnHeaders(dateString, sheetType, sheetType === 'Game Availability' ? ordinalForDate : 1);
 
+  let playerIdColumn = null;
   let fullNameColumn = null;
   let availabilityColumn = null;
   let noteColumn = null;
@@ -1113,6 +1072,9 @@ function findAvailabilityColumns(availabilitySheet, dateString, sheetType, ordin
       console.log(`📅 Column ${index + 1}: "${headerStr}"`);
     }
 
+    if (headerStr === AVAILABILITY_ROW_HEADERS.playerId) {
+      playerIdColumn = getColumnLetter(index + 1);
+    }
     if (headerStr === AVAILABILITY_ROW_HEADERS.fullName) {
       fullNameColumn = getColumnLetter(index + 1);
     }
@@ -1146,6 +1108,7 @@ function findAvailabilityColumns(availabilitySheet, dateString, sheetType, ordin
   }
 
   const result = {
+    playerIdColumn: playerIdColumn,
     fullNameColumn: fullNameColumn,
     availabilityColumn: availabilityColumn,
     noteColumn: noteColumn,
