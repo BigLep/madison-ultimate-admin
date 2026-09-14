@@ -160,6 +160,9 @@ function buildAvailability(config) {
     }
 
     message += `\n\n👥 Player rows: ${result.rowsAdded} added from the Roster (Include In Generated Rosters TRUE), ${result.playerIdsFilled} existing row(s) given a PlayerID. Rows are never deleted; remove a cut player's row by hand if it was seeded before their Include flag was set FALSE.`;
+    if (result.formulasRepaired > 0) {
+      message += `\n\n🔗 ${result.formulasRepaired} existing row(s) had Full Name, Grade, and Gender Identification rewritten as Roster lookup formulas (only PlayerID is a typed value).`;
+    }
     if (result.unmatchedRows.length > 0) {
       message += `\n\n⚠️ ${result.unmatchedRows.length} existing row(s) have no PlayerID because no single Roster player has that Full Name: ${result.unmatchedRows.join(', ')}. Fix the name or type the PlayerID.`;
     }
@@ -386,8 +389,9 @@ function buildAvailabilityColumns(ss, dates, config) {
     console.log(`📋 Creating new "${config.availabilitySheet}" sheet`);
     availabilitySheet = ss.insertSheet(config.availabilitySheet);
     
-    // Column A stays Full Name (the prep sheets XLOOKUP against A:A); the portal matches rows by PlayerID.
-    const baseHeaders = [AVAILABILITY_ROW_HEADERS.fullName, AVAILABILITY_ROW_HEADERS.playerId, AVAILABILITY_ROW_HEADERS.grade, AVAILABILITY_ROW_HEADERS.genderIdentification];
+    // PlayerID is column A by convention: the only per-player value written. Full Name, Grade, and
+    // Gender Identification are per-row Roster formulas keyed by it (see seedAvailabilityRows_).
+    const baseHeaders = [AVAILABILITY_ROW_HEADERS.playerId, AVAILABILITY_ROW_HEADERS.fullName, AVAILABILITY_ROW_HEADERS.grade, AVAILABILITY_ROW_HEADERS.genderIdentification];
     availabilitySheet.getRange(1, 1, 1, baseHeaders.length).setValues([baseHeaders]);
     availabilitySheet.getRange(1, 1, 1, baseHeaders.length).setFontWeight('bold');
   }
@@ -524,6 +528,7 @@ function buildAvailabilityColumns(ss, dates, config) {
   return {
     rowsAdded: seedResult.rowsAdded,
     playerIdsFilled: seedResult.playerIdsFilled,
+    formulasRepaired: seedResult.formulasRepaired,
     unmatchedRows: seedResult.unmatchedRows,
     columnsCreated: columnsCreated.length,
     columnsSkipped: columnsSkipped.length,
@@ -534,28 +539,50 @@ function buildAvailabilityColumns(ss, dates, config) {
   };
 }
 
-// Per-player (non-date) headers of an availability sheet. Full Name is column A by convention
-// (the roster prep sheets XLOOKUP against A:A); everything else is found by header name.
+// Per-player (non-date) headers of an availability sheet. PlayerID is column A by convention and
+// the only per-player column written as a value; every column is still found by header name, and
+// the roster prep sheets find Full Name by header too (findAvailabilityColumns).
 const AVAILABILITY_ROW_HEADERS = {
-  fullName: 'Full Name',
   playerId: 'PlayerID',
+  fullName: 'Full Name',
   grade: 'Grade',
   genderIdentification: 'Gender Identification'
 };
 
 /**
+ * House-style Roster lookup for one per-player availability cell, the same shape as the Roster's
+ * own derived columns: blank when the row has no PlayerID, blank when the PlayerID is not in the
+ * Roster, otherwise the Roster value. Row 2 with PlayerID in A and Full Name in Roster column F:
+ *   =IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 Roster'!$F:$F),""))
+ * @param {string} keyLetter - Availability sheet column letter of PlayerID
+ * @param {number} row - 1-based sheet row the formula lives on
+ * @param {string} rosterKeyLetter - Roster column letter of PlayerID
+ * @param {string} rosterValueLetter - Roster column letter of the value to show
+ * @return {string}
+ */
+function availabilityRosterFormula_(keyLetter, row, rosterKeyLetter, rosterValueLetter) {
+  const rosterName = `'${CONFIG.roster.sheetName.replace(/'/g, "''")}'`;
+  const key = `$${keyLetter}${row}`;
+  return `=IF(${key}="","",IFERROR(XLOOKUP(${key},${rosterName}!$${rosterKeyLetter}:$${rosterKeyLetter},${rosterName}!$${rosterValueLetter}:$${rosterValueLetter}),""))`;
+}
+
+/**
  * Seed and repair the per-player rows of an availability sheet from the Roster.
  *
  * Rule: every Roster player whose Include In Generated Rosters is TRUE and whose PlayerID is not
- * already in the sheet's PlayerID column gets one appended row (Full Name, PlayerID, Grade,
- * Gender Identification as plain values). Rows are never deleted or reordered, the same rule
- * Sync Extra Player Info follows, so flag cut players FALSE before the first build. An existing
- * row with a Full Name but a blank PlayerID is filled when exactly one Roster player has that
- * Full Name; otherwise it is left blank and reported. The PlayerID header is appended after the
- * last column when missing, and always resolved by name afterwards.
+ * already in the sheet's PlayerID column gets one appended row. PlayerID is the only per-player
+ * value written; Full Name, Grade, and Gender Identification are per-row Roster XLOOKUP formulas
+ * keyed by that row's PlayerID (availabilityRosterFormula_), so they stay live as the Roster
+ * changes and can never drift from it. Rows are never deleted or reordered, the same rule Sync
+ * Extra Player Info follows, so flag cut players FALSE before the first build. An existing row
+ * with a Full Name but a blank PlayerID is filled when exactly one Roster player has that Full
+ * Name; otherwise it is left blank and reported. Every existing row that has a PlayerID gets its
+ * three derived cells (re)written as the formulas, which converts sheets built by versions that
+ * copied values. The PlayerID header is appended after the last column when missing, and always
+ * resolved by name afterwards (so a sheet with Full Name in column A still works).
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet - Practice Availability or Game Availability
- * @return {{rowsAdded: number, playerIdsFilled: number, unmatchedRows: string[]}}
+ * @return {{rowsAdded: number, playerIdsFilled: number, formulasRepaired: number, unmatchedRows: string[]}}
  */
 function seedAvailabilityRows_(ss, sheet) {
   const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
@@ -566,8 +593,6 @@ function seedAvailabilityRows_(ss, sheet) {
   const idCol = table.col(CONFIG.columns.playerId);
   const nameCol = table.col(CONFIG.columns.fullName);
   const includeCol = table.col(CONFIG.columns.includeInGeneratedRosters);
-  const gradeCol = table.col(CONFIG.columns.grade);
-  const genderCol = table.col(CONFIG.columns.genderIdentification);
   const cell = (row, index) => (row[index] === null || row[index] === undefined) ? '' : row[index].toString().trim();
 
   const rosterPlayers = table.rows
@@ -575,9 +600,7 @@ function seedAvailabilityRows_(ss, sheet) {
     .map(row => ({
       playerId: cell(row, idCol),
       fullName: cell(row, nameCol),
-      include: row[includeCol] === true || cell(row, includeCol).toUpperCase() === 'TRUE',
-      grade: row[gradeCol] === null || row[gradeCol] === undefined ? '' : row[gradeCol],
-      genderIdentification: cell(row, genderCol)
+      include: row[includeCol] === true || cell(row, includeCol).toUpperCase() === 'TRUE'
     }));
   const rosterIdsByFullName = {};
   rosterPlayers.forEach(p => {
@@ -595,50 +618,81 @@ function seedAvailabilityRows_(ss, sheet) {
     columns = getExistingColumns(sheet);
   }
   const playerIdCol = columns[AVAILABILITY_ROW_HEADERS.playerId];
-  const fullNameCol = columns[AVAILABILITY_ROW_HEADERS.fullName] || 1;
-  const gradeAvailCol = columns[AVAILABILITY_ROW_HEADERS.grade];
-  const genderAvailCol = columns[AVAILABILITY_ROW_HEADERS.genderIdentification];
+  const playerIdLetter = getColumnLetter(playerIdCol);
+  const fullNameCol = columns[AVAILABILITY_ROW_HEADERS.fullName];
   const lastCol = sheet.getLastColumn();
 
-  // Existing rows: collect PlayerIDs, fill blanks by unambiguous Full Name.
+  // Roster column letters from the live Roster header (the Roster is generated from ROSTER_COLUMNS,
+  // so these agree with resolveRosterColumns()). Only derived columns whose header exists are written.
+  const rosterLetter = (name) => getColumnLetter(table.col(name) + 1);
+  const rosterIdLetter = rosterLetter(CONFIG.columns.playerId);
+  const derivedColumns = [
+    { header: AVAILABILITY_ROW_HEADERS.fullName, rosterLetter: rosterLetter(CONFIG.columns.fullName) },
+    { header: AVAILABILITY_ROW_HEADERS.grade, rosterLetter: rosterLetter(CONFIG.columns.grade) },
+    { header: AVAILABILITY_ROW_HEADERS.genderIdentification, rosterLetter: rosterLetter(CONFIG.columns.genderIdentification) }
+  ].filter(d => columns[d.header]).map(d => ({ col: columns[d.header], rosterLetter: d.rosterLetter }));
+  const formulaFor = (row, d) => availabilityRosterFormula_(playerIdLetter, row, rosterIdLetter, d.rosterLetter);
+
+  // Existing rows: collect PlayerIDs, fill blanks by unambiguous Full Name, then (re)write the
+  // derived cells of every row that has a PlayerID as formulas.
   const existingIds = new Set();
   const unmatchedRows = [];
   let playerIdsFilled = 0;
+  let formulasRepaired = 0;
   const lastRow = sheet.getLastRow();
   if (lastRow >= 2) {
-    const names = sheet.getRange(2, fullNameCol, lastRow - 1, 1).getValues();
-    const ids = sheet.getRange(2, playerIdCol, lastRow - 1, 1).getValues();
+    const numRows = lastRow - 1;
+    const ids = sheet.getRange(2, playerIdCol, numRows, 1).getValues().map(r => cell(r, 0));
+    const names = fullNameCol ? sheet.getRange(2, fullNameCol, numRows, 1).getValues().map(r => cell(r, 0)) : ids.map(() => '');
     const fills = [];
     for (let i = 0; i < ids.length; i++) {
-      const id = cell(ids[i], 0);
-      const name = cell(names[i], 0);
-      if (id) {
-        existingIds.add(id);
+      if (ids[i]) {
+        existingIds.add(ids[i]);
         continue;
       }
+      const name = names[i];
       if (!name) continue;
       const candidates = rosterIdsByFullName[name] || [];
       if (candidates.length === 1 && !existingIds.has(candidates[0])) {
         fills.push({ row: i + 2, playerId: candidates[0] });
         existingIds.add(candidates[0]);
+        ids[i] = candidates[0];
       } else {
         unmatchedRows.push(name);
       }
     }
     fills.forEach(f => sheet.getRange(f.row, playerIdCol).setValue(f.playerId));
     playerIdsFilled = fills.length;
+
+    derivedColumns.forEach(d => {
+      const range = sheet.getRange(2, d.col, numRows, 1);
+      const formulas = range.getFormulas();
+      const values = range.getValues();
+      let changed = 0;
+      const out = [];
+      for (let i = 0; i < numRows; i++) {
+        if (!ids[i]) {
+          // No PlayerID: leave whatever is there (a typed name is what the coach needs to fix the row).
+          out.push([formulas[i][0] || values[i][0]]);
+          continue;
+        }
+        const wanted = formulaFor(i + 2, d);
+        if (formulas[i][0] !== wanted) changed++;
+        out.push([wanted]);
+      }
+      if (changed > 0) range.setValues(out);
+      formulasRepaired = Math.max(formulasRepaired, changed);
+    });
   }
 
   // Append one row per included Roster player not yet present.
   const missing = rosterPlayers.filter(p => p.include && !existingIds.has(p.playerId));
   if (missing.length > 0) {
     const startRow = Math.max(lastRow, 1) + 1;
-    const rows = missing.map(p => {
+    const rows = missing.map((p, i) => {
       const row = new Array(lastCol).fill('');
-      row[fullNameCol - 1] = p.fullName;
       row[playerIdCol - 1] = p.playerId;
-      if (gradeAvailCol) row[gradeAvailCol - 1] = p.grade;
-      if (genderAvailCol) row[genderAvailCol - 1] = p.genderIdentification;
+      derivedColumns.forEach(d => { row[d.col - 1] = formulaFor(startRow + i, d); });
       return row;
     });
     if (sheet.getMaxRows() < startRow + rows.length - 1) {
@@ -647,8 +701,8 @@ function seedAvailabilityRows_(ss, sheet) {
     sheet.getRange(startRow, 1, rows.length, lastCol).setValues(rows);
   }
 
-  console.log(`👥 Availability rows: added ${missing.length}, PlayerIDs filled ${playerIdsFilled}, unmatched ${unmatchedRows.length}`);
-  return { rowsAdded: missing.length, playerIdsFilled: playerIdsFilled, unmatchedRows: unmatchedRows };
+  console.log(`👥 Availability rows: added ${missing.length}, PlayerIDs filled ${playerIdsFilled}, formulas repaired ${formulasRepaired}, unmatched ${unmatchedRows.length}`);
+  return { rowsAdded: missing.length, playerIdsFilled: playerIdsFilled, formulasRepaired: formulasRepaired, unmatchedRows: unmatchedRows };
 }
 
 /**

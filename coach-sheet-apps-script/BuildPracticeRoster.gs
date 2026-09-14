@@ -859,7 +859,7 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
   // Practice Availability column (first column after base columns)
   const practiceAvailabilityColumnIndex = baseColCount + 1;
   if (availColumns.availabilityColumn) {
-    const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!A:A,'${practiceAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
+    const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!${availColumns.fullNameColumn}:${availColumns.fullNameColumn},'${practiceAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
     newSheet.getRange(2, practiceAvailabilityColumnIndex).setFormula(formula);
     if (numRows > 1) {
       newSheet.getRange(2, practiceAvailabilityColumnIndex).copyTo(newSheet.getRange(3, practiceAvailabilityColumnIndex, numRows - 1, 1));
@@ -870,7 +870,7 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
   // Practice Availability Note column (second column after base columns)
   const practiceNoteColumnIndex = baseColCount + 2;
   if (availColumns.noteColumn) {
-    const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!A:A,'${practiceAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
+    const formula = `=IFERROR(XLOOKUP(B2,'${practiceAvailSheetName}'!${availColumns.fullNameColumn}:${availColumns.fullNameColumn},'${practiceAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
     newSheet.getRange(2, practiceNoteColumnIndex).setFormula(formula);
     if (numRows > 1) {
       newSheet.getRange(2, practiceNoteColumnIndex).copyTo(newSheet.getRange(3, practiceNoteColumnIndex, numRows - 1, 1));
@@ -887,7 +887,7 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
     const nextGameNoteColIndex = baseColCount + 5;
 
     if (nextGameColumns.activationStatusColumn) {
-      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${nextGameColumns.activationStatusColumn}:${nextGameColumns.activationStatusColumn}),"")`;
+      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${nextGameColumns.fullNameColumn}:${nextGameColumns.fullNameColumn},'${gameAvailSheetName}'!${nextGameColumns.activationStatusColumn}:${nextGameColumns.activationStatusColumn}),"")`;
       newSheet.getRange(2, nextGameActivationColIndex).setFormula(formula);
       if (numRows > 1) {
         newSheet.getRange(2, nextGameActivationColIndex).copyTo(newSheet.getRange(3, nextGameActivationColIndex, numRows - 1, 1));
@@ -895,7 +895,7 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
       console.log(`✅ Populated Next Game Activation Status column (${nextGameInfo.formattedDate}) with XLOOKUP`);
     }
     if (nextGameColumns.availabilityColumn) {
-      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${nextGameColumns.availabilityColumn}:${nextGameColumns.availabilityColumn}),"")`;
+      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${nextGameColumns.fullNameColumn}:${nextGameColumns.fullNameColumn},'${gameAvailSheetName}'!${nextGameColumns.availabilityColumn}:${nextGameColumns.availabilityColumn}),"")`;
       newSheet.getRange(2, nextGameAvailabilityColIndex).setFormula(formula);
       if (numRows > 1) {
         newSheet.getRange(2, nextGameAvailabilityColIndex).copyTo(newSheet.getRange(3, nextGameAvailabilityColIndex, numRows - 1, 1));
@@ -903,7 +903,7 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
       console.log(`✅ Populated Next Game Availability column (${nextGameInfo.formattedDate}) with XLOOKUP`);
     }
     if (nextGameColumns.noteColumn) {
-      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${nextGameColumns.noteColumn}:${nextGameColumns.noteColumn}),"")`;
+      const formula = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${nextGameColumns.fullNameColumn}:${nextGameColumns.fullNameColumn},'${gameAvailSheetName}'!${nextGameColumns.noteColumn}:${nextGameColumns.noteColumn}),"")`;
       newSheet.getRange(2, nextGameNoteColIndex).setFormula(formula);
       if (numRows > 1) {
         newSheet.getRange(2, nextGameNoteColIndex).copyTo(newSheet.getRange(3, nextGameNoteColIndex, numRows - 1, 1));
@@ -1086,13 +1086,14 @@ function findGameAvailabilityColumns(gameAvailabilitySheet, gameDate, ordinalFor
  * @param {string} dateString - Date in format "M/D"
  * @param {string} sheetType - Type of sheet for logging (e.g., 'Practice Availability', 'Game Availability')
  * @param {number} [ordinalForDate] - Game Availability only: 2+ for double-header columns (e.g. "5/9 Availability (Game 2)")
- * @return {Object} Object with availabilityColumn, noteColumn, activationStatusColumn (letters), availabilityHeader, noteHeader, activationHeader (exact header strings; activation only for Game Availability)
+ * @return {Object} Object with fullNameColumn (letter of the sheet's Full Name header; the XLOOKUP key the prep sheets use, since column A holds PlayerID), availabilityColumn, noteColumn, activationStatusColumn (letters), availabilityHeader, noteHeader, activationHeader (exact header strings; activation only for Game Availability)
  */
 function findAvailabilityColumns(availabilitySheet, dateString, sheetType, ordinalForDate) {
   ordinalForDate = ordinalForDate || 1;
   const headerRow = availabilitySheet.getRange(1, 1, 1, availabilitySheet.getLastColumn()).getValues()[0];
   const expected = getAvailabilityColumnHeaders(dateString, sheetType, sheetType === 'Game Availability' ? ordinalForDate : 1);
 
+  let fullNameColumn = null;
   let availabilityColumn = null;
   let noteColumn = null;
   let activationStatusColumn = null;
@@ -1112,6 +1113,9 @@ function findAvailabilityColumns(availabilitySheet, dateString, sheetType, ordin
       console.log(`📅 Column ${index + 1}: "${headerStr}"`);
     }
 
+    if (headerStr === AVAILABILITY_ROW_HEADERS.fullName) {
+      fullNameColumn = getColumnLetter(index + 1);
+    }
     if (headerStr === expected.availabilityHeader) {
       availabilityColumn = getColumnLetter(index + 1);
       console.log(`✅ Found availability column: ${availabilityColumn} (${headerStr})`);
@@ -1136,7 +1140,13 @@ function findAvailabilityColumns(availabilitySheet, dateString, sheetType, ordin
     }).join(', ')}`);
   }
 
+  if (!fullNameColumn) {
+    console.warn(`⚠️ "${AVAILABILITY_ROW_HEADERS.fullName}" header not found in ${sheetType}; falling back to column A as the lookup key`);
+    fullNameColumn = 'A';
+  }
+
   const result = {
+    fullNameColumn: fullNameColumn,
     availabilityColumn: availabilityColumn,
     noteColumn: noteColumn,
     availabilityHeader: expected.availabilityHeader,

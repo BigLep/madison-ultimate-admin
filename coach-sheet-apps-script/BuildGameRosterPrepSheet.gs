@@ -904,19 +904,19 @@ function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, game
     if (!gix) continue;
 
     if (gix.activation && availColumns.activationStatusColumn) {
-      var fAct = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.activationStatusColumn}:${availColumns.activationStatusColumn}),"")`;
+      var fAct = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${availColumns.fullNameColumn}:${availColumns.fullNameColumn},'${gameAvailSheetName}'!${availColumns.activationStatusColumn}:${availColumns.activationStatusColumn}),"")`;
       setFormula(gix.activation, fAct);
       console.log(`✅ Populated Activation Status column (game ${gi + 1}) with XLOOKUP`);
     }
 
     if (gix.availability && availColumns.availabilityColumn) {
-      var fAvail = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
+      var fAvail = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${availColumns.fullNameColumn}:${availColumns.fullNameColumn},'${gameAvailSheetName}'!${availColumns.availabilityColumn}:${availColumns.availabilityColumn}),"")`;
       setFormula(gix.availability, fAvail);
       console.log(`✅ Populated Game Availability column (game ${gi + 1}) with XLOOKUP`);
     }
 
     if (gix.note && availColumns.noteColumn) {
-      var fNote = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
+      var fNote = `=IFERROR(XLOOKUP(B2,'${gameAvailSheetName}'!${availColumns.fullNameColumn}:${availColumns.fullNameColumn},'${gameAvailSheetName}'!${availColumns.noteColumn}:${availColumns.noteColumn}),"")`;
       setFormula(gix.note, fNote);
       console.log(`✅ Populated Game Note column (game ${gi + 1}) with XLOOKUP`);
     }
@@ -1017,15 +1017,15 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
         var pc = col.games[pi];
         if (!pc) continue;
         if (pc.activation && pac.activationStatusColumn) {
-          setFormula(pc.activation, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${pac.activationStatusColumn}:${pac.activationStatusColumn}),"")`);
+          setFormula(pc.activation, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!${pac.fullNameColumn}:${pac.fullNameColumn},'${gameAvailSheetName}'!${pac.activationStatusColumn}:${pac.activationStatusColumn}),"")`);
           console.log(`✅ Populated Activation Status (game ${pi + 1}) with XLOOKUP`);
         }
         if (pc.availability && pac.availabilityColumn) {
-          setFormula(pc.availability, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${pac.availabilityColumn}:${pac.availabilityColumn}),"")`);
+          setFormula(pc.availability, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!${pac.fullNameColumn}:${pac.fullNameColumn},'${gameAvailSheetName}'!${pac.availabilityColumn}:${pac.availabilityColumn}),"")`);
           console.log(`✅ Populated Game Availability (game ${pi + 1}) with XLOOKUP`);
         }
         if (pc.note && pac.noteColumn) {
-          setFormula(pc.note, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!A:A,'${gameAvailSheetName}'!${pac.noteColumn}:${pac.noteColumn}),"")`);
+          setFormula(pc.note, `=IFERROR(XLOOKUP(A2,'${gameAvailSheetName}'!${pac.fullNameColumn}:${pac.fullNameColumn},'${gameAvailSheetName}'!${pac.noteColumn}:${pac.noteColumn}),"")`);
           console.log(`✅ Populated Game Note (game ${pi + 1}) with XLOOKUP`);
         }
       }

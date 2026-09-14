@@ -32,8 +32,12 @@ The derived, formula-only view of every Player, one row per Signups row, joined 
 _Avoid_: master list, player list
 
 **Full Name**:
-Preferred First Name followed by Last Name. The human-readable key every Generated Roster uses to refer to a Player, and column A of every availability sheet. The portal never matches on it: availability rows also carry the PlayerID, and that is what the portal reads and writes by.
+Preferred First Name followed by Last Name. The human-readable key every Generated Roster uses to refer to a Player. On an Availability Sheet it is a per-row Roster formula keyed by the row's PlayerID, never a typed value, so it cannot drift from the Roster; the prep sheets find it by header. The portal never matches on it: it reads and writes availability cells by PlayerID.
 _Avoid_: name, display name
+
+**Availability Sheet**:
+Practice Availability or Game Availability: one row per Player, PlayerID in column A as the only typed per-player value, then Full Name, Grade, and Gender Identification as Roster lookup formulas in the Roster's own shape (`=IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 Roster'!$F:$F),""))`), then the date columns families fill in through the portal. Rows are seeded by Build Practice/Game Availability and never deleted or reordered. See ADR 0004.
+_Avoid_: availability tracker, roster copy
 
 **Generated Roster**:
 A practice roster or game roster prep sheet built from the Roster for one date, keyed by Full Name. Includes a Player only when Include In Generated Rosters resolves to TRUE.

@@ -46,7 +46,7 @@ Fall 2026 first shipped this as one `ARRAYFORMULA` per column in row 2 with a `S
 - The Roster can be sorted and filtered freely (filter views, the basic filter, Data > Sort range); every row is self-contained.
 - The Roster is a snapshot of Signups' PlayerIDs: a new or removed Signup reaches it only when Generate Fresh Roster runs again (which also resets the row order). Run Diagnostics compares the Roster's PlayerIDs with Signups and fails when they differ, and checks the data rows still have the per-row formula shape.
 - A signup with no SPS Student ID shows blank or FALSE Final Forms columns rather than being hidden; a Final Forms student with no signup does not appear. Analyze Signups surfaces both.
-- Downstream sheets (availability, practice roster, game roster prep, email lists) stay keyed by Full Name; only the Roster is keyed by PlayerID.
+- Availability sheets are keyed by PlayerID like the Roster: column A typed, Full Name, Grade, and Gender Identification as per-row Roster formulas (ADR 0004). Practice rosters, game roster prep, and email lists stay keyed by Full Name and look it up in the availability sheets by header.
 
 ## Join logic
 
@@ -113,7 +113,7 @@ There is no Apps Script test runner in this repo. The pure seam is `resolveSignu
 - **Why is the Roster keyed by Signups PlayerID?** Signups is the only Source that has every Player, and PlayerID is permanent. See ADR 0001 for the options rejected (Final Forms as key, an append-only value-writer, per-row formulas).
 - **Why formulas rather than written values?** A formula cannot clobber anything and stays right as its Source changes. Only the PlayerID key column is written as values, because a formula-generated key list cannot be sorted or filtered in the sheet UI (ADR 0003); the price is that new or removed Signups need a Generate Fresh Roster run, and Run Diagnostics says when.
 - **Why header notes rather than metadata rows?** The column list in code is the source of truth; notes carry the same explanation without shifting the data down five rows.
-- **Why is Full Name still the downstream key?** Availability and Generated Rosters are read and printed by humans; re-keying them to PlayerID was deliberately not done.
+- **Why is Full Name still the downstream key?** Generated Rosters are read and printed by humans; re-keying them to PlayerID was deliberately not done. Availability sheets, which the portal writes to by PlayerID, do key on PlayerID and derive Full Name from the Roster by formula so a renamed Player keeps their row and shows the current name (ADR 0004).
 
 ## Out of scope, noted
 

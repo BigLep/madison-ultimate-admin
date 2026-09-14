@@ -214,7 +214,10 @@ function applyActivationStatusFromRosterSheet(sourceSheetName, activationHeader)
   const gaLast = gaSheet.getLastRow();
   if (gaLast < 2) throw new Error('Game Availability has no data rows.');
 
-  const gaNames = gaSheet.getRange(2, 1, gaLast, 1).getValues();
+  // Full Name is found by header (column A of Game Availability holds PlayerID).
+  const gaNameCol = findHeaderColumn1Based_(gaSheet, CONFIG.columns.fullName);
+  if (gaNameCol < 0) throw new Error('Column "' + CONFIG.columns.fullName + '" not found in Game Availability.');
+  const gaNames = gaSheet.getRange(2, gaNameCol, gaLast, 1).getValues();
   const rowByName = {};
   for (let i = 0; i < gaNames.length; i++) {
     const nm = strCell_(gaNames[i][0]);
