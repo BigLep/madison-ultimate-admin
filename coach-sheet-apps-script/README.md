@@ -104,8 +104,8 @@ The script expects these sheets to exist (created manually or via the menu):
 | `Extra Player Info` | Coach-authored per-player facts (Team, Returning, Include In Generated Rosters), keyed by PlayerID. Created and extended by Sync Extra Player Info. |
 | `Final Forms` | Imported CSV data from SPS Final Forms |
 | `Newsletter Subscribers` | Imported Buttondown subscriber list (email + status); the mailing-list system of record. Google Groups was retired in spring 2026. |
-| `Practice Availability` | Player availability for practices |
-| `Game Availability` | Player availability for games |
+| `Practice Availability` | Player availability for practices; one row per Player, matched by the portal on `PlayerID` (Full Name in column A) |
+| `Game Availability` | Player availability for games; same row layout as Practice Availability |
 
 ### Roster layout
 
@@ -165,7 +165,7 @@ Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, s
 - **Build Practice Roster** - Create roster with practice availability columns
 - **Build Game Roster Prep Sheet** - Create game day roster (coach or parent view). If **Game Info** has multiple rows on the **same calendar date**, the prep sheet includes **all** of those games (see [Multiple events on one calendar day](#multiple-events-on-the-same-calendar-day-double-headers)).
 - **Build Email List** - Generate email lists (Caretaker 1 and 2 emails) for family communication
-- **Build Practice/Game Availability** - Create availability tracking sheets. For **multiple games on the same calendar day**, see **[Multiple events on one calendar day](#multiple-events-on-the-same-calendar-day-double-headers)** below. Normally each game date gets three columns (in order): *$Date* Availability, *$Date* Activation Status (dropdown: Active / Inactive / TBD with green/red/grey backgrounds), and *$Date* Note (free text). If there are multiple **Game Info** rows with the **same date**, the script adds a second (or third) set with **`(Game 2)`** / **`(Game 3)`** in the header so they match the player portal. Headers and cells use text wrapping.
+- **Build Practice/Game Availability** - Create availability tracking sheets: date columns plus one row per Player. Each run appends a row (Full Name, PlayerID, Grade, Gender Identification) for every Roster Player whose **Include In Generated Rosters** is TRUE and whose PlayerID is not already in the tab; rows are never deleted or reordered, so **set Include In Generated Rosters FALSE for cut players before the first build** (a row seeded earlier stays until you delete it by hand). An existing row with a Full Name but no PlayerID is filled in when exactly one Roster Player has that name; otherwise the run reports it. The `PlayerID` column is what the player portal matches rows on (Full Name stays column A for the prep sheets). For **multiple games on the same calendar day**, see **[Multiple events on one calendar day](#multiple-events-on-the-same-calendar-day-double-headers)** below. Normally each game date gets three columns (in order): *$Date* Availability, *$Date* Activation Status (dropdown: Active / Inactive / TBD with green/red/grey backgrounds), and *$Date* Note (free text). If there are multiple **Game Info** rows with the **same date and the same Team**, the script adds a second (or third) set with **`(Game 2)`** / **`(Game 3)`** in the header so they match the player portal; rows for different teams on the same date share one set. Headers and cells use text wrapping.
 - **Build Custom Sheet** - Interactive builder for custom column selection
 
 ### Analysis Tools
@@ -202,27 +202,29 @@ The sync scripts store Google Calendar event IDs in the spreadsheet so logic sta
 
 ### Multiple events on the same calendar day (“double headers”)
 
-You can schedule **several games on one calendar date** (same `M/D` in **Game Info** more than once). That is fully supported end-to-end: sheet columns, roster prep, and the player portal all treat each row as a separate game, in **sheet row order** for that date.
+You can schedule **several games on one calendar date** (same `M/D` in **Game Info** more than once). Two cases look alike in the sheet and are told apart by the **Team** column:
 
-This section is also what people mean by **double-headers** (e.g. two league games Saturday, or pool play then finals the same day).
+- **Several teams, one date** (the normal multi-team Saturday): one Game Info row per team-game, each with its Team. Every team's first game that day is "game 1", so all of them share the single `M/D Availability` / `Activation Status` / `Note` column set; a Player only ever plays their own team's game, so one cell per date is enough.
+- **Double-header** (the same team twice on one date, e.g. pool play then finals): two rows with the same Date and the same Team. The second row is "game 2" and gets the **`(Game 2)`** column set.
 
 **Game Info (📍Game Info)**  
-- Enter **one row per game**, not one row per calendar day. Reuse the same **Date** value for every game that day (e.g. two rows both `5/9`).
-- Keep rows in **true game order** (earlier game first). The script and the portal assign “game 1” / “game 2” **in row order** for that date (same rule as the portal API).
+- Enter **one row per team-game**, not one row per calendar day. Reuse the same **Date** value for every game that day.
+- Fill the **Team** column with the team that row belongs to (the values used in Extra Player Info, e.g. Blue, Gold, Silver). Leave it **blank for an all-team event**; a blank Team is its own group and the portal shows that row to every Player, including those with no team yet.
+- Keep rows in **true game order** (earlier game first). The script and the portal assign "game 1" / "game 2" **in row order within each date and Team** (same rule as the portal API).
 
 **Game Availability**  
-After you add or change rows in Game Info, run **Build Game Availability**. For each distinct game row, the script ensures columns exist:
+After you add or change rows in Game Info, run **Build Game Availability**. For each distinct date-and-ordinal, the script ensures columns exist:
 
-| Occurrence that day | Example availability header | Example activation header | Example note header |
+| Occurrence that day (per Team) | Example availability header | Example activation header | Example note header |
 |---------------------|----------------------------|---------------------------|---------------------|
 | 1st game on that date | `5/9 Availability` | `5/9 Activation Status` | `5/9 Note` |
-| 2nd game | `5/9 Availability (Game 2)` | `5/9 Activation Status (Game 2)` | `5/9 Note (Game 2)` |
-| 3rd game | `5/9 Availability (Game 3)` | … | … |
+| 2nd game for the same team | `5/9 Availability (Game 2)` | `5/9 Activation Status (Game 2)` | `5/9 Note (Game 2)` |
+| 3rd game for the same team | `5/9 Availability (Game 3)` | … | … |
 
-Do **not** use two identical headers like two columns both named `5/9 Availability`; the second game must use the **`(Game N)`** suffix so the portal can tell them apart.
+Do **not** use two identical headers like two columns both named `5/9 Availability`; a same-team second game must use the **`(Game N)`** suffix so the portal can tell them apart.
 
 **Build Game Roster Prep**  
-The game picker lists **one option per Game Info row** (date plus label when present). Whichever row you pick, the prep sheet includes **every game on that calendar day** in order: for each game, *Activation Status* (if enabled in `CONFIG.gameRosterPrep`), *Availability*, and *Note*; for example two games on `5/16` produce `5/16 Activation Status`, `5/16 Availability`, `5/16 Note`, then `5/16 Activation Status (Game 2)`, `5/16 Availability (Game 2)`, `5/16 Note (Game 2)`.
+The game picker lists **one option per Game Info row** (date, label, and Team when present). Whichever row you pick, the prep sheet includes **every distinct game ordinal on that calendar day** in order: for each, *Activation Status* (if enabled in `CONFIG.gameRosterPrep`), *Availability*, and *Note*; for example a same-team double-header on `5/16` produces `5/16 Activation Status`, `5/16 Availability`, `5/16 Note`, then `5/16 Activation Status (Game 2)`, `5/16 Availability (Game 2)`, `5/16 Note (Game 2)`. Three teams playing on `5/16` produce the first set only, since they share it.
 
 **Practice roster “next game” columns**  
 When a practice roster includes columns for the next game after that practice, **find next game** uses the next Game Info row in order; if that day has two games, you get columns for the **first** game on that date (unless you change Game Info order intentionally).
@@ -250,7 +252,7 @@ The Roster's column A holds every PlayerID in Signups as a plain value, one row 
 
 ### Full Name as the downstream key
 
-Full Name (Preferred First Name followed by Last Name, derived in the Roster) is the human-readable key every Generated Roster, availability sheet, and email list uses to refer to a Player. Only the Roster itself is keyed by PlayerID.
+Full Name (Preferred First Name followed by Last Name, derived in the Roster) is the human-readable key every Generated Roster and email list uses to refer to a Player, and it stays in column A of the availability sheets because the roster prep sheets XLOOKUP against `A:A`. The player portal never matches on it: Build Practice/Game Availability also writes each Player's `PlayerID` (found by header name, never by position), and the portal reads and writes availability cells by that column, so a family editing their preferred name can no longer orphan their row. The Roster itself and the availability rows are keyed by PlayerID; everything else downstream uses Full Name.
 
 ## File Structure
 

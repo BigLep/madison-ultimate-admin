@@ -32,7 +32,7 @@ The derived, formula-only view of every Player, one row per Signups row, joined 
 _Avoid_: master list, player list
 
 **Full Name**:
-Preferred First Name followed by Last Name. The human-readable key every Generated Roster and availability sheet uses to refer to a Player.
+Preferred First Name followed by Last Name. The human-readable key every Generated Roster uses to refer to a Player, and column A of every availability sheet. The portal never matches on it: availability rows also carry the PlayerID, and that is what the portal reads and writes by.
 _Avoid_: name, display name
 
 **Generated Roster**:
@@ -48,7 +48,7 @@ As defined by the portal: Player Info, Caretaker Info, and Photo Upload all done
 _Avoid_: registered, signed up
 
 **Team**:
-The coach-assigned squad for the season (for example Blue or Gold), authored in Extra Player Info after tryouts.
+The coach-assigned squad for the season, authored in Extra Player Info after tryouts. Fall 2026 values: Blue, Gold, Silver, Practice Squad; TBD until assigned. A Game Info row carries the Team it belongs to, blank meaning every team.
 
 **Analyze Signups**:
 The coach sheet's report of Players whose Sources disagree or are incomplete: signups with no SPS Student ID, Final Forms students not yet seeded or joined, signups whose SPS Student ID has left Final Forms, suspected duplicate signups, signups not Profile Complete, and Seeded Signups the family has not finished. It only reports; the portal's Seed Signups from Final Forms does the joining and seeding.

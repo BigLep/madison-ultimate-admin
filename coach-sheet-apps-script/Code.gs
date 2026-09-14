@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.26';
+const SCRIPT_VERSION = '3.27';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -247,7 +247,7 @@ const ROSTER_COLUMNS = [
     name: 'Full Name',
     type: 'String',
     source: ROSTER_SOURCE.derived,
-    note: 'TRIM(Preferred First Name & " " & Last Name). The key every Generated Roster and availability sheet uses to refer to a Player.',
+    note: 'TRIM(Preferred First Name & " " & Last Name). The key every Generated Roster uses to refer to a Player, and column A of the availability sheets (which the portal matches by PlayerID).',
     formula: (c) => c.rowFormula(`TRIM(${c.r('Preferred First Name')}&" "&${c.r('Last Name')})`)
   },
   {

@@ -108,6 +108,7 @@ function createGameDateSelectionHtml(gameDates, defaultIndex) {
     const selected = index === defaultIndex ? 'selected' : '';
     let label = gd.formattedDate;
     if (gd.gameLabel) label += ' · ' + gd.gameLabel;
+    if (gd.team) label += ' · ' + gd.team;
     if (gd.ordinalForDate > 1) label += ' (Game ' + gd.ordinalForDate + ')';
     return `<option value="${index}" ${selected}>${escHtml(label)}</option>`;
   }).join('');
@@ -392,7 +393,7 @@ function createGameRosterPrepSheet(sheetName, gameRowIndex, audience = 'coaches'
 }
 
 /**
- * All games on the same calendar day as gameDates[selectedIndex] (ordinal order). One findAvailabilityColumns result per game.
+ * All games on the same calendar day as gameDates[selectedIndex] (ordinal order). One findAvailabilityColumns result per distinct ordinal (teams playing the same day share one).
  * @param {GoogleAppsScript.Spreadsheet.Sheet} gameAvailabilitySheet
  * @param {Array} gameDates from getDatesFromInfoSheet
  * @param {number} selectedIndex
@@ -409,9 +410,14 @@ function buildAvailColumnsListForSelectedCalendarDay_(gameAvailabilitySheet, gam
   rows.sort(function (a, b) {
     return (a.ordinalForDate || 1) - (b.ordinalForDate || 1);
   });
+  // Ordinals are per date per Team, so several teams' rows on one day share ordinal 1 and one column
+  // triple; keep one entry per ordinal.
+  const seenOrdinals = {};
   const list = [];
   for (var j = 0; j < rows.length; j++) {
     var ord = rows[j].ordinalForDate || 1;
+    if (seenOrdinals[ord]) continue;
+    seenOrdinals[ord] = true;
     var ac = findAvailabilityColumns(gameAvailabilitySheet, dateKey, 'Game Availability', ord);
     if (!ac.availabilityColumn) {
       var expect = getAvailabilityColumnHeaders(dateKey, 'Game Availability', ord).availabilityHeader;

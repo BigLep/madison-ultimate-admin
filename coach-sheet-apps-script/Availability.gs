@@ -158,6 +158,11 @@ function buildAvailability(config) {
     if (result.columnsCreated === 0 && result.columnsSkipped === 0) {
       message += 'No changes needed - all columns already exist.';
     }
+
+    message += `\n\n👥 Player rows: ${result.rowsAdded} added from the Roster (Include In Generated Rosters TRUE), ${result.playerIdsFilled} existing row(s) given a PlayerID. Rows are never deleted; remove a cut player's row by hand if it was seeded before their Include flag was set FALSE.`;
+    if (result.unmatchedRows.length > 0) {
+      message += `\n\n⚠️ ${result.unmatchedRows.length} existing row(s) have no PlayerID because no single Roster player has that Full Name: ${result.unmatchedRows.join(', ')}. Fix the name or type the PlayerID.`;
+    }
     
     message += '\n\n🎯 Data validation is applied in bulk (one rule type for all availability columns, one for all activation columns on game sheets). Conditional formatting uses one rule per status value across all matching columns.';
     
@@ -189,7 +194,7 @@ function buildGameAvailability() {
  * Shared function to extract dates from an info sheet
  * @param {SpreadsheetApp.Spreadsheet} ss - The active spreadsheet
  * @param {Object} config - Configuration object (PRACTICE_AVAILABILITY_CONFIG or GAME_AVAILABILITY_CONFIG)
- * @return {Array} Array of date objects: {date, formattedDate, rowIndex}; for games also {ordinalForDate, gameLabel}
+ * @return {Array} Array of date objects: {date, formattedDate, rowIndex}; for games also {ordinalForDate, gameLabel, team}
  */
 function getDatesFromInfoSheet(ss, config) {
   const infoSheet = ss.getSheetByName(config.infoSheet);
@@ -226,6 +231,16 @@ function getDatesFromInfoSheet(ss, config) {
     }
   }
   
+  // Games only: the Team column groups same-day games so each team gets one column triple per date.
+  const teamColumnIndex = config.type === 'game' ? findTeamColumnIndex_(headerRow) : -1;
+  if (config.type === 'game') {
+    if (teamColumnIndex !== -1) {
+      console.log(`📍 Found Team column at index ${teamColumnIndex + 1}`);
+    } else {
+      console.log('⚠️ No Team column in Game Info; every same-day row counts as another game for the same team');
+    }
+  }
+
   // Get all dates from the date column (skip header row)
   const lastRow = infoSheet.getLastRow();
   if (lastRow <= 1) {
@@ -234,9 +249,7 @@ function getDatesFromInfoSheet(ss, config) {
   }
   
   // Get all data we need (date column and skip column if applicable)
-  const columnsNeeded = skipColumnIndex !== -1 ? 
-    Math.max(dateColumnIndex + 1, skipColumnIndex + 1) : 
-    dateColumnIndex + 1;
+  const columnsNeeded = Math.max(dateColumnIndex + 1, skipColumnIndex + 1, teamColumnIndex + 1);
   const allData = infoSheet.getRange(2, 1, lastRow, columnsNeeded).getValues();
   const dates = [];
   const isGame = config.type === 'game';
@@ -285,13 +298,14 @@ function getDatesFromInfoSheet(ss, config) {
           };
           if (isGame) {
             const canonical = toCanonicalDateKeyFromDateObj(dateObj);
-            ordinalByCanonical[canonical] = (ordinalByCanonical[canonical] || 0) + 1;
-            const ordinalForDate = ordinalByCanonical[canonical];
+            const team = teamColumnIndex !== -1 && row[teamColumnIndex] != null ? String(row[teamColumnIndex]).trim() : '';
+            const ordinalForDate = nextGameOrdinal(ordinalByCanonical, canonical, team);
             entry.ordinalForDate = ordinalForDate;
+            entry.team = team;
             if (skipColumnIndex !== -1 && row[skipColumnIndex] != null && String(row[skipColumnIndex]).trim() !== '') {
               entry.gameLabel = String(row[skipColumnIndex]).trim();
             }
-            console.log(`${config.emoji} Found game row: ${formattedDate} (Game ${ordinalForDate} on ${canonical}, row ${index + 2})`);
+            console.log(`${config.emoji} Found game row: ${formattedDate} (Game ${ordinalForDate} on ${canonical}${team ? ' for ' + team : ''}, row ${index + 2})`);
           } else {
             console.log(`${config.emoji} Found ${config.type} date: ${formattedDate} (row ${index + 2})`);
           }
@@ -307,6 +321,43 @@ function getDatesFromInfoSheet(ss, config) {
   
   console.log(`🎯 Found ${dates.length} valid ${config.type} ${isGame ? 'rows' : 'dates'}`);
   return dates;
+}
+
+/**
+ * Index of the Game Info "Team" header (exact, case-insensitive), or -1 when the season has none.
+ * @param {Array} headerRow
+ * @return {number}
+ */
+function findTeamColumnIndex_(headerRow) {
+  return headerRow.findIndex(function (header) {
+    return header != null && String(header).trim().toLowerCase() === 'team';
+  });
+}
+
+/**
+ * Group key for numbering same-day games: one group per calendar date per Team, so three teams
+ * playing on 9/26 each get game 1 on that date and share the "9/26 Availability" column triple.
+ * A blank Team is its own group (an all-team event). Pure; shared by Build Game Availability and
+ * Build Game Roster Prep through getDatesFromInfoSheet, and mirrored by the player portal.
+ * @param {string} canonicalDate "M/D"
+ * @param {string} team Team cell, may be blank
+ * @return {string}
+ */
+function gameOrdinalGroupKey(canonicalDate, team) {
+  return canonicalDate + '|' + String(team == null ? '' : team).trim().toLowerCase();
+}
+
+/**
+ * Assign the next ordinal for a game row within its date-plus-team group, mutating the counter map.
+ * @param {Object} counters group key to count so far
+ * @param {string} canonicalDate "M/D"
+ * @param {string} team Team cell, may be blank
+ * @return {number} 1 for the first game of that team on that date, 2 for a real double-header, and so on
+ */
+function nextGameOrdinal(counters, canonicalDate, team) {
+  const key = gameOrdinalGroupKey(canonicalDate, team);
+  counters[key] = (counters[key] || 0) + 1;
+  return counters[key];
 }
 
 /**
@@ -335,9 +386,10 @@ function buildAvailabilityColumns(ss, dates, config) {
     console.log(`📋 Creating new "${config.availabilitySheet}" sheet`);
     availabilitySheet = ss.insertSheet(config.availabilitySheet);
     
-    // Set up basic structure with Full Name column
-    availabilitySheet.getRange(1, 1).setValue('Full Name');
-    availabilitySheet.getRange(1, 1).setFontWeight('bold');
+    // Column A stays Full Name (the prep sheets XLOOKUP against A:A); the portal matches rows by PlayerID.
+    const baseHeaders = [AVAILABILITY_ROW_HEADERS.fullName, AVAILABILITY_ROW_HEADERS.playerId, AVAILABILITY_ROW_HEADERS.grade, AVAILABILITY_ROW_HEADERS.genderIdentification];
+    availabilitySheet.getRange(1, 1, 1, baseHeaders.length).setValues([baseHeaders]);
+    availabilitySheet.getRange(1, 1, 1, baseHeaders.length).setFontWeight('bold');
   }
   
   console.log(`📊 Building availability columns in "${config.availabilitySheet}"`);
@@ -434,6 +486,9 @@ function buildAvailabilityColumns(ss, dates, config) {
     }
   });
 
+  // Seed one row per Roster player (Include In Generated Rosters TRUE) not already present, keyed by PlayerID.
+  const seedResult = seedAvailabilityRows_(ss, availabilitySheet);
+
   // Apply or extend data validation to availability columns (per-column; consolidated below for fewer rules)
   extendOrCreateDataValidation(availabilitySheet, validationRanges, config);
 
@@ -467,6 +522,9 @@ function buildAvailabilityColumns(ss, dates, config) {
   refreshManagedAvailabilityAndActivationCfOnSheet(availabilitySheet);
 
   return {
+    rowsAdded: seedResult.rowsAdded,
+    playerIdsFilled: seedResult.playerIdsFilled,
+    unmatchedRows: seedResult.unmatchedRows,
     columnsCreated: columnsCreated.length,
     columnsSkipped: columnsSkipped.length,
     columnSummary: columnsCreated.length > 0 ? 
@@ -474,6 +532,123 @@ function buildAvailabilityColumns(ss, dates, config) {
     skippedSummary: columnsSkipped.length > 0 ? 
       `Skipped existing: ${columnsSkipped.join(', ')}` : ''
   };
+}
+
+// Per-player (non-date) headers of an availability sheet. Full Name is column A by convention
+// (the roster prep sheets XLOOKUP against A:A); everything else is found by header name.
+const AVAILABILITY_ROW_HEADERS = {
+  fullName: 'Full Name',
+  playerId: 'PlayerID',
+  grade: 'Grade',
+  genderIdentification: 'Gender Identification'
+};
+
+/**
+ * Seed and repair the per-player rows of an availability sheet from the Roster.
+ *
+ * Rule: every Roster player whose Include In Generated Rosters is TRUE and whose PlayerID is not
+ * already in the sheet's PlayerID column gets one appended row (Full Name, PlayerID, Grade,
+ * Gender Identification as plain values). Rows are never deleted or reordered, the same rule
+ * Sync Extra Player Info follows, so flag cut players FALSE before the first build. An existing
+ * row with a Full Name but a blank PlayerID is filled when exactly one Roster player has that
+ * Full Name; otherwise it is left blank and reported. The PlayerID header is appended after the
+ * last column when missing, and always resolved by name afterwards.
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet - Practice Availability or Game Availability
+ * @return {{rowsAdded: number, playerIdsFilled: number, unmatchedRows: string[]}}
+ */
+function seedAvailabilityRows_(ss, sheet) {
+  const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
+  if (!rosterSheet) {
+    throw new Error(`Roster sheet "${CONFIG.roster.sheetName}" not found; run "Generate Fresh Roster" first.`);
+  }
+  const table = readRosterTable(rosterSheet);
+  const idCol = table.col(CONFIG.columns.playerId);
+  const nameCol = table.col(CONFIG.columns.fullName);
+  const includeCol = table.col(CONFIG.columns.includeInGeneratedRosters);
+  const gradeCol = table.col(CONFIG.columns.grade);
+  const genderCol = table.col(CONFIG.columns.genderIdentification);
+  const cell = (row, index) => (row[index] === null || row[index] === undefined) ? '' : row[index].toString().trim();
+
+  const rosterPlayers = table.rows
+    .filter(row => cell(row, idCol) !== '')
+    .map(row => ({
+      playerId: cell(row, idCol),
+      fullName: cell(row, nameCol),
+      include: row[includeCol] === true || cell(row, includeCol).toUpperCase() === 'TRUE',
+      grade: row[gradeCol] === null || row[gradeCol] === undefined ? '' : row[gradeCol],
+      genderIdentification: cell(row, genderCol)
+    }));
+  const rosterIdsByFullName = {};
+  rosterPlayers.forEach(p => {
+    if (!p.fullName) return;
+    if (!rosterIdsByFullName[p.fullName]) rosterIdsByFullName[p.fullName] = [];
+    rosterIdsByFullName[p.fullName].push(p.playerId);
+  });
+
+  // Ensure the PlayerID header exists; append it after the last column when missing.
+  let columns = getExistingColumns(sheet);
+  if (!columns[AVAILABILITY_ROW_HEADERS.playerId]) {
+    const newCol = sheet.getLastColumn() + 1;
+    console.log(`➕ Adding "${AVAILABILITY_ROW_HEADERS.playerId}" header at column ${newCol}`);
+    sheet.getRange(1, newCol).setValue(AVAILABILITY_ROW_HEADERS.playerId).setFontWeight('bold');
+    columns = getExistingColumns(sheet);
+  }
+  const playerIdCol = columns[AVAILABILITY_ROW_HEADERS.playerId];
+  const fullNameCol = columns[AVAILABILITY_ROW_HEADERS.fullName] || 1;
+  const gradeAvailCol = columns[AVAILABILITY_ROW_HEADERS.grade];
+  const genderAvailCol = columns[AVAILABILITY_ROW_HEADERS.genderIdentification];
+  const lastCol = sheet.getLastColumn();
+
+  // Existing rows: collect PlayerIDs, fill blanks by unambiguous Full Name.
+  const existingIds = new Set();
+  const unmatchedRows = [];
+  let playerIdsFilled = 0;
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const names = sheet.getRange(2, fullNameCol, lastRow - 1, 1).getValues();
+    const ids = sheet.getRange(2, playerIdCol, lastRow - 1, 1).getValues();
+    const fills = [];
+    for (let i = 0; i < ids.length; i++) {
+      const id = cell(ids[i], 0);
+      const name = cell(names[i], 0);
+      if (id) {
+        existingIds.add(id);
+        continue;
+      }
+      if (!name) continue;
+      const candidates = rosterIdsByFullName[name] || [];
+      if (candidates.length === 1 && !existingIds.has(candidates[0])) {
+        fills.push({ row: i + 2, playerId: candidates[0] });
+        existingIds.add(candidates[0]);
+      } else {
+        unmatchedRows.push(name);
+      }
+    }
+    fills.forEach(f => sheet.getRange(f.row, playerIdCol).setValue(f.playerId));
+    playerIdsFilled = fills.length;
+  }
+
+  // Append one row per included Roster player not yet present.
+  const missing = rosterPlayers.filter(p => p.include && !existingIds.has(p.playerId));
+  if (missing.length > 0) {
+    const startRow = Math.max(lastRow, 1) + 1;
+    const rows = missing.map(p => {
+      const row = new Array(lastCol).fill('');
+      row[fullNameCol - 1] = p.fullName;
+      row[playerIdCol - 1] = p.playerId;
+      if (gradeAvailCol) row[gradeAvailCol - 1] = p.grade;
+      if (genderAvailCol) row[genderAvailCol - 1] = p.genderIdentification;
+      return row;
+    });
+    if (sheet.getMaxRows() < startRow + rows.length - 1) {
+      sheet.insertRowsAfter(sheet.getMaxRows(), startRow + rows.length - 1 - sheet.getMaxRows());
+    }
+    sheet.getRange(startRow, 1, rows.length, lastCol).setValues(rows);
+  }
+
+  console.log(`👥 Availability rows: added ${missing.length}, PlayerIDs filled ${playerIdsFilled}, unmatched ${unmatchedRows.length}`);
+  return { rowsAdded: missing.length, playerIdsFilled: playerIdsFilled, unmatchedRows: unmatchedRows };
 }
 
 /**
