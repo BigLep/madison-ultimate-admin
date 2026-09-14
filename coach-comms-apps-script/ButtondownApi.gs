@@ -30,7 +30,8 @@ function createButtondownDraft(apiKey, subject, bodyMarkdown) {
     // so this is safe to set on a draft, not just a scheduled/sent email.
     payload.filters = {
       predicate: 'and',
-      filters: [{ field: 'subscriber.tags', operator: 'contains', value: seasonTag.id }]
+      filters: [{ field: 'subscriber.tags', operator: 'contains', value: seasonTag.id }],
+      groups: [] // required by the API even when empty (HTTP 422 without it)
     };
   }
 
