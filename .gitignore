@@ -1,5 +1,6 @@
 # Ignore all files starting with dot (except .gitignore, clasp files, and GitHub workflows)
 .*
+!.githooks/
 !.gitignore
 !.clasp.json
 !.claspignore

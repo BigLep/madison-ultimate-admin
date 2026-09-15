@@ -1,0 +1,21 @@
+#!/bin/sh
+# Pre-commit: run the coach sheet offline regression harness when any of its script or test
+# files are staged. Blocks the commit on failure. Activate once per clone with:
+#   git config core.hooksPath .githooks
+set -e
+root=$(git rev-parse --show-toplevel)
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '^coach-sheet-apps-script/\(.*\.gs\|test/\)'; then
+  echo "pre-commit: coach-sheet-apps-script changed; running test/harness.js"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "pre-commit: node not found; install Node.js or commit with --no-verify (not recommended)" >&2
+    exit 1
+  fi
+  # Run against the staged content, not the working tree, so an unstaged fix cannot mask a bad commit.
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  git checkout-index --prefix="$tmp/" -a -- coach-sheet-apps-script 2>/dev/null || git checkout-index --prefix="$tmp/" -a
+  if ! node "$tmp/coach-sheet-apps-script/test/harness.js"; then
+    echo "pre-commit: harness failed; commit blocked. Fix the failing assertion (or the code) and retry." >&2
+    exit 1
+  fi
+fi
