@@ -9,8 +9,9 @@ Use version format `2.x`; increment x for each release.
 ## Deployment Process
 
 1. Update `SCRIPT_VERSION` in `Code.gs`
-2. Run `clasp push` to deploy changes
-3. Test the deployed functionality
+2. Run the offline regression harness and make sure it passes: `node test/harness.js` (from this directory). It loads every `.gs` file into a Node vm with a fake Sheet and asserts the build outputs, including that `onOpen` builds the menu without throwing; a plain syntax check cannot catch a runtime error like an undeclared variable, which is how the menu disappeared in 3.31. Add an assertion whenever you change what a build writes.
+3. Run `clasp push` to deploy changes
+4. Test the deployed functionality
 
 ## Commits
 

@@ -67,7 +67,7 @@ To bind this script to a **new** spreadsheet, the usual path is duplicating the 
    - `CONFIG.teams`: this season's Team values in display and sort order (fall 2026: Blue, Gold, Silver, TBD, Practice Squad). Seeds the Extra Player Info Team dropdown once, and orders Build Practice Roster and the coach Build Game Roster Prep; a blank or unlisted Team sorts last. TBD holds Players not yet placed and drops out of the list once assignments are done.
    - `CONFIG.gameRosterPrep.hasTeam`: `true` if this season uses teams and the roster has a Team column (fall 2026: true); the coach game roster prep then includes Team and sorts by it first. `false` to omit it from game roster prep sheets.
    - `CONFIG.gameRosterPrep.hasActivationStatus`: `true` if this season tracks a per-game Activation Status (Active/Inactive/TBD). When true, Build Game Availability adds a `$date Activation Status` column per game, the coach game roster prep includes it (sorted first), Build Practice Roster shows it for the next game, and the **Apply Activation Status** menu item is offered. When false (fall 2026), none of those appear. The build never deletes columns, so flip this before the first Build Game Availability of the season, or delete any `Activation Status` columns it already added by hand.
-6. **Increment `SCRIPT_VERSION`**, then from `coach-sheet-apps-script/` run:
+6. **Increment `SCRIPT_VERSION`**, run `node test/harness.js` (offline regression harness; must pass), then from `coach-sheet-apps-script/` run:
    ```bash
    clasp push
    ```
