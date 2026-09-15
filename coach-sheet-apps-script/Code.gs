@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.32';
+const SCRIPT_VERSION = '3.33';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -778,7 +778,7 @@ function getColumnLetter(columnNumber) {
  */
 function createCustomMenu() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu(`🥏 Madison Ultimate (v${SCRIPT_VERSION})`)
+  const menu = ui.createMenu(`🥏 Madison Ultimate (v${SCRIPT_VERSION})`)
     .addItem('🩺 Run Diagnostics', 'runDiagnostics')
     .addSeparator()
     .addItem('📝 Generate Fresh Roster', 'generateRoster')
