@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.29';
+const SCRIPT_VERSION = '3.30';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -101,17 +101,18 @@ const CONFIG = {
 
   // Shared base column structure for roster printouts (Practice Roster and Game Roster Prep)
   // Header order is driven by rosterPrintoutBaseColumnKeys (not Object.keys order).
-  rosterPrintoutBaseColumnKeys: ['number', 'fullName', 'team', 'gender', 'grade', 'playerId'],
+  rosterPrintoutBaseColumnKeys: ['playerId', 'number', 'fullName', 'team', 'gender', 'grade'],
   rosterPrintoutBaseColumns: {
-    // Base columns (always present): # | Full Name | Team | Gender | Grade | PlayerID
-    // PlayerID is the row's key (written as a value, hidden after the build); Full Name, Team,
-    // Gender, and Grade are Roster lookups on it, and every availability cell is looked up by it.
-    number: { name: '#', index: 1 },
-    fullName: { name: 'Full Name', index: 2 },
-    team: { name: 'Team', index: 3 },
-    gender: { name: 'Gender', index: 4 },
-    grade: { name: 'Grade', index: 5 },
-    playerId: { name: 'PlayerID', index: 6 }
+    // Base columns (always present): PlayerID | # | Full Name | Team | Gender | Grade
+    // PlayerID is column A on every PlayerID-keyed sheet (Roster, availability, printouts): the
+    // row's key, written as a value and hidden after the build. Full Name, Team, Gender, and
+    // Grade are Roster lookups on it, and every availability cell is looked up by it.
+    playerId: { name: 'PlayerID', index: 1 },
+    number: { name: '#', index: 2 },
+    fullName: { name: 'Full Name', index: 3 },
+    team: { name: 'Team', index: 4 },
+    gender: { name: 'Gender', index: 5 },
+    grade: { name: 'Grade', index: 6 }
     // Additional columns (availability, notes) are added dynamically after these base columns
   },
 

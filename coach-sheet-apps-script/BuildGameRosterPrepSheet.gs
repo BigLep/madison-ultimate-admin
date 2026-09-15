@@ -430,7 +430,7 @@ function buildAvailColumnsListForSelectedCalendarDay_(gameAvailabilitySheet, gam
 
 /**
  * Get column layout for coach game roster prep based on CONFIG.gameRosterPrep.
- * Order: #, Full Name, [Team?], Gender, Grade, PlayerID (hidden key), then for each game that calendar day:
+ * Order: PlayerID (column A, hidden key), #, Full Name, [Team?], Gender, Grade, then for each game that calendar day:
  *   [$date Activation Status?], $date Availability, $date Note (and "(Game N)" variants).
  * @param {string} gameDate - Game date in format "M/D"
  * @param {Object[]} availColumnsList - One findAvailabilityColumns result per game on that day
@@ -439,20 +439,21 @@ function buildAvailColumnsListForSelectedCalendarDay_(gameAvailabilitySheet, gam
 function getGameRosterPrepColumnLayout(gameDate, availColumnsList) {
   const hasTeam = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasTeam;
   const hasActivation = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasActivationStatus;
-  const headers = [CONFIG.rosterPrintoutBaseColumns.number.name, CONFIG.rosterPrintoutBaseColumns.fullName.name];
+  const base = CONFIG.rosterPrintoutBaseColumns;
+  const headers = [base.playerId.name, base.number.name, base.fullName.name];
   const indices = {
-    number: 1,
-    fullName: 2,
+    playerId: base.playerId.index,
+    number: base.number.index,
+    fullName: base.fullName.index,
     team: null,
     gender: null,
     grade: null,
-    playerId: null,
     games: [],
     activationStatus: null,
     availability: null,
     note: null
   };
-  let col = 3;
+  let col = base.fullName.index + 1;
   if (hasTeam) {
     headers.push(CONFIG.rosterPrintoutBaseColumns.team.name);
     indices.team = col++;
@@ -461,8 +462,6 @@ function getGameRosterPrepColumnLayout(gameDate, availColumnsList) {
   indices.gender = col++;
   headers.push(CONFIG.rosterPrintoutBaseColumns.grade.name);
   indices.grade = col++;
-  headers.push(CONFIG.rosterPrintoutBaseColumns.playerId.name);
-  indices.playerId = col++;
 
   for (var gi = 0; gi < availColumnsList.length; gi++) {
     var availColumns = availColumnsList[gi];
@@ -551,9 +550,9 @@ function addCoachGameRosterActivationSummary(sheet, numRows, idx) {
   const lastDataRow = 1 + numRows;
   const genderLetter = getColumnLetter(idx.gender);
   const activationLetter = getColumnLetter(idx.activationStatus);
-  const labelCol = 2; // B
-  const bxCol = 3; // C
-  const gxCol = 4; // D
+  const labelCol = CONFIG.rosterPrintoutBaseColumns.fullName.index; // under Full Name
+  const bxCol = labelCol + 1;
+  const gxCol = labelCol + 2;
   const labelColLetter = getColumnLetter(labelCol);
   const bxColLetter = getColumnLetter(bxCol);
   const gxColLetter = getColumnLetter(gxCol);
@@ -601,9 +600,9 @@ function addCoachGameRosterExcludingCantMakeItSummary(sheet, numRows, idx, first
   const genderLetter = getColumnLetter(idx.gender);
   const activationLetter = getColumnLetter(idx.activationStatus);
   const availabilityLetter = getColumnLetter(idx.availability);
-  const labelCol = 2;
-  const bxCol = 3;
-  const gxCol = 4;
+  const labelCol = CONFIG.rosterPrintoutBaseColumns.fullName.index; // under Full Name
+  const bxCol = labelCol + 1;
+  const gxCol = labelCol + 2;
   const labelColLetter = getColumnLetter(labelCol);
   const bxColLetter = getColumnLetter(bxCol);
   const gxColLetter = getColumnLetter(gxCol);
@@ -816,7 +815,7 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
       console.log('📝 Enabled text wrap for note column(s)');
     }
 
-    // PlayerID is the key, not something to print: hide it
+    // PlayerID (column A) is the key, not something to print: hide it
     newSheet.hideColumns(idx.playerId);
 
     // Set print settings
@@ -945,9 +944,10 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
     const hasTeam = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasTeam;
     const hasActivation = CONFIG.gameRosterPrep && CONFIG.gameRosterPrep.hasActivationStatus;
 
-    const headers = ['Full Name'];
-    const col = { fullName: 1, games: [], team: null, playerId: null };
-    var c = 2;
+    // PlayerID in column A (hidden after the build): the key every other cell on the row looks up by.
+    const headers = [CONFIG.rosterPrintoutBaseColumns.playerId.name, 'Full Name'];
+    const col = { playerId: 1, fullName: 2, games: [], team: null };
+    var c = 3;
 
     for (var gi = 0; gi < availColumnsList.length; gi++) {
       var ac = availColumnsList[gi];
@@ -967,10 +967,6 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
       headers.push('Team');
       col.team = c++;
     }
-
-    // PlayerID last (hidden after the build): the key every other cell on the row looks up by.
-    headers.push(CONFIG.rosterPrintoutBaseColumns.playerId.name);
-    col.playerId = c++;
 
     const headerRange = newSheet.getRange(1, 1, 1, headers.length);
     headerRange.setValues([headers]);
@@ -1024,7 +1020,7 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
       var g0 = col.games[0];
       if (g0 && g0.activation) sortSpec.push({ column: g0.activation, ascending: true });
       if (g0 && g0.availability) sortSpec.push({ column: g0.availability, ascending: true });
-      sortSpec.push({ column: 1, ascending: true });
+      sortSpec.push({ column: col.fullName, ascending: true });
       console.log(sortSpec.length > 1
         ? `🔄 Sorting ${fullNameInfo.rowCount} rows by first game status / availability > Player Name...`
         : `🔄 Sorting ${fullNameInfo.rowCount} rows by player name...`);
@@ -1065,7 +1061,7 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
     finalizeGameRosterSheet(newSheet, fullNameInfo.rowCount);
 
     console.log('📏 Auto-resizing columns...');
-    newSheet.autoResizeColumn(1);
+    newSheet.autoResizeColumn(col.fullName);
     for (var ai = 0; ai < col.games.length; ai++) {
       var ag = col.games[ai];
       if (ag.activation) newSheet.autoResizeColumn(ag.activation);
@@ -1076,7 +1072,7 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
     }
     if (col.team) newSheet.autoResizeColumn(col.team);
 
-    // PlayerID is the key, not something to print: hide it
+    // PlayerID (column A) is the key, not something to print: hide it
     newSheet.hideColumns(col.playerId);
 
     console.log(`✅ Parent game roster created successfully`);

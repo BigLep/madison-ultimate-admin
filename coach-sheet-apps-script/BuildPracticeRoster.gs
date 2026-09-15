@@ -586,8 +586,9 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
       addGroupBorders(existingSheet, fullNameInfo.rowCount);
     }
 
-    // PlayerID is the key, not something to print: hide it (a sheet built before 3.29 had the
-    // availability dropdown in this column, so drop any validation left there).
+    // PlayerID (column A) is the key, not something to print: hide it. A sheet built before 3.29
+    // had no PlayerID column and its columns have all shifted right by one, so drop any
+    // validation left in this column.
     existingSheet.getRange(2, playerIdCol, Math.max(existingSheet.getMaxRows() - 1, 1), 1).clearDataValidations();
     existingSheet.hideColumns(playerIdCol);
 
@@ -768,7 +769,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
       gameNoteRange.setWrap(true);
     }
     
-    // PlayerID is the key, not something to print: hide it
+    // PlayerID (column A) is the key, not something to print: hide it
     newSheet.hideColumns(CONFIG.rosterPrintoutBaseColumns.playerId.index);
 
     // Set print settings
@@ -880,20 +881,22 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
  */
 function populateNumberColumn(sheet, numRows, groupByColumns) {
   console.log(`🔢 Populating # column with reset formulas...`);
+  const numberCol = CONFIG.rosterPrintoutBaseColumns.number.index;
+  const n = getColumnLetter(numberCol);
   const cols = groupByColumns || [CONFIG.rosterPrintoutBaseColumns.team.index, CONFIG.rosterPrintoutBaseColumns.gender.index];
   const colLetters = cols.filter(function (c) { return c; }).map(getColumnLetter);
   let numberFormula;
   if (colLetters.length === 0) {
-    numberFormula = '=A1+1';
+    numberFormula = `=${n}1+1`;
   } else if (colLetters.length === 1) {
-    numberFormula = `=IF(${colLetters[0]}1<>${colLetters[0]}2,1,A1+1)`;
+    numberFormula = `=IF(${colLetters[0]}1<>${colLetters[0]}2,1,${n}1+1)`;
   } else {
     const orParts = colLetters.map(function (l) { return l + '1<>' + l + '2'; }).join(',');
-    numberFormula = `=IF(OR(${orParts}),1,A1+1)`;
+    numberFormula = `=IF(OR(${orParts}),1,${n}1+1)`;
   }
-  sheet.getRange(2, 1).setFormula(numberFormula);
+  sheet.getRange(2, numberCol).setFormula(numberFormula);
   if (numRows > 1) {
-    sheet.getRange(2, 1).copyTo(sheet.getRange(3, 1, numRows - 1, 1));
+    sheet.getRange(2, numberCol).copyTo(sheet.getRange(3, numberCol, numRows - 1, 1));
   }
   console.log(`✅ Populated # column with reset formula for ${numRows} rows`);
 }
@@ -907,7 +910,7 @@ function addGroupBorders(sheet, numRows) {
   console.log(`🎨 Adding group borders...`);
   
   // Get all values from the # column (already flushed before calling this function)
-  const numberColumnValues = sheet.getRange(2, 1, numRows, 1).getValues();
+  const numberColumnValues = sheet.getRange(2, CONFIG.rosterPrintoutBaseColumns.number.index, numRows, 1).getValues();
   
   // Find rows where # = 1 (group starts)
   const groupStartRows = [];
