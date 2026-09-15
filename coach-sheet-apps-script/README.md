@@ -65,7 +65,7 @@ To bind this script to a **new** spreadsheet, the usual path is duplicating the 
 5. **Update per-season values in `Code.gs`** before pushing:
    - `CONFIG.finalForms.folderId`: must point at **this season's** FinalForms exports Drive folder, and must match the `finalforms-export` GitHub Action's `DRIVE_FOLDER_ID` repo variable (`gh variable list -R BigLep/madison-ultimate-admin`). If these two drift apart, "Update Final Forms" silently imports the wrong season's data with no error.
    - `CONFIG.gameRosterPrep.hasTeam`: `true` if this season uses teams (e.g. A/B squads) and the roster has a Team column; `false` to omit it from game roster prep sheets.
-   - `CONFIG.gameRosterPrep.hasActivationStatus`: `true` if Game Availability has an Activation Status column per date (Active/Inactive/TBD) and you want it on the coach game roster prep sheet (sorted first); `false` to omit it.
+   - `CONFIG.gameRosterPrep.hasActivationStatus`: `true` if this season tracks a per-game Activation Status (Active/Inactive/TBD). When true, Build Game Availability adds a `$date Activation Status` column per game, the coach game roster prep includes it (sorted first), Build Practice Roster shows it for the next game, and the **Apply Activation Status** menu item is offered. When false (fall 2026), none of those appear. The build never deletes columns, so flip this before the first Build Game Availability of the season, or delete any `Activation Status` columns it already added by hand.
 6. **Increment `SCRIPT_VERSION`**, then from `coach-sheet-apps-script/` run:
    ```bash
    clasp push
@@ -213,7 +213,7 @@ You can schedule **several games on one calendar date** (same `M/D` in **Game In
 - Keep rows in **true game order** (earlier game first). The script and the portal assign "game 1" / "game 2" **in row order within each date and Team** (same rule as the portal API).
 
 **Game Availability**  
-After you add or change rows in Game Info, run **Build Game Availability**. For each distinct date-and-ordinal, the script ensures columns exist:
+After you add or change rows in Game Info, run **Build Game Availability**. For each distinct date-and-ordinal, the script ensures columns exist (the activation column only when `CONFIG.gameRosterPrep.hasActivationStatus` is true):
 
 | Occurrence that day (per Team) | Example availability header | Example activation header | Example note header |
 |---------------------|----------------------------|---------------------------|---------------------|

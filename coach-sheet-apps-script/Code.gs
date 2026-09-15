@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.30';
+const SCRIPT_VERSION = '3.31';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -116,10 +116,14 @@ const CONFIG = {
     // Additional columns (availability, notes) are added dynamically after these base columns
   },
 
-  // Game Roster Prep sheet: season-specific columns (change per season)
+  // Season-specific game columns (change per season)
   gameRosterPrep: {
-    hasTeam: false,           // If true, include Team column; if false, omit it
-    hasActivationStatus: true // If true, include $date Activation Status column and sort by it first
+    hasTeam: false,            // If true, include Team column on game roster prep sheets; if false, omit it
+    // If true, this season tracks a per-game Activation Status (Active/Inactive/TBD): Build Game
+    // Availability adds a "$date Activation Status" column per game, Build Game Roster Prep includes
+    // it (sorted first), Build Practice Roster shows it for the next game, and the Apply Activation
+    // Status menu item is offered. If false, none of those appear. Fall 2026: false.
+    hasActivationStatus: false
   }
 };
 
@@ -781,8 +785,11 @@ function createCustomMenu() {
     .addSeparator()
     .addItem('🏗️ Build Custom Sheet', 'buildCustomSheet')
     .addItem('🏅 Build Practice Roster', 'buildPracticeRoster')
-    .addItem('🏆 Build Game Roster Prep Sheet', 'buildGameRosterPrepSheet')
-    .addItem('⬆️ Apply Activation Status', 'showApplyActivationStatusDialog')
+    .addItem('🏆 Build Game Roster Prep Sheet', 'buildGameRosterPrepSheet');
+  if (CONFIG.gameRosterPrep.hasActivationStatus) {
+    menu.addItem('⬆️ Apply Activation Status', 'showApplyActivationStatusDialog');
+  }
+  menu
     .addItem('📧 Build Email List', 'buildEmailList')
     .addItem('🎨 Format Spruce Up', 'formatSpruceUp')
     .addItem('🧹 Delete Empty Rows & Columns', 'deleteEmptyRowsAndColumns')

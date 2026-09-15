@@ -535,10 +535,10 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
     });
     headers.push(practiceDate, `${practiceDate} Note`);
 
-    // Add next game columns if found (Activation Status, Availability, Note)
+    // Add next game columns if found ([Activation Status], Availability, Note)
     if (nextGameInfo) {
       const gameHeaders = getAvailabilityColumnHeaders(nextGameInfo.formattedDate, 'Game Availability', nextGameInfo.ordinalForDate || 1);
-      headers.push(gameHeaders.activationHeader);
+      if (CONFIG.gameRosterPrep.hasActivationStatus) headers.push(gameHeaders.activationHeader);
       headers.push(gameHeaders.availabilityHeader);
       headers.push(gameHeaders.noteHeader);
     }
@@ -659,10 +659,10 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     headers.push(practiceDate);                          // Practice availability
     headers.push(`${practiceDate} Note`);                // Practice availability note
 
-    // Add next game columns if found (Activation Status, Availability, Note)
+    // Add next game columns if found ([Activation Status], Availability, Note)
     if (nextGameInfo) {
       const gameHeaders = getAvailabilityColumnHeaders(nextGameInfo.formattedDate, 'Game Availability', nextGameInfo.ordinalForDate || 1);
-      headers.push(gameHeaders.activationHeader);   // e.g. "3/7 Activation Status"
+      if (CONFIG.gameRosterPrep.hasActivationStatus) headers.push(gameHeaders.activationHeader); // e.g. "3/7 Activation Status"
       headers.push(gameHeaders.availabilityHeader); // e.g. "3/7 Availability"
       headers.push(gameHeaders.noteHeader);         // e.g. "3/7 Note"
     }
@@ -750,10 +750,10 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     const practiceAvailabilityColumnIndex = CONFIG.rosterPrintoutBaseColumnKeys.length + 1;
     newSheet.autoResizeColumn(practiceAvailabilityColumnIndex); // Practice availability column
     if (nextGameInfo) {
-      const baseColCount = CONFIG.rosterPrintoutBaseColumnKeys.length;
-      newSheet.autoResizeColumn(baseColCount + 3); // Next game Activation Status
-      newSheet.autoResizeColumn(baseColCount + 4); // Next game Availability
-      newSheet.autoResizeColumn(baseColCount + 5); // Next game Note
+      const ng = practiceRosterNextGameColumns();
+      if (ng.activation) newSheet.autoResizeColumn(ng.activation); // Next game Activation Status
+      newSheet.autoResizeColumn(ng.availability); // Next game Availability
+      newSheet.autoResizeColumn(ng.note); // Next game Note
     }
     
     // Enable text wrapping for note columns
@@ -764,7 +764,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     practiceNoteRange.setWrap(true);
     
     if (nextGameInfo) {
-      const nextGameNoteColumnIndex = baseColCount + 5;
+      const nextGameNoteColumnIndex = practiceRosterNextGameColumns().note;
       const gameNoteRange = newSheet.getRange(2, nextGameNoteColumnIndex, fullNameInfo.rowCount, 1);
       gameNoteRange.setWrap(true);
     }
@@ -801,6 +801,23 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
  */
 function findPracticeAvailabilityColumns(practiceAvailabilitySheet, practiceDate) {
   return findAvailabilityColumns(practiceAvailabilitySheet, practiceDate, 'Practice Availability');
+}
+
+/**
+ * Column indices of the next-game block on a practice roster, after the base columns and the two
+ * practice columns ($date, $date Note). Activation Status is only present when the season tracks
+ * it (CONFIG.gameRosterPrep.hasActivationStatus).
+ * @return {{activation: (number|null), availability: number, note: number, count: number}}
+ */
+function practiceRosterNextGameColumns() {
+  const baseColCount = CONFIG.rosterPrintoutBaseColumnKeys.length;
+  let col = baseColCount + 3;
+  const out = { activation: null, availability: null, note: null, count: 0 };
+  if (CONFIG.gameRosterPrep.hasActivationStatus) out.activation = col++;
+  out.availability = col++;
+  out.note = col++;
+  out.count = col - (baseColCount + 3);
+  return out;
 }
 
 /**
@@ -860,15 +877,18 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
   fromAvailability(baseColCount + 1, practiceAvailSheetName, practiceJoin, availColumns.availabilityColumn, 'Practice Availability');
   fromAvailability(baseColCount + 2, practiceAvailSheetName, practiceJoin, availColumns.noteColumn, 'Practice Availability Note');
 
-  // Next game columns if available (Activation Status, Availability, Note)
+  // Next game columns if available ([Activation Status], Availability, Note)
   if (nextGameInfo && gameAvailabilitySheet) {
     const gameAvailSheetName = 'Game Availability';
     const nextGameColumns = findGameAvailabilityColumns(gameAvailabilitySheet, nextGameInfo.formattedDate, nextGameInfo.ordinalForDate || 1);
     const gameJoin = availabilityJoin(nextGameColumns, playerIdLetter, fullNameLetter);
     const date = nextGameInfo.formattedDate;
-    fromAvailability(baseColCount + 3, gameAvailSheetName, gameJoin, nextGameColumns.activationStatusColumn, `Next Game Activation Status (${date})`);
-    fromAvailability(baseColCount + 4, gameAvailSheetName, gameJoin, nextGameColumns.availabilityColumn, `Next Game Availability (${date})`);
-    fromAvailability(baseColCount + 5, gameAvailSheetName, gameJoin, nextGameColumns.noteColumn, `Next Game Note (${date})`);
+    const ng = practiceRosterNextGameColumns();
+    if (ng.activation) {
+      fromAvailability(ng.activation, gameAvailSheetName, gameJoin, nextGameColumns.activationStatusColumn, `Next Game Activation Status (${date})`);
+    }
+    fromAvailability(ng.availability, gameAvailSheetName, gameJoin, nextGameColumns.availabilityColumn, `Next Game Availability (${date})`);
+    fromAvailability(ng.note, gameAvailSheetName, gameJoin, nextGameColumns.noteColumn, `Next Game Note (${date})`);
   }
 }
 

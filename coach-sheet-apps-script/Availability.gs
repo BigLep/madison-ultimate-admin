@@ -36,7 +36,8 @@ const GAME_AVAILABILITY_CONFIG = {
     skipCondition: 'equals',
     skipValue: 'Bye'
   },
-  // Game-only: three columns per date — $date Availability, $date Activation Status, $date Note (free text)
+  // Game-only: per date, $date Availability, [$date Activation Status when
+  // CONFIG.gameRosterPrep.hasActivationStatus], $date Note (free text)
   columnsPerDate: [
     { suffix: ' Availability', useAvailabilityValidation: true },
     { suffix: ' Activation Status', useAvailabilityValidation: false, useActivationStatusValidation: true },
@@ -421,9 +422,11 @@ function buildAvailabilityColumns(ss, dates, config) {
       const hdr = getAvailabilityColumnHeaders(dateString, 'Game Availability', ord);
       const triple = [
         { header: hdr.availabilityHeader, colDef: config.columnsPerDate[0] },
-        { header: hdr.activationHeader, colDef: config.columnsPerDate[1] },
         { header: hdr.noteHeader, colDef: config.columnsPerDate[2] }
       ];
+      if (CONFIG.gameRosterPrep.hasActivationStatus) {
+        triple.splice(1, 0, { header: hdr.activationHeader, colDef: config.columnsPerDate[1] });
+      }
       triple.forEach(function (item) {
         const header = item.header;
         const colDef = item.colDef;
