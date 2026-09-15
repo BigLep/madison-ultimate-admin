@@ -64,7 +64,8 @@ To bind this script to a **new** spreadsheet, the usual path is duplicating the 
 4. In this repo, update `coach-sheet-apps-script/.clasp.json`: set `"scriptId"` to that Script ID (leave `rootDir` and `filePushOrder` as-is).
 5. **Update per-season values in `Code.gs`** before pushing:
    - `CONFIG.finalForms.folderId`: must point at **this season's** FinalForms exports Drive folder, and must match the `finalforms-export` GitHub Action's `DRIVE_FOLDER_ID` repo variable (`gh variable list -R BigLep/madison-ultimate-admin`). If these two drift apart, "Update Final Forms" silently imports the wrong season's data with no error.
-   - `CONFIG.gameRosterPrep.hasTeam`: `true` if this season uses teams (e.g. A/B squads) and the roster has a Team column; `false` to omit it from game roster prep sheets.
+   - `CONFIG.teams`: this season's Team values in display and sort order (fall 2026: Blue, Gold, Silver, TBD, Practice Squad). Seeds the Extra Player Info Team dropdown once, and orders Build Practice Roster and the coach Build Game Roster Prep; a blank or unlisted Team sorts last. TBD holds Players not yet placed and drops out of the list once assignments are done.
+   - `CONFIG.gameRosterPrep.hasTeam`: `true` if this season uses teams and the roster has a Team column (fall 2026: true); the coach game roster prep then includes Team and sorts by it first. `false` to omit it from game roster prep sheets.
    - `CONFIG.gameRosterPrep.hasActivationStatus`: `true` if this season tracks a per-game Activation Status (Active/Inactive/TBD). When true, Build Game Availability adds a `$date Activation Status` column per game, the coach game roster prep includes it (sorted first), Build Practice Roster shows it for the next game, and the **Apply Activation Status** menu item is offered. When false (fall 2026), none of those appear. The build never deletes columns, so flip this before the first Build Game Availability of the season, or delete any `Activation Status` columns it already added by hand.
 6. **Increment `SCRIPT_VERSION`**, then from `coach-sheet-apps-script/` run:
    ```bash
@@ -129,7 +130,7 @@ Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, s
 ### Extra Player Info (coach-authored)
 
 - **Source**: coaches, in the `Extra Player Info` tab
-- **Columns**: PlayerID, Full Name (formula), Team (dropdown seeded Blue/Gold; edit the list after tryouts), Returning (TRUE/FALSE dropdown), Include In Generated Rosters (TRUE/FALSE dropdown; blank means "included")
+- **Columns**: PlayerID, Full Name (formula), Team (dropdown seeded from `CONFIG.teams`; edit the list in the sheet if the teams change), Returning (TRUE/FALSE dropdown), Include In Generated Rosters (TRUE/FALSE dropdown; blank means "included")
 - **Sync**: Menu → "Sync Extra Player Info" appends a row for every Signups PlayerID not already present; it never deletes or reorders rows.
 
 ### Final Forms (SPS Registration)

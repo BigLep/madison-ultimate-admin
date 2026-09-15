@@ -52,7 +52,7 @@ As defined by the portal: Player Info, Caretaker Info, and Photo Upload all done
 _Avoid_: registered, signed up
 
 **Team**:
-The coach-assigned squad for the season, authored in Extra Player Info after tryouts. Fall 2026 values: Blue, Gold, Silver, Practice Squad; TBD until assigned. A Game Info row carries the Team it belongs to, blank meaning every team.
+The coach-assigned squad for the season, authored in Extra Player Info after tryouts. Fall 2026 values, in the order printouts sort them (`CONFIG.teams`): Blue, Gold, Silver, TBD, Practice Squad. TBD marks a Player not yet placed and goes away once team assignments are done; a blank Team sorts after every listed value. A Game Info row carries the Team it belongs to, blank meaning every team.
 
 **Analyze Signups**:
 The coach sheet's report of Players whose Sources disagree or are incomplete: signups with no SPS Student ID, Final Forms students not yet seeded or joined, signups whose SPS Student ID has left Final Forms, suspected duplicate signups, signups not Profile Complete, and Seeded Signups the family has not finished. It only reports; the portal's Seed Signups from Final Forms does the joining and seeding.

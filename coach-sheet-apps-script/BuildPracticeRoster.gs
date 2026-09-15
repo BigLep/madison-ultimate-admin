@@ -975,35 +975,28 @@ const PRACTICE_AVAIL_COLUMN_INDEX = CONFIG.rosterPrintoutBaseColumnKeys.length +
  * @param {number} numColumns - Number of columns
  */
 function sortPracticeRoster(sheet, numRows, numColumns) {
-  console.log('🔄 Sorting by Team, Gender, Practice Availability, Grade, Name...');
+  console.log('🔄 Sorting by Team (CONFIG.teams order), Gender, Practice Availability, Grade, Name...');
 
-  // Temporary single column for practice-availability sort key (numeric rank so Range.sort() can use it).
-  // getRange(row, column, numRows, numColumns) = (startRow, startCol, number of rows, number of columns).
-  sheet.insertColumnAfter(numColumns);
-  const sortKeyCol = numColumns + 1;
+  // Temporary numeric sort-key columns (Range.sort() only orders by cell values): Team rank in
+  // CONFIG.teams order, then practice-availability rank.
   const numDataRows = numRows; // data rows = rows 2 to (1 + numRows)
-
-  const availRange = sheet.getRange(2, PRACTICE_AVAIL_COLUMN_INDEX, numDataRows, 1);
-  const availValues = availRange.getValues();
-  const sortKeys = availValues.map(function (row) {
-    const v = (row[0] != null ? String(row[0]).trim() : '');
-    const rank = PRACTICE_AVAIL_SORT_ORDER.hasOwnProperty(v) ? PRACTICE_AVAIL_SORT_ORDER[v] : 1;
-    return [rank];
+  const teamRankCol = insertSortRankColumn(sheet, CONFIG.rosterPrintoutBaseColumns.team.index, numDataRows, numColumns, teamSortRank);
+  const availRankCol = insertSortRankColumn(sheet, PRACTICE_AVAIL_COLUMN_INDEX, numDataRows, teamRankCol, function (v) {
+    const s = (v != null ? String(v).trim() : '');
+    return PRACTICE_AVAIL_SORT_ORDER.hasOwnProperty(s) ? PRACTICE_AVAIL_SORT_ORDER[s] : 1;
   });
 
-  const sortKeyRange = sheet.getRange(2, sortKeyCol, numDataRows, 1);
-  sortKeyRange.setValues(sortKeys);
-
-  const dataRange = sheet.getRange(2, 1, numDataRows, sortKeyCol);
+  const dataRange = sheet.getRange(2, 1, numDataRows, availRankCol);
   dataRange.sort([
-    { column: CONFIG.rosterPrintoutBaseColumns.team.index, ascending: true },
+    { column: teamRankCol, ascending: true },
     { column: CONFIG.rosterPrintoutBaseColumns.gender.index, ascending: true },
-    { column: sortKeyCol, ascending: true },
+    { column: availRankCol, ascending: true },
     { column: CONFIG.rosterPrintoutBaseColumns.grade.index, ascending: true },
     { column: CONFIG.rosterPrintoutBaseColumns.fullName.index, ascending: true }
   ]);
 
-  sheet.deleteColumn(sortKeyCol);
+  sheet.deleteColumn(availRankCol);
+  sheet.deleteColumn(teamRankCol);
   console.log('✅ Sorting complete');
 }
 

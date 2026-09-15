@@ -10,7 +10,6 @@
  * Never deletes or reorders rows.
  */
 
-const EXTRA_PLAYER_INFO_TEAM_SEED = ['Blue', 'Gold'];
 const EXTRA_PLAYER_INFO_BOOLEAN_CHOICES = ['TRUE', 'FALSE'];
 
 /**
@@ -269,8 +268,8 @@ function ensureExtraPlayerInfoSheet(ss) {
  * list rule only judges non-empty input), which is what lets a blank Include mean
  * "included" (coach sheet ADR 0002). No checkboxes: a checkbox cannot be blank.
  *
- * The Team list is seeded once (Blue, Gold) and left alone afterwards so coaches
- * can edit the dropdown in the sheet after tryouts without the next sync undoing it.
+ * The Team list is seeded once from CONFIG.teams and left alone afterwards so coaches
+ * can edit the dropdown in the sheet without the next sync undoing it.
  */
 function applyExtraPlayerInfoValidations(sheet) {
   const rows = Math.max(1, sheet.getMaxRows() - 1);
@@ -280,9 +279,9 @@ function applyExtraPlayerInfoValidations(sheet) {
   const hasTeamRule = teamRange.getDataValidations().some(row => row[0] !== null);
   if (!hasTeamRule) {
     teamRange.setDataValidation(SpreadsheetApp.newDataValidation()
-      .requireValueInList(EXTRA_PLAYER_INFO_TEAM_SEED, true)
+      .requireValueInList(CONFIG.teams, true)
       .setAllowInvalid(false)
-      .setHelpText('Team for the season. Edit this dropdown list after tryouts.')
+      .setHelpText('Team for the season (CONFIG.teams). Edit this dropdown list if the teams change.')
       .build());
   }
 

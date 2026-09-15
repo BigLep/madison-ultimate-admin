@@ -118,4 +118,4 @@ There is no Apps Script test runner in this repo. The pure seam is `resolveSignu
 ## Out of scope, noted
 
 - The old `photo-mapper/` tool (removed 2026-09-07) read Full Name and StudentID from a roster; the portal now ties each Player Photo to a PlayerID.
-- Team values beyond Blue and Gold, and `CONFIG.gameRosterPrep.hasTeam`, wait for tryouts.
+- Team values live in `CONFIG.teams` (fall 2026: Blue, Gold, Silver, TBD, Practice Squad, in sort order) and `CONFIG.gameRosterPrep.hasTeam` is on; TBD leaves the list once team assignments are done.

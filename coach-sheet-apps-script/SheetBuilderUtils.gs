@@ -115,6 +115,38 @@ function seedPrintoutPlayerRows(targetSheet, rosterSheet, startRow, playerIdColu
 }
 
 /**
+ * Sort rank of a Team value: its position in CONFIG.teams; blank or unlisted values rank after
+ * every listed Team so unassigned Players sit at the bottom of a printout.
+ * @param {*} value
+ * @return {number}
+ */
+function teamSortRank(value) {
+  const v = value === null || value === undefined ? '' : String(value).trim();
+  const i = v === '' ? -1 : CONFIG.teams.indexOf(v);
+  return i === -1 ? CONFIG.teams.length : i;
+}
+
+/**
+ * Append a temporary numeric sort-key column to a printout (after insertAfterCol) holding
+ * rankFn(value) for each data row of sourceCol, so Range.sort() can order by a custom list.
+ * The caller sorts, then removes the column with sheet.deleteColumn(returned index), highest
+ * temp column first when it added more than one.
+ * @param {Sheet} sheet
+ * @param {number} sourceCol - 1-based column whose values are ranked
+ * @param {number} numRows - Data rows (from row 2)
+ * @param {number} insertAfterCol - Column after which the temp column is inserted
+ * @param {function(*): number} rankFn
+ * @return {number} 1-based index of the temp column
+ */
+function insertSortRankColumn(sheet, sourceCol, numRows, insertAfterCol, rankFn) {
+  sheet.insertColumnAfter(insertAfterCol);
+  const rankCol = insertAfterCol + 1;
+  const values = sheet.getRange(2, sourceCol, numRows, 1).getValues();
+  sheet.getRange(2, rankCol, numRows, 1).setValues(values.map(function (row) { return [rankFn(row[0])]; }));
+  return rankCol;
+}
+
+/**
  * Copy Full Name column from roster to a specific column in new sheet
  * @param {Sheet} targetSheet - The sheet to copy Full Name to
  * @param {Sheet} rosterSheet - The source roster sheet

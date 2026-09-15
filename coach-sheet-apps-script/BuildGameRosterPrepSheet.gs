@@ -771,14 +771,14 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     // Force recalculation to ensure formulas are evaluated before sorting
     SpreadsheetApp.flush();
 
-    // Sort: Activation Status (if present) > Gender > Availability > Name
+    // Sort: Team (if present) > Activation Status (if present) > Gender > Availability > Name
     if (fullNameInfo.rowCount > 0) {
       sortGameRosterPrep(newSheet, fullNameInfo.rowCount, headers.length, layout.indices);
     }
 
-    // Populate # column AFTER sorting (reset when Activation Status or Gender changes)
+    // Populate # column AFTER sorting (reset when Team, Activation Status, or Gender changes)
     if (fullNameInfo.rowCount > 0) {
-      const groupByCols = [idx.activationStatus, idx.gender].filter(Boolean);
+      const groupByCols = [idx.team, idx.activationStatus, idx.gender].filter(Boolean);
       populateNumberColumn(newSheet, fullNameInfo.rowCount, groupByCols);
 
       // Force calculation of # column formulas before adding borders
@@ -824,9 +824,8 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
 
     console.log(`✅ Game roster prep sheet created successfully`);
 
-    const sortDesc = idx.activationStatus
-      ? 'Activation Status > Gender > Availability > Name'
-      : 'Gender > Availability > Name';
+    const sortDesc = [idx.team && 'Team', idx.activationStatus && 'Activation Status', 'Gender', 'Availability', 'Name']
+      .filter(Boolean).join(' > ');
     SpreadsheetApp.getUi().alert(
       'Game Roster Prep Sheet Created!',
       `Successfully created game roster prep sheet for ${labelForUi} with ${fullNameInfo.rowCount} students.\n\nSorted by ${sortDesc}.`,
@@ -902,7 +901,8 @@ function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, game
 }
 
 /**
- * Sort the game roster prep: Activation Status (if present) > Gender > Availability > Name.
+ * Sort the coach game roster prep: Team (CONFIG.teams order, if present) > Activation Status (if
+ * present) > Gender > Availability > Name.
  * @param {Sheet} sheet - The game roster prep sheet
  * @param {number} numRows - Number of data rows
  * @param {number} numColumns - Number of columns
@@ -910,20 +910,32 @@ function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, game
  */
 function sortGameRosterPrep(sheet, numRows, numColumns, indices) {
   const sortSpec = [];
+  const parts = [];
+  let lastCol = numColumns;
+  let teamRankCol = null;
+  if (indices.team) {
+    teamRankCol = insertSortRankColumn(sheet, indices.team, numRows, numColumns, teamSortRank);
+    lastCol = teamRankCol;
+    sortSpec.push({ column: teamRankCol, ascending: true });
+    parts.push('Team');
+  }
   if (indices.activationStatus) {
     sortSpec.push({ column: indices.activationStatus, ascending: true });
-    console.log(`🔄 Sorting ${numRows} rows by Activation Status > Gender > Availability > Name...`);
-  } else {
-    console.log(`🔄 Sorting ${numRows} rows by Gender > Availability > Name...`);
+    parts.push('Activation Status');
   }
   sortSpec.push({ column: indices.gender, ascending: true });
+  parts.push('Gender');
   if (indices.availability) {
     sortSpec.push({ column: indices.availability, ascending: true });
+    parts.push('Availability');
   }
   sortSpec.push({ column: indices.fullName, ascending: true });
+  parts.push('Name');
+  console.log(`🔄 Sorting ${numRows} rows by ${parts.join(' > ')}...`);
 
-  const dataRange = sheet.getRange(2, 1, numRows, numColumns);
+  const dataRange = sheet.getRange(2, 1, numRows, lastCol);
   dataRange.sort(sortSpec);
+  if (teamRankCol) sheet.deleteColumn(teamRankCol);
   console.log('✅ Sorting complete');
 }
 

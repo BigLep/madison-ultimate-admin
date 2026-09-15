@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.31';
+const SCRIPT_VERSION = '3.32';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -116,9 +116,15 @@ const CONFIG = {
     // Additional columns (availability, notes) are added dynamically after these base columns
   },
 
+  // This season's Team values, in display and sort order. Seeds the Extra Player Info Team
+  // dropdown (once), and orders Build Practice Roster and the coach Build Game Roster Prep
+  // (blank or unlisted Team sorts after every listed value). TBD is for Players not yet placed
+  // and goes away once team assignments are done.
+  teams: ['Blue', 'Gold', 'Silver', 'TBD', 'Practice Squad'],
+
   // Season-specific game columns (change per season)
   gameRosterPrep: {
-    hasTeam: false,            // If true, include Team column on game roster prep sheets; if false, omit it
+    hasTeam: true,             // If true, include Team column on game roster prep sheets (sorted first); if false, omit it
     // If true, this season tracks a per-game Activation Status (Active/Inactive/TBD): Build Game
     // Availability adds a "$date Activation Status" column per game, Build Game Roster Prep includes
     // it (sorted first), Build Practice Roster shows it for the next game, and the Apply Activation
