@@ -42,7 +42,7 @@ const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_ };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_ };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -233,6 +233,66 @@ const gbOneRow = new FakeSheet('Extra Player Info', [
 const gbResult3 = m.drawGroupBordersOnSheet_(gbOneRow, 2, 1, ['Team'], 'SOLID_MEDIUM', '#000000');
 eq(gbResult3.groupCount, 1, 'drawGroupBordersOnSheet_ single-row selection is its own group');
 eq(gbOneRow.borders.filter(b => b.bottom === true).map(b => b.r).join(','), '2', 'drawGroupBordersOnSheet_ borders the single selected row');
+
+// 13. Draw Group Borders "#" column: pure per-row position-in-group logic
+eq(m.groupPositions_([], [0]).join(','), '', 'groupPositions_ empty rows');
+eq(m.groupPositions_([['Blue']], [0]).join(','), '1', 'groupPositions_ single row starts at 1');
+eq(
+  m.groupPositions_([['Blue', 'Gx'], ['Blue', 'Gx'], ['Blue', 'Bx'], ['Gold', 'Gx']], [0]).join(','),
+  '1,2,3,1',
+  'groupPositions_ resets when Team changes, ignores Gender'
+);
+eq(
+  m.groupPositions_([['Blue', 'Gx'], ['Blue', 'Gx'], ['Blue', 'Bx'], ['Gold', 'Gx']], [0, 1]).join(','),
+  '1,2,1,1',
+  'groupPositions_ resets on Team + Gender'
+);
+eq(
+  m.groupPositions_([['Blue'], ['Gold'], ['Blue']], [0]).join(','),
+  '1,1,1',
+  'groupPositions_ non-contiguous groups each restart at 1, no sortedness check'
+);
+eq(
+  m.groupPositions_([['', 'Gx'], ['', 'Gx'], ['Blue', 'Gx']], [0]).join(','),
+  '1,2,1',
+  'groupPositions_ blank Team is its own group'
+);
+
+// 14. Draw Group Borders "#" column: sheet-level write is a plain value, full range, header-found
+const gbNum = new FakeSheet('Extra Player Info', [
+  ['PlayerID', 'Full Name', 'Team', '#'],
+  ['a', 'Ann', 'Blue', ''],
+  ['b', 'Bea', 'Blue', ''],
+  ['c', 'Cal', 'Gold', '']
+]);
+const gbNumResult1 = m.drawGroupBordersOnSheet_(gbNum, 2, 3, ['Team'], 'SOLID_MEDIUM', '#000000', true);
+eq(gbNumResult1.numbered, true, 'drawGroupBordersOnSheet_ reports numbered:true when "#" exists and requested');
+eq(gbNum.rows.slice(1).map(r => r[3]).join(','), '1,2,1', 'drawGroupBordersOnSheet_ writes plain 1-based positions into "#", resetting on Team');
+
+// Re-run after a row is removed: full overwrite, no stale leftover value
+gbNum.rows.splice(3, 1);
+const gbNumResult2 = m.drawGroupBordersOnSheet_(gbNum, 2, 2, ['Team'], 'SOLID_MEDIUM', '#000000', true);
+eq(gbNumResult2.numbered, true, 'drawGroupBordersOnSheet_ re-run after a row is removed still numbers');
+eq(gbNum.rows.slice(1).map(r => r[3]).join(','), '1,2', 'drawGroupBordersOnSheet_ re-run fully overwrites "#" for the current range');
+
+// numberColumn requested but not checked: never writes "#", never errors
+const gbNoCheckbox = new FakeSheet('Extra Player Info', [
+  ['PlayerID', 'Full Name', 'Team', '#'],
+  ['a', 'Ann', 'Blue', 'stale']
+]);
+const gbNoCheckboxResult = m.drawGroupBordersOnSheet_(gbNoCheckbox, 2, 1, ['Team'], 'SOLID_MEDIUM', '#000000', false);
+eq(gbNoCheckboxResult.numbered, false, 'drawGroupBordersOnSheet_ reports numbered:false when not requested');
+eq(gbNoCheckbox.rows[1][3], 'stale', 'drawGroupBordersOnSheet_ leaves "#" untouched when numbering not requested');
+
+// No "#" column on the sheet at all: numbering requested but silently skipped, no error, border still drawn
+const gbNoHashColumn = new FakeSheet('Extra Player Info', [
+  ['PlayerID', 'Full Name', 'Team'],
+  ['a', 'Ann', 'Blue'],
+  ['b', 'Bea', 'Gold']
+]);
+const gbNoHashResult = m.drawGroupBordersOnSheet_(gbNoHashColumn, 2, 2, ['Team'], 'SOLID_MEDIUM', '#000000', true);
+eq(gbNoHashResult.numbered, false, 'drawGroupBordersOnSheet_ numbered:false when the sheet has no "#" column');
+eq(gbNoHashResult.groupCount, 2, 'drawGroupBordersOnSheet_ still draws the border when there is no "#" column to number');
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);
 process.exit(fails ? 1 : 0);

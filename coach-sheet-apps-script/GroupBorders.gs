@@ -8,6 +8,7 @@
  */
 
 const GROUP_BORDER_SETTINGS_PREFIX = 'groupBorders.';
+const GROUP_BORDER_NUMBER_COLUMN_HEADER = '#';
 
 const GROUP_BORDER_STYLES = [
   { value: 'SOLID', label: 'Solid (thin)' },
@@ -60,6 +61,29 @@ function findGroupBoundaryRows_(rows, colIndices) {
 }
 
 /**
+ * Pure: each row's 1-based position within its contiguous group (same grouping as
+ * findGroupBoundaryRows_), resetting to 1 at every group boundary. Parallel array to `rows`. This
+ * is what Draw Group Borders writes into an existing "#" column as a plain value, never a formula
+ * (ADR 0005): it goes stale exactly when the border next to it does, and is fixed the same way.
+ * @param {Array<Array>} rows
+ * @param {number[]} colIndices - 0-based column indices to group by
+ * @return {number[]}
+ */
+function groupPositions_(rows, colIndices) {
+  const positions = [];
+  let position = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (i === 0 || groupBorderRowKey_(rows[i], colIndices) !== groupBorderRowKey_(rows[i - 1], colIndices)) {
+      position = 1;
+    } else {
+      position += 1;
+    }
+    positions.push(position);
+  }
+  return positions;
+}
+
+/**
  * Pure: which header names should start checked in the dialog. A selection narrower than the
  * whole header row is a deliberate signal (the coach highlighted specific columns), so it wins;
  * a selection spanning every column (or touching no real headers) falls back to whatever this
@@ -87,9 +111,9 @@ function groupBorderSettingsKey_(sheetName) {
   return GROUP_BORDER_SETTINGS_PREFIX + sheetName;
 }
 
-/** @return {{columns: string[], borderStyle: string, color: string}} */
+/** @return {{columns: string[], borderStyle: string, color: string, numberColumn: boolean}} */
 function loadGroupBorderSettings_(sheetName) {
-  const fallback = { columns: [], borderStyle: GROUP_BORDER_DEFAULT_STYLE, color: GROUP_BORDER_DEFAULT_COLOR };
+  const fallback = { columns: [], borderStyle: GROUP_BORDER_DEFAULT_STYLE, color: GROUP_BORDER_DEFAULT_COLOR, numberColumn: false };
   const raw = PropertiesService.getDocumentProperties().getProperty(groupBorderSettingsKey_(sheetName));
   if (!raw) return fallback;
   try {
@@ -97,7 +121,8 @@ function loadGroupBorderSettings_(sheetName) {
     return {
       columns: Array.isArray(parsed.columns) ? parsed.columns : fallback.columns,
       borderStyle: parsed.borderStyle || fallback.borderStyle,
-      color: parsed.color || fallback.color
+      color: parsed.color || fallback.color,
+      numberColumn: parsed.numberColumn === true
     };
   } catch (e) {
     return fallback;
@@ -107,7 +132,12 @@ function loadGroupBorderSettings_(sheetName) {
 function saveGroupBorderSettings_(sheetName, settings) {
   PropertiesService.getDocumentProperties().setProperty(
     groupBorderSettingsKey_(sheetName),
-    JSON.stringify({ columns: settings.columns, borderStyle: settings.borderStyle, color: settings.color })
+    JSON.stringify({
+      columns: settings.columns,
+      borderStyle: settings.borderStyle,
+      color: settings.color,
+      numberColumn: settings.numberColumn === true
+    })
   );
 }
 
@@ -143,8 +173,12 @@ function showDrawGroupBordersDialog() {
 
     const saved = loadGroupBorderSettings_(sheetName);
     const defaultColumns = defaultGroupByColumns_(headers, selection.getColumn(), selection.getNumColumns(), saved.columns);
+    const hasNumberColumn = headers.indexOf(GROUP_BORDER_NUMBER_COLUMN_HEADER) >= 0;
 
-    const html = buildGroupBordersDialogHtml_(sheetName, startRow, numRows, headers, defaultColumns, saved.borderStyle, saved.color);
+    const html = buildGroupBordersDialogHtml_(
+      sheetName, startRow, numRows, headers, defaultColumns, saved.borderStyle, saved.color,
+      hasNumberColumn, hasNumberColumn && saved.numberColumn
+    );
     ui.showModalDialog(html, 'Draw Group Borders');
   } catch (err) {
     console.error('showDrawGroupBordersDialog', err);
@@ -168,9 +202,11 @@ function escapeHtmlGroupBorders_(text) {
  * @param {string[]} defaultColumns - header names to pre-check
  * @param {string} defaultStyle - a GROUP_BORDER_STYLES value
  * @param {string} defaultColor - '#rrggbb'
+ * @param {boolean} hasNumberColumn - whether this sheet has a "#" header
+ * @param {boolean} defaultNumberColumn - whether the "#"-populating checkbox starts checked
  * @return {GoogleAppsScript.HTML.HtmlOutput}
  */
-function buildGroupBordersDialogHtml_(sheetName, startRow, numRows, headers, defaultColumns, defaultStyle, defaultColor) {
+function buildGroupBordersDialogHtml_(sheetName, startRow, numRows, headers, defaultColumns, defaultStyle, defaultColor, hasNumberColumn, defaultNumberColumn) {
   const defaultSet = {};
   defaultColumns.forEach(function (h) { defaultSet[h] = true; });
 
@@ -187,6 +223,11 @@ function buildGroupBordersDialogHtml_(sheetName, startRow, numRows, headers, def
     const selected = s.value === defaultStyle ? ' selected' : '';
     return '<option value="' + s.value + '"' + selected + '>' + s.label + '</option>';
   }).join('');
+
+  const numberColumnHtml = hasNumberColumn
+    ? '<label class="row"><input type="checkbox" id="numberColumn"' + (defaultNumberColumn ? ' checked' : '') +
+      '> Populate the "#" column (numbers each row within its group, resetting at each new group)</label>'
+    : '<div class="note">No "#" column on this sheet: add one if you’d like Draw Group Borders to number rows within each group.</div>';
 
   const context = JSON.stringify({ sheetName: sheetName, startRow: startRow, numRows: numRows });
 
@@ -207,6 +248,7 @@ function buildGroupBordersDialogHtml_(sheetName, startRow, numRows, headers, def
       '<div class="cols" id="cols">' + checkboxesHtml + '</div>' +
       '<div class="row"><label for="style">Style</label><select id="style">' + styleOptionsHtml + '</select>' +
       '<label for="color">Color</label><input type="color" id="color" value="' + escapeHtmlGroupBorders_(defaultColor) + '"></div>' +
+      numberColumnHtml +
       '<div class="note">Draws on rows ' + startRow + '–' + (startRow + numRows - 1) + ' of "' + escapeHtmlGroupBorders_(sheetName) +
       '", spanning every column. Clears this sheet’s previous group borders in that row range first.</div>' +
       '<div class="buttons">' +
@@ -219,9 +261,11 @@ function buildGroupBordersDialogHtml_(sheetName, startRow, numRows, headers, def
       'var boxes = document.querySelectorAll("#cols input[type=checkbox]:checked");' +
       'var columns = []; for (var i = 0; i < boxes.length; i++) { columns.push(boxes[i].value); }' +
       'if (columns.length === 0) { alert("Choose at least one column to group by."); return; }' +
+      'var numberColumnEl = document.getElementById("numberColumn");' +
       'var payload = { sheetName: GROUP_BORDER_CONTEXT.sheetName, startRow: GROUP_BORDER_CONTEXT.startRow, ' +
       'numRows: GROUP_BORDER_CONTEXT.numRows, columns: columns, ' +
-      'borderStyle: document.getElementById("style").value, color: document.getElementById("color").value };' +
+      'borderStyle: document.getElementById("style").value, color: document.getElementById("color").value, ' +
+      'numberColumn: numberColumnEl ? numberColumnEl.checked : false };' +
       'google.script.run.withSuccessHandler(function(msg){ alert(msg); google.script.host.close(); })' +
       '.withFailureHandler(function(e){ alert(e.message || String(e)); })' +
       '.applyGroupBordersFromDialog(encodeURIComponent(JSON.stringify(payload)));' +
@@ -229,7 +273,7 @@ function buildGroupBordersDialogHtml_(sheetName, startRow, numRows, headers, def
       '</script></body></html>'
   )
     .setWidth(420)
-    .setHeight(420);
+    .setHeight(460);
 }
 
 /**
@@ -250,17 +294,23 @@ function groupBorderStyleFromName_(name) {
  * given header names, spanning the sheet's full data width. Idempotent: clears every bottom
  * border already in that row range first, and only ever touches the bottom edge, so re-running
  * after rows shift never leaves stale borders and never disturbs any other formatting.
+ *
+ * When `writeNumberColumn` is true and the sheet has a "#" header, also overwrites every "#" cell
+ * in the row range with the row's 1-based position in its group (see groupPositions_) as a plain
+ * value, not a formula (ADR 0005) -- always the whole range, same idempotency story as the border.
+ * A "#"-less sheet is simply not numbered; this never inserts a "#" column.
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {number} startRow - 1-based, first data row
  * @param {number} numRows
  * @param {string[]} columnNames - header names to group by
  * @param {string} borderStyleName
  * @param {string} color
- * @return {{groupCount: number, rowCount: number}}
+ * @param {boolean} [writeNumberColumn]
+ * @return {{groupCount: number, rowCount: number, numbered: boolean}}
  */
-function drawGroupBordersOnSheet_(sheet, startRow, numRows, columnNames, borderStyleName, color) {
+function drawGroupBordersOnSheet_(sheet, startRow, numRows, columnNames, borderStyleName, color, writeNumberColumn) {
   const numColumns = sheet.getLastColumn();
-  if (numColumns < 1 || numRows < 1) return { groupCount: 0, rowCount: 0 };
+  if (numColumns < 1 || numRows < 1) return { groupCount: 0, rowCount: 0, numbered: false };
 
   const headers = sheet.getRange(1, 1, 1, numColumns).getValues()[0].map(groupBorderCellText_);
   const colIndices = columnNames
@@ -283,12 +333,22 @@ function drawGroupBordersOnSheet_(sheet, startRow, numRows, columnNames, borderS
     sheet.getRange(startRow + i, 1, 1, numColumns).setBorder(null, null, true, null, null, null, color, style);
   });
 
-  return { groupCount: boundaryRows.length, rowCount: numRows };
+  let numbered = false;
+  if (writeNumberColumn) {
+    const numberColIndex = headers.indexOf(GROUP_BORDER_NUMBER_COLUMN_HEADER);
+    if (numberColIndex >= 0) {
+      const positions = groupPositions_(rows, colIndices);
+      sheet.getRange(startRow, numberColIndex + 1, numRows, 1).setValues(positions.map(function (p) { return [p]; }));
+      numbered = true;
+    }
+  }
+
+  return { groupCount: boundaryRows.length, rowCount: numRows, numbered: numbered };
 }
 
 /**
  * google.script.run entry point from the dialog.
- * @param {string} encodedPayload - encodeURIComponent(JSON.stringify({sheetName, startRow, numRows, columns, borderStyle, color}))
+ * @param {string} encodedPayload - encodeURIComponent(JSON.stringify({sheetName, startRow, numRows, columns, borderStyle, color, numberColumn}))
  * @return {string} summary message shown to the coach
  */
 function applyGroupBordersFromDialog(encodedPayload) {
@@ -302,15 +362,17 @@ function applyGroupBordersFromDialog(encodedPayload) {
   const columnNames = Array.isArray(payload.columns) ? payload.columns : [];
   const borderStyleName = payload.borderStyle || GROUP_BORDER_DEFAULT_STYLE;
   const color = payload.color || GROUP_BORDER_DEFAULT_COLOR;
+  const writeNumberColumn = payload.numberColumn === true;
   if (!sheetName) throw new Error('Missing sheet');
   if (columnNames.length === 0) throw new Error('Choose at least one column to group by.');
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) throw new Error('Sheet not found: ' + sheetName);
 
-  saveGroupBorderSettings_(sheetName, { columns: columnNames, borderStyle: borderStyleName, color: color });
+  saveGroupBorderSettings_(sheetName, { columns: columnNames, borderStyle: borderStyleName, color: color, numberColumn: writeNumberColumn });
 
-  const result = drawGroupBordersOnSheet_(sheet, payload.startRow, payload.numRows, columnNames, borderStyleName, color);
+  const result = drawGroupBordersOnSheet_(sheet, payload.startRow, payload.numRows, columnNames, borderStyleName, color, writeNumberColumn);
   return 'Drew ' + result.groupCount + ' group border' + (result.groupCount === 1 ? '' : 's') +
-    ' across ' + result.rowCount + ' row' + (result.rowCount === 1 ? '' : 's') + '.';
+    ' across ' + result.rowCount + ' row' + (result.rowCount === 1 ? '' : 's') + '.' +
+    (result.numbered ? ' Numbered the "#" column.' : '');
 }
