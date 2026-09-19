@@ -32,12 +32,12 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
     setFontWeight: () => ({}), clearDataValidations: () => ({}), setWrap: () => ({}), setBorder: () => ({})
   };
 };
-const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs']
+const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs']
   .map(f => fs.readFileSync(dir + '/' + f, 'utf8')).join('\n');
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {} } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -144,5 +144,22 @@ eq(menuItems.includes('⬆️ Apply Activation Status'), false, 'no Apply Activa
 m.CONFIG.gameRosterPrep.hasActivationStatus = true; menuItems.length = 0;
 try { vm.runInContext('onOpen', sandbox)(); } catch (e) { fails++; console.log('FAIL onOpen threw:', e.message); }
 eq(menuItems.includes('⬆️ Apply Activation Status'), true, 'Apply Activation Status item when the season has it');
+// 9. Sync Game Info to Calendar: per-team title with emoji, blank Team (all-team event) gets no team segment
+eq(m.gameTeamLabel('Blue'), '🟦 Blue', 'gameTeamLabel known team');
+eq(m.gameTeamLabel('tbd'), '', 'gameTeamLabel TBD is blank');
+eq(m.gameTeamLabel(''), '', 'gameTeamLabel blank stays blank');
+eq(m.gameTeamLabel('Mystery'), 'Mystery', 'gameTeamLabel unlisted team falls back to raw text');
+const giHeader = ['Date', 'Game #', 'Team', 'Warmup Arrival', 'Game Start', 'Done By', 'Field Name', 'Field Location', 'Game Note', 'Opponent', 'Oponent Team Page', 'Google Calendar Event ID', 'Google Calendar Warmup Event ID'];
+const gi = new FakeSheet('📍Game Info', [giHeader,
+  ['9/26 Sat', 'Game 1', 'Blue', '1:15 PM', '2:00 PM', '3:45 PM', 'Garfield HS Field', 'East', '', 'Salmon Bay Panthers 8th', '', '', ''],
+  ['9/26 Sat', 'Game 1', '', '2:15 PM', '3:00 PM', '4:45 PM', 'Franklin HS Field', 'W', '', 'Some Rival', '', '', '']]);
+const giSsStub = { getSheetByName: n => (n === '📍Game Info' ? gi : null) };
+const gameSpecs = m.getGameEventSpecsFromSheet(giSsStub, gi);
+eq(gameSpecs.length, 4, 'game + warmup spec for both rows');
+eq(gameSpecs[0].title, '🎯 🟦 Blue vs. Salmon Bay Panthers 8th', 'Blue game title has emoji and team name');
+eq(gameSpecs[1].title, '🥏 🟦 Blue Warmup', 'Blue warmup title has emoji and team name');
+eq(gameSpecs[2].title, '🎯 Game vs. Some Rival', 'blank Team (all-team event) has no team segment');
+eq(gameSpecs[3].title, '🥏 Game Warmup', 'blank Team warmup falls back to the plain title');
+
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);
 process.exit(fails ? 1 : 0);

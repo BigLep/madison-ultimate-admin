@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.33';
+const SCRIPT_VERSION = '3.34';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -121,6 +121,18 @@ const CONFIG = {
   // (blank or unlisted Team sorts after every listed value). TBD is for Players not yet placed
   // and goes away once team assignments are done.
   teams: ['Blue', 'Gold', 'Silver', 'TBD', 'Practice Squad'],
+
+  // Season-setup step: this season's Team display labels (emoji + name), keyed by lowercased
+  // Team value. Must mirror TEAM_DISPLAY in madison-ultimate/src/lib/team-display.ts (the Player
+  // Portal's source of truth for the same labels) so parents and coaches see the same emoji
+  // everywhere. Sync Game Info to Calendar uses this for game/warmup titles; a blank or unlisted
+  // Team (including "TBD") gets no team segment.
+  teamDisplay: {
+    blue: '🟦 Blue',
+    gold: '🟨 Gold',
+    silver: '🪙 Silver',
+    'practice squad': '🏋️ Practice Squad'
+  },
 
   // Season-specific game columns (change per season)
   gameRosterPrep: {

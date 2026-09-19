@@ -4,12 +4,15 @@
  */
 
 const GAME_EVENT_TITLE_PREFIX = '🎯';
+const GAME_WARMUP_TITLE_PREFIX = '🥏';
 const GAME_TBD_TITLE = '🎯 TBD Game';
 const GAME_WARMUP_TITLE = '🥏 Game Warmup';
 const TBD_DEFAULT_TIME_HOUR = 9;
 const TBD_DEFAULT_TIME_MINUTE = 0;
 
 // Game Info column headers (must match sheet)
+// Team is read via getDatesFromInfoSheet's dateInfo.team (findTeamColumnIndex_ in Availability.gs),
+// not looked up again here, so both builds agree on which column is Team.
 const GAME_INFO_COLUMNS = {
   DATE: 'Date',
   GAME_NUM: 'Game #',
@@ -60,7 +63,8 @@ function createGameCalendarEvents() {
     const isGameEventOurs = function (e) {
       const title = e.getTitle();
       if (title.indexOf(GAME_EVENT_TITLE_PREFIX) === 0) return true;
-      if (title === GAME_WARMUP_TITLE) return true;
+      // Prefix (not exact-match) so per-team warmup titles like "🥏 🟦 Blue Warmup" still match.
+      if (title.indexOf(GAME_WARMUP_TITLE_PREFIX) === 0) return true;
       // Legacy or alternate-format TBD events (e.g. "TBD Game, 9am") so we can match/delete them
       if (title === 'TBD Game' || title.indexOf('TBD Game') === 0) return true;
       return false;
@@ -114,6 +118,22 @@ function getFieldsLookup(ss) {
     };
   });
   return lookup;
+}
+
+/**
+ * Team display label ("🟦 Blue") for a Game Info row's Team cell, from CONFIG.teamDisplay
+ * (season-setup, must mirror the Player Portal's team-display.ts). Blank, "TBD", or a Team not
+ * in CONFIG.teamDisplay (e.g. Practice Squad games are unlikely, but fail soft) returns the raw
+ * text so calendar titles never silently drop the team; a truly blank Team is a season all-team
+ * event, per the Q25 Game Info design, and gets no team segment at all.
+ * @param {string} team - raw Team cell value
+ * @return {string} display label, or '' when the row has no team
+ */
+function gameTeamLabel(team) {
+  const t = team == null ? '' : String(team).trim();
+  if (!t || t.toLowerCase() === 'tbd') return '';
+  const key = t.toLowerCase();
+  return (CONFIG.teamDisplay && CONFIG.teamDisplay[key]) || t;
 }
 
 /**
@@ -206,6 +226,10 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
     const opponentStr = opponentVal != null ? String(opponentVal).trim() : '';
     const gameStartStr = gameStartVal != null ? String(gameStartVal).trim() : '';
     const isTBD = gameStartStr === '' || gameStartStr.toLowerCase() === 'tbd';
+    const teamLabel = gameTeamLabel(dateInfo.team);
+    const gameTbdTitle = teamLabel ? GAME_EVENT_TITLE_PREFIX + ' ' + teamLabel + ' TBD Game' : GAME_TBD_TITLE;
+    const gameTitle = GAME_EVENT_TITLE_PREFIX + ' ' + (teamLabel || 'Game') + ' vs. ' + (opponentStr || 'TBD');
+    const warmupTitle = teamLabel ? GAME_WARMUP_TITLE_PREFIX + ' ' + teamLabel + ' Warmup' : GAME_WARMUP_TITLE;
 
     const fieldName = colFieldName >= 0 && row[colFieldName] ? String(row[colFieldName]).trim() : '';
     const fieldLocation = colFieldLocation >= 0 && row[colFieldLocation] ? String(row[colFieldLocation]).trim() : '';
@@ -221,7 +245,7 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
     if (isTBD) {
       const tbdStart = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), TBD_DEFAULT_TIME_HOUR, TBD_DEFAULT_TIME_MINUTE, 0);
       specs.push({
-        title: GAME_TBD_TITLE,
+        title: gameTbdTitle,
         startTime: tbdStart,
         endTime: tbdStart,
         location: '',
@@ -238,7 +262,7 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
     if (!gameStartTime) {
       const tbdStart = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), TBD_DEFAULT_TIME_HOUR, TBD_DEFAULT_TIME_MINUTE, 0);
       specs.push({
-        title: GAME_TBD_TITLE,
+        title: gameTbdTitle,
         startTime: tbdStart,
         endTime: tbdStart,
         location: locationStr,
@@ -252,7 +276,7 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
     const gameEndTime = doneByTime && doneByTime > gameStartTime ? doneByTime : new Date(gameStartTime.getTime() + 60 * 60 * 1000);
 
     specs.push({
-      title: '🎯 Game vs. ' + (opponentStr || 'TBD'),
+      title: gameTitle,
       startTime: gameStartTime,
       endTime: gameEndTime,
       location: locationStr,
@@ -267,7 +291,7 @@ function getGameEventSpecsFromSheet(ss, infoSheet) {
       const warmupStart = parseTimeOnDate(dateObj, warmupVal);
       if (warmupStart && warmupStart < gameStartTime) {
         specs.push({
-          title: GAME_WARMUP_TITLE,
+          title: warmupTitle,
           startTime: warmupStart,
           endTime: gameStartTime,
           location: locationStr,
