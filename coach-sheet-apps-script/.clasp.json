@@ -18,6 +18,7 @@
     "BuildPracticeRoster.gs",
     "CreatePracticeCalendarEvents.gs",
     "CreateGameCalendarEvents.gs",
+    "GroupBorders.gs",
     "ExportGameInfoToMarkdown.gs",
     "ApplyActivationStatusFromRoster.gs"
   ]

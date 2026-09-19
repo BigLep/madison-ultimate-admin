@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.34';
+const SCRIPT_VERSION = '3.35';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -810,6 +810,7 @@ function createCustomMenu() {
   menu
     .addItem('📧 Build Email List', 'buildEmailList')
     .addItem('🎨 Format Spruce Up', 'formatSpruceUp')
+    .addItem('➖ Draw Group Borders', 'showDrawGroupBordersDialog')
     .addItem('🧹 Delete Empty Rows & Columns', 'deleteEmptyRowsAndColumns')
     .addItem('🏃 Build Practice Availability', 'buildPracticeAvailability')
     .addItem('🎮 Build Game Availability', 'buildGameAvailability')

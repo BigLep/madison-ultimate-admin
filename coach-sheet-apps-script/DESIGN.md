@@ -98,6 +98,7 @@ Reads Signups and Final Forms directly (not the Roster, so it works before the R
 | `ApplyActivationStatusFromRoster.gs`, `ConvertToAttendance.gs` | Game-day activation and attendance helpers |
 | `CreatePracticeCalendarEvents.gs`, `CreateGameCalendarEvents.gs`, `ExportGameInfoToMarkdown.gs` | Calendar sync and exports |
 | `FormatSpruceUp.gs`, `DeleteEmptyRowsColumns.gs`, `OrganizeSheets.gs`, `FullNameDiff.gs` | Utilities |
+| `GroupBorders.gs` | Draw Group Borders: generic Group Border command for any sheet/columns (CONTEXT.md) |
 
 ### Deployment
 

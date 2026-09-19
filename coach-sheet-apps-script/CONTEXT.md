@@ -82,3 +82,9 @@ _Avoid_: Media Opt-Out as a column name (the Signups field keeps that name; the 
 **Gender Identification**:
 Gx or Bx for the Player: Signup Gender when supplied, otherwise Final Forms gender mapped Female to Gx and Male to Bx, otherwise blank. The value Generated Rosters print.
 _Avoid_: gender (ambiguous between the Final Forms field and this derived value)
+
+### Formatting
+
+**Group Border**:
+A bottom border drawn on the last row of each contiguous run of matching values across one or more group-by columns, within a range. Purely visual: it never changes data, formulas, or row order, and only looks right when the range is already sorted by those same columns, since it borders wherever the values change, not wherever they "should" change. Distinct from Team's sort order (`CONFIG.teams`), which governs what order rows land in, not whether a border is drawn between them. Build Practice Roster and Build Game Roster Prep each draw Group Borders internally on a fixed set of columns (Team and Gender, or Team, Activation Status, and Gender); Draw Group Borders is the standalone menu command that draws them on any sheet, for coach-chosen group-by columns, against the current selection.
+_Avoid_: divider line, section border (too vague; "Group Border" matches the existing `addGroupBorders` code)

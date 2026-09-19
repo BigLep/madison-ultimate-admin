@@ -29,15 +29,20 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
     setFormula: function (v) { return this.setValues([[v]]); },
     setValue: function (v) { return this.setValues([[v]]); },
     sort: (spec) => { const block = sheet.rows.slice(r - 1, r - 1 + nr); block.sort((a, b) => { for (const k of spec) { const x = a[k.column - 1] ?? '', y = b[k.column - 1] ?? ''; if (x < y) return -1; if (x > y) return 1; } return 0; }); block.forEach((row, i) => { sheet.rows[r - 1 + i] = row; }); },
-    setFontWeight: () => ({}), clearDataValidations: () => ({}), setWrap: () => ({}), setBorder: () => ({})
+    setFontWeight: () => ({}), clearDataValidations: () => ({}), setWrap: () => ({}),
+    setBorder: (top, left, bottom, right, vertical, horizontal, color, style) => {
+      sheet.borders = sheet.borders || [];
+      sheet.borders.push({ r, c, nr, nc, top, left, bottom, right, vertical, horizontal, color, style });
+      return this;
+    }
   };
 };
-const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs']
+const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs']
   .map(f => fs.readFileSync(dir + '/' + f, 'utf8')).join('\n');
-const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {} } };
+const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_ };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -160,6 +165,74 @@ eq(gameSpecs[0].title, '🎯 🟦 Blue vs. Salmon Bay Panthers 8th', 'Blue game 
 eq(gameSpecs[1].title, '🥏 🟦 Blue Warmup', 'Blue warmup title has emoji and team name');
 eq(gameSpecs[2].title, '🎯 Game vs. Some Rival', 'blank Team (all-team event) has no team segment');
 eq(gameSpecs[3].title, '🥏 Game Warmup', 'blank Team warmup falls back to the plain title');
+
+// 10. Draw Group Borders: pure group-boundary and column-default logic
+eq(m.groupBorderCellText_(null), '', 'groupBorderCellText_ null is blank');
+eq(m.groupBorderCellText_(undefined), '', 'groupBorderCellText_ undefined is blank');
+eq(m.groupBorderCellText_('  Blue  '), 'Blue', 'groupBorderCellText_ trims');
+eq(m.groupBorderCellText_(0), '0', 'groupBorderCellText_ zero is not blank');
+
+eq(m.findGroupBoundaryRows_([], [0]).join(','), '', 'findGroupBoundaryRows_ empty rows');
+eq(m.findGroupBoundaryRows_([['Blue']], [0]).join(','), '0', 'findGroupBoundaryRows_ single row is its own group');
+eq(
+  m.findGroupBoundaryRows_([['Blue', 'Gx'], ['Blue', 'Gx'], ['Blue', 'Bx'], ['Gold', 'Gx']], [0]).join(','),
+  '2,3',
+  'findGroupBoundaryRows_ groups by Team only'
+);
+eq(
+  m.findGroupBoundaryRows_([['Blue', 'Gx'], ['Blue', 'Gx'], ['Blue', 'Bx'], ['Gold', 'Gx']], [0, 1]).join(','),
+  '1,2,3',
+  'findGroupBoundaryRows_ groups by Team + Gender'
+);
+eq(
+  m.findGroupBoundaryRows_([['Blue'], ['Gold'], ['Blue']], [0]).join(','),
+  '0,1,2',
+  'findGroupBoundaryRows_ non-contiguous groups: every transition borders, no sortedness check'
+);
+eq(
+  m.findGroupBoundaryRows_([['', 'Gx'], ['', 'Gx'], ['Blue', 'Gx']], [0]).join(','),
+  '1,2',
+  'findGroupBoundaryRows_ blank Team is its own group'
+);
+
+const gbHeaders = ['PlayerID', 'Full Name', 'Team', 'Gender', 'Grade'];
+eq(m.defaultGroupByColumns_(gbHeaders, 3, 1, []).join(','), 'Team', 'defaultGroupByColumns_ narrow selection wins');
+eq(m.defaultGroupByColumns_(gbHeaders, 3, 2, []).join(','), 'Team,Gender', 'defaultGroupByColumns_ multi-column selection');
+eq(m.defaultGroupByColumns_(gbHeaders, 1, 5, ['Gender', 'Team']).join(','), 'Gender,Team', 'defaultGroupByColumns_ whole-row selection falls back to last used');
+eq(m.defaultGroupByColumns_(gbHeaders, 1, 5, []).join(','), '', 'defaultGroupByColumns_ whole-row selection with no memory yet');
+eq(m.defaultGroupByColumns_(['PlayerID', '', 'Team', 'Gender'], 1, 2, ['Team']).join(','), 'PlayerID', 'defaultGroupByColumns_ skips blank headers in the selection');
+
+// 11. Draw Group Borders: sheet-level draw is idempotent and finds columns by header, not position
+const gbSheet = new FakeSheet('Extra Player Info', [
+  ['PlayerID', 'Full Name', 'Team', 'Returning'],
+  ['a', 'Ann', 'Blue', 'TRUE'],
+  ['b', 'Bea', 'Blue', 'FALSE'],
+  ['c', 'Cal', 'Gold', 'TRUE']
+]);
+const gbResult1 = m.drawGroupBordersOnSheet_(gbSheet, 2, 3, ['Team'], 'SOLID_MEDIUM', '#000000');
+eq(gbResult1.groupCount, 2, 'drawGroupBordersOnSheet_ finds 2 groups (Blue, Gold)');
+const bottomBorderRows1 = gbSheet.borders.filter(b => b.bottom === true).map(b => b.r);
+eq(bottomBorderRows1.join(','), '3,4', 'drawGroupBordersOnSheet_ borders rows 3 (end of Blue) and 4 (end of Gold)');
+eq(gbSheet.borders.every(b => b.top == null && b.left == null && b.right == null), true, 'drawGroupBordersOnSheet_ only ever touches the bottom edge');
+
+// Re-run after a row is removed (Gold's row is gone): must not leave row 4's stale border behind
+gbSheet.rows.splice(3, 1);
+gbSheet.borders = [];
+const gbResult2 = m.drawGroupBordersOnSheet_(gbSheet, 2, 2, ['Team'], 'SOLID_MEDIUM', '#000000');
+eq(gbResult2.groupCount, 1, 'drawGroupBordersOnSheet_ re-run after a row is removed finds 1 group');
+const bottomBorderRows2 = gbSheet.borders.filter(b => b.bottom === true).map(b => b.r);
+eq(bottomBorderRows2.join(','), '3', 'drawGroupBordersOnSheet_ re-run draws only the current last row, no stale row 4 border');
+const clearedRows = gbSheet.borders.filter(b => b.bottom === false).map(b => b.r).sort();
+eq(clearedRows.join(','), '2,3', 'drawGroupBordersOnSheet_ clears bottom borders on every row in range before redrawing');
+
+// 12. A 1-row selection is valid (no artificial minimum): it's its own group, bordered once.
+const gbOneRow = new FakeSheet('Extra Player Info', [
+  ['PlayerID', 'Full Name', 'Team', 'Returning'],
+  ['a', 'Ann', 'Blue', 'TRUE']
+]);
+const gbResult3 = m.drawGroupBordersOnSheet_(gbOneRow, 2, 1, ['Team'], 'SOLID_MEDIUM', '#000000');
+eq(gbResult3.groupCount, 1, 'drawGroupBordersOnSheet_ single-row selection is its own group');
+eq(gbOneRow.borders.filter(b => b.bottom === true).map(b => b.r).join(','), '2', 'drawGroupBordersOnSheet_ borders the single selected row');
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);
 process.exit(fails ? 1 : 0);
