@@ -42,7 +42,7 @@ const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_ };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_ };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -105,11 +105,27 @@ eq(res.rowsAdded, 2, 'availability seeds included players');
 eq(pa2.rows[1][0], 'e9jpt', 'availability PlayerID value');
 eq(pa2.rows[1][1], `=IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 Roster'!$F:$F),""))`, 'availability Full Name formula');
 eq(pa2.rows[2][3], `=IF($A3="","",IFERROR(XLOOKUP($A3,'📋 Roster'!$A:$A,'📋 Roster'!$T:$T),""))`, 'availability Gender formula row 3');
-// 5. # column formula lives in column B and chains on B
+// 5. "#" column is a plain value (ADR 0005) that resets on Team+Gender changes, via the shared
+// applyGroupBordersAndNumbering_ core (numberAndBorderPracticeRosterGroups_ in BuildPracticeRoster.gs)
 const np = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade'], ['x', '', '', 'Blue', 'Gx', 7], ['y', '', '', 'Blue', 'Bx', 8]]);
-np.getRange = (function (orig) { return function (r, c, nr, nc) { const rg = orig.call(this, r, c, nr, nc); rg.copyTo = (dest) => { dest.setValues([[np.rows[1][1]]]); }; return rg; }; })(np.getRange);
-vm.runInContext('populateNumberColumn', sandbox)(np, 2);
-eq(np.rows[1][1], '=IF(OR(D1<>D2,E1<>E2),1,B1+1)', '# formula in column B chains on B');
+vm.runInContext('numberAndBorderPracticeRosterGroups_', sandbox)(np, 2);
+eq(np.rows[1][1], 1, '# is a plain value, 1 for row 2 (its own group: Blue/Gx)');
+eq(np.rows[2][1], 1, '# resets to 1 for row 3 (its own group: Blue/Bx, Gender changed)');
+eq(np.borders.filter(b => b.bottom === true).map(b => b.r).join(','), '2,3', 'bottom border on both rows (each row is its own group)');
+// 5b. Build Game Roster Prep Sheet's call shape: applyGroupBordersAndNumbering_ with the same
+// [team, activationStatus, gender] group-by set BuildGameRosterPrepSheet.gs passes, 0-based indices.
+const grp = new FakeSheet('Game Roster Prep', [
+  ['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade', 'Activation Status', '9/13 Availability', '9/13 Note'],
+  ['a', '', '', 'Blue', 'Gx', 7, 'Active', '', ''],
+  ['b', '', '', 'Blue', 'Gx', 7, 'Active', '', ''],
+  ['c', '', '', 'Blue', 'Gx', 7, 'Inactive', '', '']
+]);
+const grpColIndices = [3, 6, 4]; // team, activationStatus, gender (0-based), matching idx.team/idx.activationStatus/idx.gender order
+const grpResult = m.applyGroupBordersAndNumbering_(grp, 2, 3, grpColIndices, 1, sandbox.SpreadsheetApp.BorderStyle.SOLID, '#000000');
+eq(grpResult.groupCount, 2, 'game roster prep grouping: 2 groups (Active, then Inactive)');
+eq(grpResult.numbered, true, 'game roster prep grouping: numbered:true when a "#" column and numberColIndex are given');
+eq(grp.rows.slice(1).map(r => r[1]).join(','), '1,2,1', '# is a plain value resetting on Team/Activation Status/Gender, matching BuildGameRosterPrepSheet.gs’s call shape');
+eq(grp.borders.filter(b => b.bottom === true).map(b => b.r).join(','), '3,4', 'bottom border on the last row of each group (rows 3 and 4)');
 // 6. Season without Activation Status: next-game block is two columns, game availability build skips the column
 m.CONFIG.gameRosterPrep.hasActivationStatus = false;
 const ng = vm.runInContext('practiceRosterNextGameColumns', sandbox)();

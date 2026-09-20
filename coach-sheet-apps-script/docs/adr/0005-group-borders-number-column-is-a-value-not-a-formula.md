@@ -16,5 +16,8 @@ The deviation is deliberate: Draw Group Borders' border itself cannot be a formu
 
 ## Consequences
 
-- Unlike every other derived cell in this codebase, a Draw Group Borders `#` cell does not update itself when the sheet is resorted or edited; the coach must rerun the command, same as for the border.
-- `populateNumberColumn`'s formula-based numbering for Practice Roster and Game Roster Prep is unchanged; this ADR governs only the `#` column Draw Group Borders itself writes.
+- Unlike every other derived cell in this codebase, a `#` cell numbered this way does not update itself when the sheet is resorted or edited; a coach (or a rebuild) must rerun the command that owns that sheet, same as for the border.
+
+## Amendment (2026-09-20): extended to Build Practice Roster and Build Game Roster Prep Sheet
+
+`populateNumberColumn` and `addGroupBorders` (the formula-based `#` and top-of-group border those two builds wrote directly) are gone. Both now call the same shared core Draw Group Borders uses, `applyGroupBordersAndNumbering_` in `SheetBuilderUtils.gs`, and so now also write a plain-value `#` and a bottom-of-group border, matching Draw Group Borders exactly. This is safe for these two sheets specifically because both always rewrite their entire `#`/border output in one build pass (sort, then number, then border, every run); nothing else resorts them independently of a full rebuild, so the formula's self-healing property was never actually load-bearing for them. The border's visual weight is unchanged (`SOLID`, `#000000`, the same as before); only the edge (top of group start to bottom of group end) and the number mechanism (formula to value) changed. This is a partial, deliberate reversal of ADR 0003/ADR 0004's "every derived column is a formula" guarantee for these two sheets' `#` column specifically, for the same reason this ADR gives Draw Group Borders' `#` column an exemption: keeping the number and the (necessarily non-formula) border consistent with each other matters more here than the formula guarantee.

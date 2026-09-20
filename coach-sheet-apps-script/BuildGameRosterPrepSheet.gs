@@ -776,16 +776,15 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
       sortGameRosterPrep(newSheet, fullNameInfo.rowCount, headers.length, layout.indices);
     }
 
-    // Populate # column AFTER sorting (reset when Team, Activation Status, or Gender changes)
+    // Number and border AFTER sorting (reset when Team, Activation Status, or Gender changes),
+    // sharing the group-boundary math and orchestration with Draw Group Borders and Build Practice
+    // Roster via applyGroupBordersAndNumbering_ in SheetBuilderUtils.gs (ADR 0005).
     if (fullNameInfo.rowCount > 0) {
-      const groupByCols = [idx.team, idx.activationStatus, idx.gender].filter(Boolean);
-      populateNumberColumn(newSheet, fullNameInfo.rowCount, groupByCols);
-
-      // Force calculation of # column formulas before adding borders
-      SpreadsheetApp.flush();
-
-      // Add borders at group changes (where # = 1)
-      addGroupBorders(newSheet, fullNameInfo.rowCount);
+      const groupByCols = [idx.team, idx.activationStatus, idx.gender].filter(Boolean).map(function (c) { return c - 1; });
+      applyGroupBordersAndNumbering_(
+        newSheet, 2, fullNameInfo.rowCount, groupByCols, idx.number - 1,
+        BUILD_GROUP_BORDER_STYLE, BUILD_GROUP_BORDER_COLOR
+      );
     }
 
     // Common cleanup

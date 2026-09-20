@@ -382,3 +382,125 @@ function styleHeaderRow(sheet, columnCount) {
   headerRange.setBackground('#4285f4');
   headerRange.setFontColor('white');
 }
+
+/**
+ * Shared group-boundary math for anything that groups rows by column values: Draw Group Borders
+ * (GroupBorders.gs, coach-chosen columns and sheet, ADR 0005) and Build Practice Roster / Build
+ * Game Roster Prep Sheet's fixed Team/Gender (or Team/Activation Status/Gender) grouping. See
+ * CONTEXT.md's "Group Border" and "#" column entries for the concept these implement.
+ */
+
+/** Trim a cell value to a comparable string; null, undefined, and '' all become ''. */
+function groupBorderCellText_(v) {
+  if (v == null || v === '') return '';
+  return String(v).trim();
+}
+
+/**
+ * The group key for one row: normalized values of the given 0-based column indices, joined with a
+ * separator that can never appear in a trimmed cell value.
+ * @param {Array} row
+ * @param {number[]} colIndices - 0-based indices into row
+ * @return {string}
+ */
+function groupBorderRowKey_(row, colIndices) {
+  return colIndices.map(function (i) { return groupBorderCellText_(row[i]); }).join('\u0001');
+}
+
+/**
+ * Pure: the 0-based row indices (relative to `rows`) that are the last row of a contiguous group,
+ * always including the final row. A group is any maximal run of consecutive rows sharing the same
+ * key; if a value reappears later after a different value came between (the data isn't actually
+ * sorted by these columns), that later run is simply its own group; there is no "is this sorted"
+ * check, every value-change transition gets a border.
+ * @param {Array<Array>} rows
+ * @param {number[]} colIndices - 0-based column indices to group by
+ * @return {number[]}
+ */
+function findGroupBoundaryRows_(rows, colIndices) {
+  const boundaries = [];
+  if (rows.length === 0 || colIndices.length === 0) return boundaries;
+  for (let i = 1; i < rows.length; i++) {
+    if (groupBorderRowKey_(rows[i], colIndices) !== groupBorderRowKey_(rows[i - 1], colIndices)) {
+      boundaries.push(i - 1);
+    }
+  }
+  boundaries.push(rows.length - 1);
+  return boundaries;
+}
+
+/**
+ * Pure: each row's 1-based position within its contiguous group (same grouping as
+ * findGroupBoundaryRows_), resetting to 1 at every group boundary. Parallel array to `rows`. Never
+ * requires a "#" column to exist; it is purely a function of `rows` and `colIndices`, so a caller
+ * that already knows its own number column's index can use this without any header lookup at all.
+ * @param {Array<Array>} rows
+ * @param {number[]} colIndices - 0-based column indices to group by
+ * @return {number[]}
+ */
+function groupPositions_(rows, colIndices) {
+  const positions = [];
+  let position = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (i === 0 || groupBorderRowKey_(rows[i], colIndices) !== groupBorderRowKey_(rows[i - 1], colIndices)) {
+      position = 1;
+    } else {
+      position += 1;
+    }
+    positions.push(position);
+  }
+  return positions;
+}
+
+// Border weight/color Build Practice Roster and Build Game Roster Prep Sheet have always used for
+// their group borders (previously hardcoded at each call site); Draw Group Borders' dialog has its
+// own coach-chosen style/color instead, so these two constants are for the internal builds only.
+const BUILD_GROUP_BORDER_STYLE = SpreadsheetApp.BorderStyle.SOLID;
+const BUILD_GROUP_BORDER_COLOR = '#000000';
+
+/**
+ * Shared orchestration core: clear this row range's bottom borders, redraw one on the last row of
+ * each contiguous group, and (when `numberColIndex` is given) overwrite that column with each
+ * row's 1-based position in its group as a plain value, not a formula (ADR 0005: the border can't
+ * be a formula either, so both go stale together after a later resort and are fixed together by
+ * rerunning). Idempotent: only ever touches the bottom border edge and, when numbering, the whole
+ * of `numberColIndex`'s range, so rerunning after rows shift never leaves stale output behind.
+ *
+ * Takes already-resolved 0-based column indices, not header names, so a caller that already knows
+ * its own layout (Build Practice Roster, Build Game Roster Prep Sheet) never needs a header
+ * lookup; GroupBorders.gs's drawGroupBordersOnSheet_ resolves coach-chosen header names to indices
+ * before calling this.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} startRow - 1-based, first data row
+ * @param {number} numRows
+ * @param {number[]} colIndices - 0-based column indices to group by
+ * @param {?number} numberColIndex - 0-based column index to number, or null/-1 to skip numbering
+ * @param {GoogleAppsScript.Spreadsheet.BorderStyle} borderStyle
+ * @param {string} color
+ * @return {{groupCount: number, rowCount: number, numbered: boolean}}
+ */
+function applyGroupBordersAndNumbering_(sheet, startRow, numRows, colIndices, numberColIndex, borderStyle, color) {
+  const numColumns = sheet.getLastColumn();
+  if (numColumns < 1 || numRows < 1 || colIndices.length === 0) return { groupCount: 0, rowCount: 0, numbered: false };
+
+  const rows = sheet.getRange(startRow, 1, numRows, numColumns).getValues();
+
+  // Clear first: bottom border only, every row in range, before redrawing (see doc comment above).
+  for (let r = 0; r < numRows; r++) {
+    sheet.getRange(startRow + r, 1, 1, numColumns).setBorder(null, null, false, null, null, null);
+  }
+
+  const boundaryRows = findGroupBoundaryRows_(rows, colIndices);
+  boundaryRows.forEach(function (i) {
+    sheet.getRange(startRow + i, 1, 1, numColumns).setBorder(null, null, true, null, null, null, color, borderStyle);
+  });
+
+  let numbered = false;
+  if (numberColIndex != null && numberColIndex >= 0) {
+    const positions = groupPositions_(rows, colIndices);
+    sheet.getRange(startRow, numberColIndex + 1, numRows, 1).setValues(positions.map(function (p) { return [p]; }));
+    numbered = true;
+  }
+
+  return { groupCount: boundaryRows.length, rowCount: numRows, numbered: numbered };
+}

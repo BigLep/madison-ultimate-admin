@@ -576,14 +576,8 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
       // Sort the data AFTER formulas have been calculated
       sortPracticeRoster(existingSheet, fullNameInfo.rowCount, headers.length);
 
-      // Populate # column AFTER sorting (so the formula references are correct)
-      populateNumberColumn(existingSheet, fullNameInfo.rowCount);
-
-      // Force calculation of # column formulas before adding borders
-      SpreadsheetApp.flush();
-
-      // Add borders at group changes (where # = 1)
-      addGroupBorders(existingSheet, fullNameInfo.rowCount);
+      // Number and border AFTER sorting (so the group-by columns reflect the final row order)
+      numberAndBorderPracticeRosterGroups_(existingSheet, fullNameInfo.rowCount);
     }
 
     // PlayerID (column A) is the key, not something to print: hide it. A sheet built before 3.29
@@ -729,15 +723,9 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
       sortPracticeRoster(newSheet, fullNameInfo.rowCount, headers.length);
     }
     
-    // Populate # column AFTER sorting (so the formula references are correct)
+    // Number and border AFTER sorting (so the group-by columns reflect the final row order)
     if (fullNameInfo.rowCount > 0) {
-      populateNumberColumn(newSheet, fullNameInfo.rowCount);
-      
-      // Force calculation of # column formulas before adding borders
-      SpreadsheetApp.flush();
-      
-      // Add borders at group changes (where # = 1)
-      addGroupBorders(newSheet, fullNameInfo.rowCount);
+      numberAndBorderPracticeRosterGroups_(newSheet, fullNameInfo.rowCount);
     }
     
     // Delete empty rows and columns to clean up the sheet
@@ -893,68 +881,22 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
 }
 
 /**
- * Populate the # column with formulas that reset when Team or Gender changes
- * This must be called AFTER sorting to ensure correct formula references.
- * @param {Sheet} sheet - The roster sheet
+ * Number and border a Practice Roster sheet's data rows by group, sharing the group-boundary math
+ * and clear/redraw/number orchestration with Draw Group Borders (GroupBorders.gs) and Build Game
+ * Roster Prep Sheet, via applyGroupBordersAndNumbering_ in SheetBuilderUtils.gs (ADR 0005: a plain
+ * value in "#", not a formula, and a bottom-of-group border, not top-of-group). Must be called
+ * AFTER sorting, so the group-by columns' values reflect the sheet's final row order.
+ * @param {Sheet} sheet - The practice roster sheet
  * @param {number} numRows - Number of data rows
  * @param {Array<number>} [groupByColumns] - Optional 1-based column indices to group by (e.g. [activationStatusCol, genderCol]). If omitted, uses Team and Gender from rosterPrintoutBaseColumns.
  */
-function populateNumberColumn(sheet, numRows, groupByColumns) {
-  console.log(`🔢 Populating # column with reset formulas...`);
-  const numberCol = CONFIG.rosterPrintoutBaseColumns.number.index;
-  const n = getColumnLetter(numberCol);
-  const cols = groupByColumns || [CONFIG.rosterPrintoutBaseColumns.team.index, CONFIG.rosterPrintoutBaseColumns.gender.index];
-  const colLetters = cols.filter(function (c) { return c; }).map(getColumnLetter);
-  let numberFormula;
-  if (colLetters.length === 0) {
-    numberFormula = `=${n}1+1`;
-  } else if (colLetters.length === 1) {
-    numberFormula = `=IF(${colLetters[0]}1<>${colLetters[0]}2,1,${n}1+1)`;
-  } else {
-    const orParts = colLetters.map(function (l) { return l + '1<>' + l + '2'; }).join(',');
-    numberFormula = `=IF(OR(${orParts}),1,${n}1+1)`;
-  }
-  sheet.getRange(2, numberCol).setFormula(numberFormula);
-  if (numRows > 1) {
-    sheet.getRange(2, numberCol).copyTo(sheet.getRange(3, numberCol, numRows - 1, 1));
-  }
-  console.log(`✅ Populated # column with reset formula for ${numRows} rows`);
-}
-
-/**
- * Add black borders at the top of rows where groups change (# = 1)
- * @param {Sheet} sheet - The practice roster sheet
- * @param {number} numRows - Number of data rows
- */
-function addGroupBorders(sheet, numRows) {
-  console.log(`🎨 Adding group borders...`);
-  
-  // Get all values from the # column (already flushed before calling this function)
-  const numberColumnValues = sheet.getRange(2, CONFIG.rosterPrintoutBaseColumns.number.index, numRows, 1).getValues();
-  
-  // Find rows where # = 1 (group starts)
-  const groupStartRows = [];
-  numberColumnValues.forEach((row, index) => {
-    if (row[0] === 1) {
-      groupStartRows.push(index + 2); // +2 because array is 0-based and data starts at row 2
-    }
-  });
-  
-  console.log(`Found ${groupStartRows.length} group starts at rows: ${groupStartRows.join(', ')}`);
-  
-  // Apply top border to each group start row (entire row)
-  const numColumns = sheet.getLastColumn();
-  groupStartRows.forEach(rowNum => {
-    const range = sheet.getRange(rowNum, 1, 1, numColumns);
-    range.setBorder(
-      true, null, null, null,  // top border only
-      null, null,              // no vertical borders
-      'black',                 // color
-      SpreadsheetApp.BorderStyle.SOLID // style
-    );
-  });
-  
-  console.log(`✅ Applied top borders to ${groupStartRows.length} group starts`);
+function numberAndBorderPracticeRosterGroups_(sheet, numRows, groupByColumns) {
+  const cols1Based = groupByColumns || [CONFIG.rosterPrintoutBaseColumns.team.index, CONFIG.rosterPrintoutBaseColumns.gender.index];
+  const colIndices = cols1Based.filter(function (c) { return c; }).map(function (c) { return c - 1; });
+  applyGroupBordersAndNumbering_(
+    sheet, 2, numRows, colIndices, CONFIG.rosterPrintoutBaseColumns.number.index - 1,
+    BUILD_GROUP_BORDER_STYLE, BUILD_GROUP_BORDER_COLOR
+  );
 }
 
 // Practice availability sort order (lower = earlier). Blank = treat as coming (same bucket as 👍).

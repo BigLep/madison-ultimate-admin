@@ -1,10 +1,13 @@
 /**
  * Draw Group Borders: a bottom border on the last row of each contiguous run of matching values
  * across one or more coach-chosen columns, within the current selection's rows. Generic, works on
- * any sheet and any columns; unlike the fixed Team/Gender (or Team/Activation Status/Gender)
- * grouping that addGroupBorders in BuildPracticeRoster.gs already draws for Practice Roster and
- * Game Roster Prep, this is the standalone version for every other sheet. See CONTEXT.md's
- * "Group Border" entry for the concept.
+ * any sheet and any columns. Build Practice Roster and Build Game Roster Prep Sheet draw the same
+ * kind of border (and "#" numbering) on their own fixed Team/Gender (or Team/Activation
+ * Status/Gender) grouping; both they and this file share the underlying group-boundary math and
+ * the clear/redraw/number orchestration core, `applyGroupBordersAndNumbering_` in
+ * SheetBuilderUtils.gs. This file resolves coach-chosen header *names* to column indices and owns
+ * the dialog/settings; the two build files already know their column indices directly and call
+ * the shared core themselves. See CONTEXT.md's "Group Border" and "#" column entries.
  */
 
 const GROUP_BORDER_SETTINGS_PREFIX = 'groupBorders.';
@@ -20,68 +23,6 @@ const GROUP_BORDER_STYLES = [
 ];
 const GROUP_BORDER_DEFAULT_STYLE = 'SOLID_MEDIUM';
 const GROUP_BORDER_DEFAULT_COLOR = '#000000';
-
-/** Trim a cell value to a comparable string; null, undefined, and '' all become ''. */
-function groupBorderCellText_(v) {
-  if (v == null || v === '') return '';
-  return String(v).trim();
-}
-
-/**
- * The group key for one row: normalized values of the given 0-based column indices, joined with a
- * separator that can never appear in a trimmed cell value.
- * @param {Array} row
- * @param {number[]} colIndices - 0-based indices into row
- * @return {string}
- */
-function groupBorderRowKey_(row, colIndices) {
-  return colIndices.map(function (i) { return groupBorderCellText_(row[i]); }).join('\u0001');
-}
-
-/**
- * Pure: the 0-based row indices (relative to `rows`) that are the last row of a contiguous group,
- * always including the final row. A group is any maximal run of consecutive rows sharing the same
- * key; if a value reappears later after a different value came between (the data isn't actually
- * sorted by these columns), that later run is simply its own group; there is no "is this sorted"
- * check, every value-change transition gets a border.
- * @param {Array<Array>} rows
- * @param {number[]} colIndices - 0-based column indices to group by
- * @return {number[]}
- */
-function findGroupBoundaryRows_(rows, colIndices) {
-  const boundaries = [];
-  if (rows.length === 0 || colIndices.length === 0) return boundaries;
-  for (let i = 1; i < rows.length; i++) {
-    if (groupBorderRowKey_(rows[i], colIndices) !== groupBorderRowKey_(rows[i - 1], colIndices)) {
-      boundaries.push(i - 1);
-    }
-  }
-  boundaries.push(rows.length - 1);
-  return boundaries;
-}
-
-/**
- * Pure: each row's 1-based position within its contiguous group (same grouping as
- * findGroupBoundaryRows_), resetting to 1 at every group boundary. Parallel array to `rows`. This
- * is what Draw Group Borders writes into an existing "#" column as a plain value, never a formula
- * (ADR 0005): it goes stale exactly when the border next to it does, and is fixed the same way.
- * @param {Array<Array>} rows
- * @param {number[]} colIndices - 0-based column indices to group by
- * @return {number[]}
- */
-function groupPositions_(rows, colIndices) {
-  const positions = [];
-  let position = 0;
-  for (let i = 0; i < rows.length; i++) {
-    if (i === 0 || groupBorderRowKey_(rows[i], colIndices) !== groupBorderRowKey_(rows[i - 1], colIndices)) {
-      position = 1;
-    } else {
-      position += 1;
-    }
-    positions.push(position);
-  }
-  return positions;
-}
 
 /**
  * Pure: which header names should start checked in the dialog. A selection narrower than the
@@ -291,14 +232,12 @@ function groupBorderStyleFromName_(name) {
 
 /**
  * Draw (or redraw) group borders on rows [startRow, startRow + numRows) of sheet, grouped by the
- * given header names, spanning the sheet's full data width. Idempotent: clears every bottom
- * border already in that row range first, and only ever touches the bottom edge, so re-running
- * after rows shift never leaves stale borders and never disturbs any other formatting.
- *
- * When `writeNumberColumn` is true and the sheet has a "#" header, also overwrites every "#" cell
- * in the row range with the row's 1-based position in its group (see groupPositions_) as a plain
- * value, not a formula (ADR 0005) -- always the whole range, same idempotency story as the border.
- * A "#"-less sheet is simply not numbered; this never inserts a "#" column.
+ * given header names, spanning the sheet's full data width, and optionally number an existing "#"
+ * header column to match. Resolves header names to column indices, then delegates the actual
+ * clear/redraw/number work to the shared applyGroupBordersAndNumbering_ core in
+ * SheetBuilderUtils.gs (idempotent: only ever touches the bottom border edge and, when numbering,
+ * the whole "#" range, so re-running after rows shift never leaves stale output behind). A
+ * "#"-less sheet is simply not numbered; this never inserts a "#" column.
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {number} startRow - 1-based, first data row
  * @param {number} numRows
@@ -320,30 +259,9 @@ function drawGroupBordersOnSheet_(sheet, startRow, numRows, columnNames, borderS
     throw new Error('None of the chosen columns were found on "' + sheet.getName() + '".');
   }
 
-  const rows = sheet.getRange(startRow, 1, numRows, numColumns).getValues();
-
-  // Clear first: bottom border only, every row in range, before redrawing (see file header).
-  for (let r = 0; r < numRows; r++) {
-    sheet.getRange(startRow + r, 1, 1, numColumns).setBorder(null, null, false, null, null, null);
-  }
-
-  const boundaryRows = findGroupBoundaryRows_(rows, colIndices);
+  const numberColIndex = writeNumberColumn ? headers.indexOf(GROUP_BORDER_NUMBER_COLUMN_HEADER) : -1;
   const style = groupBorderStyleFromName_(borderStyleName);
-  boundaryRows.forEach(function (i) {
-    sheet.getRange(startRow + i, 1, 1, numColumns).setBorder(null, null, true, null, null, null, color, style);
-  });
-
-  let numbered = false;
-  if (writeNumberColumn) {
-    const numberColIndex = headers.indexOf(GROUP_BORDER_NUMBER_COLUMN_HEADER);
-    if (numberColIndex >= 0) {
-      const positions = groupPositions_(rows, colIndices);
-      sheet.getRange(startRow, numberColIndex + 1, numRows, 1).setValues(positions.map(function (p) { return [p]; }));
-      numbered = true;
-    }
-  }
-
-  return { groupCount: boundaryRows.length, rowCount: numRows, numbered: numbered };
+  return applyGroupBordersAndNumbering_(sheet, startRow, numRows, colIndices, numberColIndex, style, color);
 }
 
 /**
