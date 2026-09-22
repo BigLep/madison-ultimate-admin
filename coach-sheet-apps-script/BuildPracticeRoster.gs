@@ -3,6 +3,21 @@
  * Creates practice-specific roster sheets with availability data
  */
 
+// Practice Roster's own column layout: CONFIG.rosterPrintoutBaseColumns plus a "Group" column
+// (coach-entered scrimmage team assignment, narrow, blank by default) inserted right after "#".
+// Practice-Roster-only: Build Game Roster Prep Sheet keeps using the shared
+// CONFIG.rosterPrintoutBaseColumns untouched.
+const PRACTICE_ROSTER_COLUMN_KEYS = ['playerId', 'number', 'group', 'fullName', 'team', 'gender', 'grade'];
+const PRACTICE_ROSTER_COLUMNS = {
+  playerId: { name: 'PlayerID', index: 1 },
+  number: { name: '#', index: 2 },
+  group: { name: 'Group', index: 3 },
+  fullName: { name: 'Full Name', index: 4 },
+  team: { name: 'Team', index: 5 },
+  gender: { name: 'Gender', index: 6 },
+  grade: { name: 'Grade', index: 7 }
+};
+
 /**
  * Main function to build a practice roster
  * Called from the menu
@@ -235,6 +250,21 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
           </div>
         </div>
 
+        <div class="form-group">
+          <label>Sort Order:</label>
+          <div class="radio-group">
+            <div class="radio-option">
+              <input type="radio" id="sortTeam" name="sortMode" value="team" checked>
+              <label for="sortTeam" style="margin-bottom: 0;">Team</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="sortCheckin" name="sortMode" value="checkin">
+              <label for="sortCheckin" style="margin-bottom: 0;">Checkin</label>
+            </div>
+          </div>
+          <div class="note">Team: Team &gt; Gender &gt; Grade &gt; Name (for scrimmages). Checkin: Gender &gt; Name (for checking players in).</div>
+        </div>
+
         <div class="form-group" id="newSheetGroup">
           <label for="sheetName">Sheet Name:</label>
           <input type="text" id="sheetName" value="${defaultSheetName}">
@@ -310,6 +340,12 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
           function restoreLastSelection() {
             const lastSheet = localStorage.getItem('lastPracticeRosterSheet');
             const lastAction = localStorage.getItem('lastPracticeRosterAction');
+            const lastSortMode = localStorage.getItem('lastPracticeRosterSortMode');
+
+            if (lastSortMode) {
+              const sortRadio = document.querySelector('input[name="sortMode"][value="' + lastSortMode + '"]');
+              if (sortRadio) sortRadio.checked = true;
+            }
 
             if (lastAction === 'update') {
               document.getElementById('actionUpdate').checked = true;
@@ -358,15 +394,16 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
           function processRoster() {
             const practiceDate = document.getElementById('practiceDate').value;
             const isCreate = document.getElementById('actionCreate').checked;
+            const sortMode = document.querySelector('input[name="sortMode"]:checked').value;
 
             if (isCreate) {
-              createNewRoster(practiceDate);
+              createNewRoster(practiceDate, sortMode);
             } else {
-              updateExistingRoster(practiceDate);
+              updateExistingRoster(practiceDate, sortMode);
             }
           }
 
-          function createNewRoster(practiceDate) {
+          function createNewRoster(practiceDate, sortMode) {
             const sheetName = document.getElementById('sheetName').value.trim();
 
             if (!sheetName) {
@@ -380,6 +417,7 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             // Save action to localStorage
             localStorage.setItem('lastPracticeRosterAction', 'create');
             localStorage.setItem('lastPracticeRosterSheet', sheetName);
+            localStorage.setItem('lastPracticeRosterSortMode', sortMode);
 
             // Check for duplicate sheet name first
             google.script.run
@@ -394,13 +432,13 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
                 google.script.run
                   .withSuccessHandler(onSuccess)
                   .withFailureHandler(onFailure)
-                  .createPracticeRosterSheet(sheetName, practiceDate);
+                  .createPracticeRosterSheet(sheetName, practiceDate, sortMode);
               })
               .withFailureHandler(onFailure)
               .isSheetNameDuplicate(sheetName);
           }
 
-          function updateExistingRoster(practiceDate) {
+          function updateExistingRoster(practiceDate, sortMode) {
             const existingSheet = document.getElementById('existingSheet').value;
 
             if (!existingSheet) {
@@ -414,12 +452,13 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             // Save action and sheet to localStorage
             localStorage.setItem('lastPracticeRosterAction', 'update');
             localStorage.setItem('lastPracticeRosterSheet', existingSheet);
+            localStorage.setItem('lastPracticeRosterSortMode', sortMode);
 
             // Update the existing roster
             google.script.run
               .withSuccessHandler(onSuccess)
               .withFailureHandler(onFailure)
-              .updatePracticeRosterSheet(existingSheet, practiceDate);
+              .updatePracticeRosterSheet(existingSheet, practiceDate, sortMode);
           }
 
           function showProgress(title, message) {
@@ -478,8 +517,9 @@ function getActiveSheetName() {
  * Update an existing practice roster sheet with new data (content only, preserve formatting)
  * @param {string} sheetName - Name of the existing sheet to update
  * @param {string} practiceDate - Practice date in format "M/D"
+ * @param {string} [sortMode] - 'team' (default) or 'checkin'; see sortPracticeRoster
  */
-function updatePracticeRosterSheet(sheetName, practiceDate) {
+function updatePracticeRosterSheet(sheetName, practiceDate, sortMode) {
   console.log(`🔄 Updating existing practice roster sheet: "${sheetName}" for date: ${practiceDate}`);
 
   try {
@@ -489,6 +529,16 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
     if (!existingSheet) {
       throw new Error(`Sheet "${sheetName}" not found`);
     }
+
+    // Capture Group (coach-entered scrimmage assignment) before clearing, keyed by PlayerID, so it
+    // survives the update the same way seeded rows do even though every other cell is rebuilt fresh.
+    // Only when the practice date is unchanged: a coach can repoint an existing sheet at a different
+    // practice date, and last week's scrimmage groups shouldn't silently carry into this week's.
+    const existingHeaderRow = existingSheet.getRange(1, 1, 1, existingSheet.getLastColumn()).getValues()[0];
+    const existingPracticeDate = readPracticeRosterDate_(existingHeaderRow);
+    const groupValuesByPlayerId = (existingPracticeDate === practiceDate)
+      ? capturePracticeRosterGroupValues_(existingSheet, existingHeaderRow)
+      : {};
 
     // Get source sheets
     const rosterSheet = ss.getSheetByName(CONFIG.roster.sheetName);
@@ -529,9 +579,9 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
     }
 
     // Update headers with new dates (in case the practice date changed). Base columns come from
-    // CONFIG so their order matches populatePracticeRosterData.
-    const headers = CONFIG.rosterPrintoutBaseColumnKeys.map(function (key) {
-      return CONFIG.rosterPrintoutBaseColumns[key].name;
+    // PRACTICE_ROSTER_COLUMNS so their order matches populatePracticeRosterData.
+    const headers = PRACTICE_ROSTER_COLUMN_KEYS.map(function (key) {
+      return PRACTICE_ROSTER_COLUMNS[key].name;
     });
     headers.push(practiceDate, `${practiceDate} Note`);
 
@@ -544,9 +594,10 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
     }
 
     // Update header row (preserve formatting but update text). A sheet built before the PlayerID
-    // column existed is one column narrower than the new layout.
+    // column (or, now, the Group column) existed is narrower than the new layout.
     if (existingSheet.getMaxColumns() < headers.length) {
       existingSheet.insertColumnsAfter(existingSheet.getMaxColumns(), headers.length - existingSheet.getMaxColumns());
+      existingSheet.setColumnWidth(PRACTICE_ROSTER_COLUMNS.group.index, 60);
     }
     const headerRange = existingSheet.getRange(1, 1, 1, headers.length);
     headerRange.setValues([headers]);
@@ -560,8 +611,8 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
     }
 
     // Seed PlayerID (value) and Full Name (Roster formula) rows from the Roster
-    const playerIdCol = CONFIG.rosterPrintoutBaseColumns.playerId.index;
-    const fullNameInfo = seedPrintoutPlayerRows(existingSheet, rosterSheet, 2, playerIdCol, CONFIG.rosterPrintoutBaseColumns.fullName.index);
+    const playerIdCol = PRACTICE_ROSTER_COLUMNS.playerId.index;
+    const fullNameInfo = seedPrintoutPlayerRows(existingSheet, rosterSheet, 2, playerIdCol, PRACTICE_ROSTER_COLUMNS.fullName.index);
     console.log(`📊 Seeded ${fullNameInfo.rowCount} students from roster`);
 
     if (fullNameInfo.rowCount > 0) {
@@ -570,14 +621,18 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
       // Populate other columns with XLOOKUP formulas
       populatePracticeRosterData(existingSheet, rosterSheet, rosterHeaderRow, practiceAvailabilitySheet, availColumns, fullNameInfo.rowCount, gameAvailabilitySheet, nextGameInfo);
 
+      // Restore Group values (see capture above) before sorting, so they travel with the right
+      // player's row regardless of where the sort puts it.
+      restorePracticeRosterGroupValues_(existingSheet, fullNameInfo.rowCount, groupValuesByPlayerId);
+
       // Force recalculation to ensure formulas are evaluated before sorting
       SpreadsheetApp.flush();
 
       // Sort the data AFTER formulas have been calculated
-      sortPracticeRoster(existingSheet, fullNameInfo.rowCount, headers.length);
+      sortPracticeRoster(existingSheet, fullNameInfo.rowCount, headers.length, sortMode);
 
       // Number and border AFTER sorting (so the group-by columns reflect the final row order)
-      numberAndBorderPracticeRosterGroups_(existingSheet, fullNameInfo.rowCount);
+      numberAndBorderPracticeRosterGroups_(existingSheet, fullNameInfo.rowCount, practiceRosterGroupByColumns_(sortMode));
     }
 
     // PlayerID (column A) is the key, not something to print: hide it. A sheet built before 3.29
@@ -607,8 +662,9 @@ function updatePracticeRosterSheet(sheetName, practiceDate) {
  * Create the practice roster sheet with all data
  * @param {string} sheetName - Name for the new sheet
  * @param {string} practiceDate - Practice date in format "M/D"
+ * @param {string} [sortMode] - 'team' (default) or 'checkin'; see sortPracticeRoster
  */
-function createPracticeRosterSheet(sheetName, practiceDate) {
+function createPracticeRosterSheet(sheetName, practiceDate, sortMode) {
   console.log(`📋 Creating practice roster sheet: "${sheetName}" for date: ${practiceDate}`);
   
   try {
@@ -641,12 +697,12 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     // Find the next game date after this practice
     const nextGameInfo = findNextGameAfterPractice(ss, practiceDate);
     
-    // Define column structure with shared base columns + dynamic availability columns
+    // Define column structure with the practice roster's own base columns + dynamic availability columns
     const headers = [];
 
-    // Base columns: explicit order must match rosterPrintoutBaseColumns indices / populatePracticeRosterData
-    CONFIG.rosterPrintoutBaseColumnKeys.forEach(function (key) {
-      headers.push(CONFIG.rosterPrintoutBaseColumns[key].name);
+    // Base columns: explicit order must match PRACTICE_ROSTER_COLUMNS indices / populatePracticeRosterData
+    PRACTICE_ROSTER_COLUMN_KEYS.forEach(function (key) {
+      headers.push(PRACTICE_ROSTER_COLUMNS[key].name);
     });
 
     // Add dynamic availability columns
@@ -679,7 +735,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     console.log(`📍 Found availability columns: ${availColumns.availabilityColumn} and ${availColumns.noteColumn || 'none'}`);
     
     // Seed PlayerID (value) and Full Name (Roster formula) rows from the Roster
-    const fullNameInfo = seedPrintoutPlayerRows(newSheet, rosterSheet, 2, CONFIG.rosterPrintoutBaseColumns.playerId.index, CONFIG.rosterPrintoutBaseColumns.fullName.index);
+    const fullNameInfo = seedPrintoutPlayerRows(newSheet, rosterSheet, 2, PRACTICE_ROSTER_COLUMNS.playerId.index, PRACTICE_ROSTER_COLUMNS.fullName.index);
     console.log(`📊 Seeded ${fullNameInfo.rowCount} students from roster`);
     
     const rosterHeaderRow = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
@@ -710,22 +766,22 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
           (h instanceof Date && `${h.getMonth() + 1}/${h.getDate()}` === practiceDate)) + 1;
       
       if (availColIndex > 0) {
-        copyDataValidation(newSheet, practiceAvailabilitySheet, 
-          [{ sourceColumn: practiceDate, targetColumn: CONFIG.rosterPrintoutBaseColumnKeys.length + 1 }], fullNameInfo.rowCount);
+        copyDataValidation(newSheet, practiceAvailabilitySheet,
+          [{ sourceColumn: practiceDate, targetColumn: PRACTICE_ROSTER_COLUMN_KEYS.length + 1 }], fullNameInfo.rowCount);
       }
     }
-    
+
     // Force recalculation to ensure formulas are evaluated before sorting
     SpreadsheetApp.flush();
-    
+
     // Sort the data AFTER formulas have been calculated
     if (fullNameInfo.rowCount > 0) {
-      sortPracticeRoster(newSheet, fullNameInfo.rowCount, headers.length);
+      sortPracticeRoster(newSheet, fullNameInfo.rowCount, headers.length, sortMode);
     }
-    
+
     // Number and border AFTER sorting (so the group-by columns reflect the final row order)
     if (fullNameInfo.rowCount > 0) {
-      numberAndBorderPracticeRosterGroups_(newSheet, fullNameInfo.rowCount);
+      numberAndBorderPracticeRosterGroups_(newSheet, fullNameInfo.rowCount, practiceRosterGroupByColumns_(sortMode));
     }
     
     // Delete empty rows and columns to clean up the sheet
@@ -734,8 +790,9 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     
     // Auto-resize specific columns
     console.log('📏 Auto-resizing columns...');
-    newSheet.autoResizeColumn(CONFIG.rosterPrintoutBaseColumns.number.index); // # column
-    const practiceAvailabilityColumnIndex = CONFIG.rosterPrintoutBaseColumnKeys.length + 1;
+    newSheet.autoResizeColumn(PRACTICE_ROSTER_COLUMNS.number.index); // # column
+    newSheet.setColumnWidth(PRACTICE_ROSTER_COLUMNS.group.index, 60); // Group column: narrow, coach-entered
+    const practiceAvailabilityColumnIndex = PRACTICE_ROSTER_COLUMN_KEYS.length + 1;
     newSheet.autoResizeColumn(practiceAvailabilityColumnIndex); // Practice availability column
     if (nextGameInfo) {
       const ng = practiceRosterNextGameColumns();
@@ -746,7 +803,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     
     // Enable text wrapping for note columns
     console.log('📝 Enabling text wrap for note columns...');
-    const baseColCount = CONFIG.rosterPrintoutBaseColumnKeys.length;
+    const baseColCount = PRACTICE_ROSTER_COLUMN_KEYS.length;
     const practiceNoteColumnIndex = baseColCount + 2;
     const practiceNoteRange = newSheet.getRange(2, practiceNoteColumnIndex, fullNameInfo.rowCount, 1);
     practiceNoteRange.setWrap(true);
@@ -758,7 +815,7 @@ function createPracticeRosterSheet(sheetName, practiceDate) {
     }
     
     // PlayerID (column A) is the key, not something to print: hide it
-    newSheet.hideColumns(CONFIG.rosterPrintoutBaseColumns.playerId.index);
+    newSheet.hideColumns(PRACTICE_ROSTER_COLUMNS.playerId.index);
 
     // Set print settings
     console.log('🖨️ Configuring print settings...');
@@ -798,7 +855,7 @@ function findPracticeAvailabilityColumns(practiceAvailabilitySheet, practiceDate
  * @return {{activation: (number|null), availability: number, note: number, count: number}}
  */
 function practiceRosterNextGameColumns() {
-  const baseColCount = CONFIG.rosterPrintoutBaseColumnKeys.length;
+  const baseColCount = PRACTICE_ROSTER_COLUMN_KEYS.length;
   let col = baseColCount + 3;
   const out = { activation: null, availability: null, note: null, count: 0 };
   if (CONFIG.gameRosterPrep.hasActivationStatus) out.activation = col++;
@@ -810,7 +867,7 @@ function practiceRosterNextGameColumns() {
 
 /**
  * Populate practice roster data with per-row lookup formulas keyed by the row's PlayerID
- * (CONFIG.rosterPrintoutBaseColumns.playerId): Team, Gender, and Grade from the Roster;
+ * (PRACTICE_ROSTER_COLUMNS.playerId): Team, Gender, and Grade from the Roster;
  * availability, note, and next-game cells from the availability sheets (joined on PlayerID,
  * or on Full Name for an availability sheet built before it had a PlayerID column).
  * @param {Sheet} newSheet - The new practice roster sheet
@@ -827,8 +884,8 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
 
   const rosterSheetName = CONFIG.roster.sheetName;
   const practiceAvailSheetName = 'Practice Availability';
-  const base = CONFIG.rosterPrintoutBaseColumns;
-  const baseColCount = CONFIG.rosterPrintoutBaseColumnKeys.length;
+  const base = PRACTICE_ROSTER_COLUMNS;
+  const baseColCount = PRACTICE_ROSTER_COLUMN_KEYS.length;
   const playerIdLetter = getColumnLetter(base.playerId.index);
   const fullNameLetter = getColumnLetter(base.fullName.index);
 
@@ -888,15 +945,88 @@ function populatePracticeRosterData(newSheet, rosterSheet, rosterHeaderRow, prac
  * AFTER sorting, so the group-by columns' values reflect the sheet's final row order.
  * @param {Sheet} sheet - The practice roster sheet
  * @param {number} numRows - Number of data rows
- * @param {Array<number>} [groupByColumns] - Optional 1-based column indices to group by (e.g. [activationStatusCol, genderCol]). If omitted, uses Team and Gender from rosterPrintoutBaseColumns.
+ * @param {Array<number>} [groupByColumns] - Optional 1-based column indices to group by (e.g. [activationStatusCol, genderCol]). If omitted, uses Team and Gender from PRACTICE_ROSTER_COLUMNS.
  */
 function numberAndBorderPracticeRosterGroups_(sheet, numRows, groupByColumns) {
-  const cols1Based = groupByColumns || [CONFIG.rosterPrintoutBaseColumns.team.index, CONFIG.rosterPrintoutBaseColumns.gender.index];
+  const cols1Based = groupByColumns || [PRACTICE_ROSTER_COLUMNS.team.index, PRACTICE_ROSTER_COLUMNS.gender.index];
   const colIndices = cols1Based.filter(function (c) { return c; }).map(function (c) { return c - 1; });
   applyGroupBordersAndNumbering_(
-    sheet, 2, numRows, colIndices, CONFIG.rosterPrintoutBaseColumns.number.index - 1,
+    sheet, 2, numRows, colIndices, PRACTICE_ROSTER_COLUMNS.number.index - 1,
     BUILD_GROUP_BORDER_STYLE, BUILD_GROUP_BORDER_COLOR
   );
+}
+
+/**
+ * The "#"/group-border grouping columns for a given sort mode: Team + Gender for 'team' mode
+ * (matches its Team > Gender sort), Gender only for 'checkin' mode (matches its Gender > Name
+ * sort, since Team isn't part of that ordering).
+ * @param {string} [sortMode] - 'team' (default) or 'checkin'
+ * @return {Array<number>} 1-based column indices, for numberAndBorderPracticeRosterGroups_
+ */
+function practiceRosterGroupByColumns_(sortMode) {
+  return sortMode === 'checkin'
+    ? [PRACTICE_ROSTER_COLUMNS.gender.index]
+    : [PRACTICE_ROSTER_COLUMNS.team.index, PRACTICE_ROSTER_COLUMNS.gender.index];
+}
+
+/**
+ * Read the practice date a roster sheet was last built for, from its header row (the column right
+ * after Grade, the last base column, whether or not that sheet has a Group column yet). Used to
+ * decide whether Group values should carry over on "Update Existing Sheet": only when the coach is
+ * refreshing the same practice, not repointing the sheet at a different date.
+ * @param {Array} headerRow - The sheet's current header row values
+ * @return {?string} The practice date text (e.g. "9/9"), or null if not found
+ */
+function readPracticeRosterDate_(headerRow) {
+  const gradeIndex = headerRow.indexOf(PRACTICE_ROSTER_COLUMNS.grade.name);
+  if (gradeIndex === -1 || gradeIndex + 1 >= headerRow.length) return null;
+  const dateHeader = headerRow[gradeIndex + 1];
+  return (dateHeader === null || dateHeader === undefined) ? null : String(dateHeader).trim();
+}
+
+/**
+ * Capture a practice roster's "Group" column (coach-entered scrimmage-team assignment, free text)
+ * before its data range is cleared, keyed by PlayerID, so it can be restored after the sheet is
+ * rebuilt even though every other cell is a lookup formula that gets rebuilt fresh. Header-driven,
+ * not index-driven, so a sheet built before the Group column existed just yields an empty map.
+ * @param {Sheet} sheet
+ * @param {Array} headerRow - The sheet's current header row values
+ * @return {Object} Map of PlayerID -> Group value (only non-blank entries)
+ */
+function capturePracticeRosterGroupValues_(sheet, headerRow) {
+  const groupCol = headerRow.indexOf(PRACTICE_ROSTER_COLUMNS.group.name) + 1;
+  const playerIdCol = headerRow.indexOf(PRACTICE_ROSTER_COLUMNS.playerId.name) + 1;
+  const map = {};
+  if (!groupCol || !playerIdCol) return map;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return map;
+  const rows = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  rows.forEach(function (row) {
+    const id = row[playerIdCol - 1];
+    const group = row[groupCol - 1];
+    if (id && group !== '' && group !== null && group !== undefined) {
+      map[String(id).trim()] = group;
+    }
+  });
+  return map;
+}
+
+/**
+ * Write Group values captured by capturePracticeRosterGroupValues_ back onto a freshly seeded
+ * practice roster, matched by PlayerID so they land on the right row regardless of how the sheet
+ * is about to be sorted. Call after seeding PlayerID rows, before sorting.
+ * @param {Sheet} sheet
+ * @param {number} numRows
+ * @param {Object} groupValuesByPlayerId - From capturePracticeRosterGroupValues_
+ */
+function restorePracticeRosterGroupValues_(sheet, numRows, groupValuesByPlayerId) {
+  if (numRows === 0 || Object.keys(groupValuesByPlayerId).length === 0) return;
+  const ids = sheet.getRange(2, PRACTICE_ROSTER_COLUMNS.playerId.index, numRows, 1).getValues();
+  const values = ids.map(function (row) {
+    const id = String(row[0]).trim();
+    return [groupValuesByPlayerId.hasOwnProperty(id) ? groupValuesByPlayerId[id] : ''];
+  });
+  sheet.getRange(2, PRACTICE_ROSTER_COLUMNS.group.index, numRows, 1).setValues(values);
 }
 
 // Practice availability sort order (lower = earlier). Blank = treat as coming (same bucket as 👍).
@@ -906,23 +1036,38 @@ const PRACTICE_AVAIL_SORT_ORDER = {
   '❓ Not sure yet': 1,
   '👎 Can\'t make it': 2
 };
-const PRACTICE_AVAIL_COLUMN_INDEX = CONFIG.rosterPrintoutBaseColumnKeys.length + 1;
+const PRACTICE_AVAIL_COLUMN_INDEX = PRACTICE_ROSTER_COLUMN_KEYS.length + 1;
 
 /**
- * Sort the practice roster by Team > Gender > Practice Availability (custom order) > Grade > Name
- * Availability: 👍 and blank (assumed coming) share one bucket; then ❓ Not sure yet; then 👎 Can't make it
+ * Sort the practice roster. 'team' mode (default): Team > Gender > Practice Availability (custom
+ * order) > Grade > Name, for figuring out scrimmages. 'checkin' mode: Gender > Name only, for
+ * quickly looking a player up at checkin (Full Name already includes last name, so this is
+ * unambiguous without a further tiebreaker).
+ * Availability (team mode only): 👍 and blank (assumed coming) share one bucket; then ❓ Not sure
+ * yet; then 👎 Can't make it.
  * Note: # column will automatically update after sort due to formula
  * @param {Sheet} sheet - The practice roster sheet
  * @param {number} numRows - Number of data rows
  * @param {number} numColumns - Number of columns
+ * @param {string} [sortMode] - 'team' (default) or 'checkin'
  */
-function sortPracticeRoster(sheet, numRows, numColumns) {
+function sortPracticeRoster(sheet, numRows, numColumns, sortMode) {
+  if (sortMode === 'checkin') {
+    console.log('🔄 Sorting by Gender, Name (Checkin mode)...');
+    sheet.getRange(2, 1, numRows, numColumns).sort([
+      { column: PRACTICE_ROSTER_COLUMNS.gender.index, ascending: true },
+      { column: PRACTICE_ROSTER_COLUMNS.fullName.index, ascending: true }
+    ]);
+    console.log('✅ Sorting complete');
+    return;
+  }
+
   console.log('🔄 Sorting by Team (CONFIG.teams order), Gender, Practice Availability, Grade, Name...');
 
   // Temporary numeric sort-key columns (Range.sort() only orders by cell values): Team rank in
   // CONFIG.teams order, then practice-availability rank.
   const numDataRows = numRows; // data rows = rows 2 to (1 + numRows)
-  const teamRankCol = insertSortRankColumn(sheet, CONFIG.rosterPrintoutBaseColumns.team.index, numDataRows, numColumns, teamSortRank);
+  const teamRankCol = insertSortRankColumn(sheet, PRACTICE_ROSTER_COLUMNS.team.index, numDataRows, numColumns, teamSortRank);
   const availRankCol = insertSortRankColumn(sheet, PRACTICE_AVAIL_COLUMN_INDEX, numDataRows, teamRankCol, function (v) {
     const s = (v != null ? String(v).trim() : '');
     return PRACTICE_AVAIL_SORT_ORDER.hasOwnProperty(s) ? PRACTICE_AVAIL_SORT_ORDER[s] : 1;
@@ -931,10 +1076,10 @@ function sortPracticeRoster(sheet, numRows, numColumns) {
   const dataRange = sheet.getRange(2, 1, numDataRows, availRankCol);
   dataRange.sort([
     { column: teamRankCol, ascending: true },
-    { column: CONFIG.rosterPrintoutBaseColumns.gender.index, ascending: true },
+    { column: PRACTICE_ROSTER_COLUMNS.gender.index, ascending: true },
     { column: availRankCol, ascending: true },
-    { column: CONFIG.rosterPrintoutBaseColumns.grade.index, ascending: true },
-    { column: CONFIG.rosterPrintoutBaseColumns.fullName.index, ascending: true }
+    { column: PRACTICE_ROSTER_COLUMNS.grade.index, ascending: true },
+    { column: PRACTICE_ROSTER_COLUMNS.fullName.index, ascending: true }
   ]);
 
   sheet.deleteColumn(availRankCol);

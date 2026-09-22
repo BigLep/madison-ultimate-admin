@@ -42,7 +42,7 @@ const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_ };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -57,31 +57,31 @@ let fails = 0; const eq = (a, b, what) => { if (a !== b) { fails++; console.log(
 // 1. Practice roster
 const pa = new FakeSheet('Practice Availability', [['PlayerID', 'Full Name', 'Grade', 'Gender Identification', '9/9', '9/9 Note']]);
 const ga = new FakeSheet('Game Availability', [['PlayerID', 'Full Name', 'Grade', 'Gender Identification', '9/13 Availability', '9/13 Activation Status', '9/13 Note']]);
-const pr = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note', '9/13 Activation Status', '9/13 Availability', '9/13 Note']]);
-const seeded = m.seedPrintoutPlayerRows(pr, roster, 2, 1, 3);
+const pr = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note', '9/13 Activation Status', '9/13 Availability', '9/13 Note']]);
+const seeded = m.seedPrintoutPlayerRows(pr, roster, 2, 1, 4);
 eq(seeded.rowCount, 2, 'include filter drops Bob');
 eq(pr.rows[1][0], 'e9jpt', 'PlayerID value in A2'); eq(pr.rows[2][0], 'vwrk2', 'PlayerID value in A3');
-eq(pr.rows[2][2], `=IF($A3="","",IFERROR(XLOOKUP($A3,'📋 Roster'!$A:$A,'📋 Roster'!$F:$F),""))`, 'Full Name formula row 3');
+eq(pr.rows[2][3], `=IF($A3="","",IFERROR(XLOOKUP($A3,'📋 Roster'!$A:$A,'📋 Roster'!$F:$F),""))`, 'Full Name formula row 3');
 const availCols = m.findAvailabilityColumns(pa, '9/9', 'Practice Availability');
 eq(availCols.playerIdColumn, 'A', 'pa playerIdColumn'); eq(availCols.fullNameColumn, 'B', 'pa fullNameColumn'); eq(availCols.availabilityColumn, 'E', 'pa availabilityColumn');
 sandbox.findNextGameAfterPractice = () => null;
 m.populatePracticeRosterData(pr, roster, hdr, pa, availCols, 2, ga, { formattedDate: '9/13', ordinalForDate: 1 });
-eq(pr.rows[1][3], `=IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 Roster'!$U:$U),""))`, 'Team formula');
-eq(pr.rows[2][5], `=IF($A3="","",IFERROR(XLOOKUP($A3,'📋 Roster'!$A:$A,'📋 Roster'!$O:$O),""))`, 'Grade formula row 3');
-eq(pr.rows[1][6], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Practice Availability'!$A:$A,'Practice Availability'!$E:$E),""))`, 'practice availability formula');
-eq(pr.rows[1][7], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Practice Availability'!$A:$A,'Practice Availability'!$F:$F),""))`, 'practice note formula');
-eq(pr.rows[1][8], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$F:$F),""))`, 'next game activation formula');
-eq(pr.rows[1][9], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$E:$E),""))`, 'next game availability formula');
-eq(pr.rows[1][10], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$G:$G),""))`, 'next game note formula');
+eq(pr.rows[1][4], `=IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 Roster'!$U:$U),""))`, 'Team formula');
+eq(pr.rows[2][6], `=IF($A3="","",IFERROR(XLOOKUP($A3,'📋 Roster'!$A:$A,'📋 Roster'!$O:$O),""))`, 'Grade formula row 3');
+eq(pr.rows[1][7], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Practice Availability'!$A:$A,'Practice Availability'!$E:$E),""))`, 'practice availability formula');
+eq(pr.rows[1][8], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Practice Availability'!$A:$A,'Practice Availability'!$F:$F),""))`, 'practice note formula');
+eq(pr.rows[1][9], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$F:$F),""))`, 'next game activation formula');
+eq(pr.rows[1][10], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$E:$E),""))`, 'next game availability formula');
+eq(pr.rows[1][11], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$G:$G),""))`, 'next game note formula');
 
 // 2. Older availability sheet without PlayerID: falls back to Full Name join
 const oldPa = new FakeSheet('Practice Availability', [['Full Name', 'Grade', 'Gender Identification', '9/9', '9/9 Note']]);
 const oldCols = m.findAvailabilityColumns(oldPa, '9/9', 'Practice Availability');
 eq(oldCols.playerIdColumn, null, 'old sheet has no playerIdColumn');
-const pr2 = new FakeSheet('Practice Roster', [pr.rows[0].slice(0, 8)]);
-m.seedPrintoutPlayerRows(pr2, roster, 2, 1, 3);
+const pr2 = new FakeSheet('Practice Roster', [pr.rows[0].slice(0, 9)]);
+m.seedPrintoutPlayerRows(pr2, roster, 2, 1, 4);
 m.populatePracticeRosterData(pr2, roster, hdr, oldPa, oldCols, 2, null, null);
-eq(pr2.rows[1][6], `=IF($C2="","",IFERROR(XLOOKUP($C2,'Practice Availability'!$A:$A,'Practice Availability'!$D:$D),""))`, 'fallback join by Full Name');
+eq(pr2.rows[1][7], `=IF($D2="","",IFERROR(XLOOKUP($D2,'Practice Availability'!$A:$A,'Practice Availability'!$D:$D),""))`, 'fallback join by Full Name');
 
 // 3. Game roster prep layout + populate (hasTeam false, activation true)
 const gCols = [m.findAvailabilityColumns(ga, '9/13', 'Game Availability', 1)];
@@ -107,7 +107,7 @@ eq(pa2.rows[1][1], `=IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 
 eq(pa2.rows[2][3], `=IF($A3="","",IFERROR(XLOOKUP($A3,'📋 Roster'!$A:$A,'📋 Roster'!$T:$T),""))`, 'availability Gender formula row 3');
 // 5. "#" column is a plain value (ADR 0005) that resets on Team+Gender changes, via the shared
 // applyGroupBordersAndNumbering_ core (numberAndBorderPracticeRosterGroups_ in BuildPracticeRoster.gs)
-const np = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade'], ['x', '', '', 'Blue', 'Gx', 7], ['y', '', '', 'Blue', 'Bx', 8]]);
+const np = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade'], ['x', '', '', '', 'Blue', 'Gx', 7], ['y', '', '', '', 'Blue', 'Bx', 8]]);
 vm.runInContext('numberAndBorderPracticeRosterGroups_', sandbox)(np, 2);
 eq(np.rows[1][1], 1, '# is a plain value, 1 for row 2 (its own group: Blue/Gx)');
 eq(np.rows[2][1], 1, '# resets to 1 for row 3 (its own group: Blue/Bx, Gender changed)');
@@ -129,23 +129,59 @@ eq(grp.borders.filter(b => b.bottom === true).map(b => b.r).join(','), '3,4', 'b
 // 6. Season without Activation Status: next-game block is two columns, game availability build skips the column
 m.CONFIG.gameRosterPrep.hasActivationStatus = false;
 const ng = vm.runInContext('practiceRosterNextGameColumns', sandbox)();
-eq(ng.activation, null, 'no activation column'); eq(ng.availability, 9, 'next game availability at base+3'); eq(ng.note, 10, 'next game note at base+4');
-const pr3 = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note', '9/13 Availability', '9/13 Note']]);
-m.seedPrintoutPlayerRows(pr3, roster, 2, 1, 3);
+eq(ng.activation, null, 'no activation column'); eq(ng.availability, 10, 'next game availability at base+3'); eq(ng.note, 11, 'next game note at base+4');
+const pr3 = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note', '9/13 Availability', '9/13 Note']]);
+m.seedPrintoutPlayerRows(pr3, roster, 2, 1, 4);
 m.populatePracticeRosterData(pr3, roster, hdr, pa, availCols, 2, ga, { formattedDate: '9/13', ordinalForDate: 1 });
-eq(pr3.rows[1][8], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$E:$E),""))`, 'next game availability without activation');
-eq(pr3.rows[1][9], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$G:$G),""))`, 'next game note without activation');
-eq(pr3.rows[1][10], undefined, 'nothing written past the note column');
+eq(pr3.rows[1][9], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$E:$E),""))`, 'next game availability without activation');
+eq(pr3.rows[1][10], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Game Availability'!$A:$A,'Game Availability'!$G:$G),""))`, 'next game note without activation');
+eq(pr3.rows[1][11], undefined, 'nothing written past the note column');
 const layout2 = m.getGameRosterPrepColumnLayout('9/13', gCols);
 eq(layout2.headers.join('|'), 'PlayerID|#|Full Name|Gender|Grade|9/13 Availability|9/13 Note', 'game prep headers without activation');
 // 7. Team sort order on the practice roster and coach game prep
-const mkRow = (id, name, team, gender, grade, avail) => [id, '', name, team, gender, grade, avail, ''];
-const sp = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note'],
+const mkRow = (id, name, team, gender, grade, avail) => [id, '', '', name, team, gender, grade, avail, ''];
+const sp = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note'],
   mkRow('a', 'Ann', 'Practice Squad', 'Gx', 7, ''), mkRow('b', 'Bea', 'TBD', 'Gx', 7, ''), mkRow('c', 'Cal', 'Silver', 'Bx', 8, ''),
   mkRow('d', 'Dee', '', 'Gx', 6, ''), mkRow('e', 'Eli', 'Gold', 'Bx', 8, ''), mkRow('f', 'Fay', 'Blue', 'Gx', 7, '👎 Can\'t make it'), mkRow('g', 'Gus', 'Blue', 'Gx', 7, '')]);
-vm.runInContext('sortPracticeRoster', sandbox)(sp, 7, 8);
-eq(sp.rows.slice(1).map(r => r[2]).join(','), 'Gus,Fay,Eli,Cal,Bea,Ann,Dee', 'practice roster: Blue, Gold, Silver, TBD, Practice Squad, blank; availability within team');
-eq(sp.rows[0].length, 8, 'temp sort columns removed');
+vm.runInContext('sortPracticeRoster', sandbox)(sp, 7, 9);
+eq(sp.rows.slice(1).map(r => r[3]).join(','), 'Gus,Fay,Eli,Cal,Bea,Ann,Dee', 'practice roster: Blue, Gold, Silver, TBD, Practice Squad, blank; availability within team');
+eq(sp.rows[0].length, 9, 'temp sort columns removed');
+
+// 7b. Checkin sort mode: Gender > Name only, ignoring Team
+const spCheckin = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note'],
+  mkRow('a', 'Ann', 'Practice Squad', 'Gx', 7, ''), mkRow('b', 'Bea', 'TBD', 'Gx', 7, ''), mkRow('c', 'Cal', 'Silver', 'Bx', 8, ''), mkRow('d', 'Dee', 'Blue', 'Bx', 6, '')]);
+vm.runInContext('sortPracticeRoster', sandbox)(spCheckin, 4, 9, 'checkin');
+eq(spCheckin.rows.slice(1).map(r => r[3]).join(','), 'Cal,Dee,Ann,Bea', 'checkin mode: Gender then Name, ignoring Team');
+eq(spCheckin.rows[0].length, 9, 'checkin mode: no temp sort columns added');
+
+// 7c. practiceRosterGroupByColumns_: team mode groups by Team+Gender, checkin mode by Gender only
+const groupByCols = vm.runInContext('practiceRosterGroupByColumns_', sandbox);
+eq(groupByCols().join(','), '5,6', 'team mode (default) groups by Team, Gender');
+eq(groupByCols('team').join(','), '5,6', 'team mode groups by Team, Gender');
+eq(groupByCols('checkin').join(','), '6', 'checkin mode groups by Gender only');
+
+// 7d. readPracticeRosterDate_: reads the date header right after Grade, whether or not Group exists
+eq(m.readPracticeRosterDate_(['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note']), '9/9', 'readPracticeRosterDate_ with Group column');
+eq(m.readPracticeRosterDate_(['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade', '9/13', '9/13 Note']), '9/13', 'readPracticeRosterDate_ on a legacy sheet without Group');
+eq(m.readPracticeRosterDate_(['PlayerID', '#', 'Full Name', 'Team', 'Gender']), null, 'readPracticeRosterDate_ with no date column after Grade');
+
+// 7e. capturePracticeRosterGroupValues_ / restorePracticeRosterGroupValues_: Group survives a
+// PlayerID-keyed round trip regardless of row order, and is skipped when there's no Group column.
+const gHeader = ['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade'];
+const gSheet = new FakeSheet('Practice Roster', [gHeader,
+  ['a', 1, 'Red', 'Ann', 'Blue', 'Gx', 7],
+  ['b', 2, '', 'Bea', 'Blue', 'Gx', 7],
+  ['c', 3, 'Blue', 'Cal', 'Gold', 'Bx', 8]]);
+const captured = m.capturePracticeRosterGroupValues_(gSheet, gHeader);
+eq(JSON.stringify(captured), JSON.stringify({ a: 'Red', c: 'Blue' }), 'capturePracticeRosterGroupValues_ keys by PlayerID, skips blanks');
+
+const gRebuilt = new FakeSheet('Practice Roster', [gHeader, ['c', '', '', 'Cal', '', '', ''], ['a', '', '', 'Ann', '', '', ''], ['newkid', '', '', 'Zed', '', '', '']]);
+m.restorePracticeRosterGroupValues_(gRebuilt, 3, captured);
+eq(gRebuilt.rows.slice(1).map(r => r[2]).join(','), 'Blue,Red,', 'restorePracticeRosterGroupValues_ follows PlayerID, blank for a player with none captured');
+
+const noGroupHeader = ['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade'];
+const noGroupSheet = new FakeSheet('Practice Roster', [noGroupHeader, ['a', 1, 'Ann', 'Blue', 'Gx', 7]]);
+eq(JSON.stringify(m.capturePracticeRosterGroupValues_(noGroupSheet, noGroupHeader)), '{}', 'capturePracticeRosterGroupValues_ on a legacy sheet without Group yields nothing');
 const gpS = new FakeSheet('Game Roster Prep', [['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade', '9/13 Availability', '9/13 Note'],
   ['a', '', 'Ann', 'TBD', 'Bx', 7, '', ''], ['b', '', 'Bea', 'Blue', 'Gx', 7, '', ''], ['c', '', 'Cal', 'Silver', 'Bx', 8, '', ''], ['d', '', 'Dee', 'Gold', 'Bx', 8, '', '']]);
 vm.runInContext('sortGameRosterPrep', sandbox)(gpS, 4, 8, { team: 4, activationStatus: null, gender: 5, availability: 7, fullName: 3 });
