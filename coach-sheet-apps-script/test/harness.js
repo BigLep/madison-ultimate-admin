@@ -37,12 +37,12 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
     }
   };
 };
-const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs']
+const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs']
   .map(f => fs.readFileSync(dir + '/' + f, 'utf8')).join('\n');
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_ };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -345,6 +345,12 @@ const gbNoHashColumn = new FakeSheet('Extra Player Info', [
 const gbNoHashResult = m.drawGroupBordersOnSheet_(gbNoHashColumn, 2, 2, ['Team'], 'SOLID_MEDIUM', '#000000', true);
 eq(gbNoHashResult.numbered, false, 'drawGroupBordersOnSheet_ numbered:false when the sheet has no "#" column');
 eq(gbNoHashResult.groupCount, 2, 'drawGroupBordersOnSheet_ still draws the border when there is no "#" column to number');
+
+// 15. Save Sheet as PDF: filename sanitization is pure and header-free
+eq(m.sanitizePdfFilename_('9/9 Roster'), '9-9 Roster', 'sanitizePdfFilename_ replaces slash');
+eq(m.sanitizePdfFilename_('📍Practice Info'), '📍Practice Info', 'sanitizePdfFilename_ leaves emoji alone');
+eq(m.sanitizePdfFilename_('  Roster:  Final?  '), 'Roster- Final-', 'sanitizePdfFilename_ replaces colon/question mark and trims');
+eq(m.sanitizePdfFilename_('a   b'), 'a b', 'sanitizePdfFilename_ collapses internal whitespace');
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);
 process.exit(fails ? 1 : 0);
