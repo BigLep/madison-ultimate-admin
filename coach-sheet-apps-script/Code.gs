@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.41';
+const SCRIPT_VERSION = '3.42';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -59,6 +59,15 @@ const CONFIG = {
   },
   gameInfo: {
     sheetName: '📍Game Info'
+  },
+  // One row per Coach, keyed by CoachID; row order is display order on the portal's Coaches Page.
+  // The portal reads and writes it by header name (madison-ultimate src/lib/coaches-config.ts).
+  coaches: {
+    sheetName: 'Coaches'
+  },
+  // One row per Coach, one column pair per practice and game (CoachAvailability.gs).
+  coachAvailability: {
+    sheetName: 'Coach Availability'
   },
   fieldsSheet: {
     sheetName: '📍Fields'
@@ -815,6 +824,7 @@ function createCustomMenu() {
     .addItem('🧹 Delete Empty Rows & Columns', 'deleteEmptyRowsAndColumns')
     .addItem('🏃 Build Practice Availability', 'buildPracticeAvailability')
     .addItem('🎮 Build Game Availability', 'buildGameAvailability')
+    .addItem('🧑‍🏫 Build Coach Availability', 'buildCoachAvailability')
     .addItem('✅ Convert to Actual Attendance', 'convertToActualAttendance')
     .addItem('📅 Sync Practice Info to Calendar', 'createPracticeCalendarEvents')
     .addItem('📅 Sync Game Info to Calendar', 'createGameCalendarEvents')

@@ -21,28 +21,29 @@ FakeSheet.prototype.insertColumnAfter = function (c) { this.rows.forEach(r => { 
 FakeSheet.prototype.deleteColumn = function (c) { this.rows.forEach(r => r.splice(c - 1, 1)); };
 FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   const sheet = this; nr = nr || 1; nc = nc || 1;
-  return {
+  const range = {
     getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => (sheet.rows[r - 1 + i] || [])[c - 1 + j] ?? '')),
     getFormulas: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const v = (sheet.rows[r - 1 + i] || [])[c - 1 + j]; return typeof v === 'string' && v.startsWith('=') ? v : ''; })),
-    setValues: (vals) => { vals.forEach((row, i) => row.forEach((v, j) => { while (sheet.rows.length < r + i) sheet.rows.push([]); sheet.rows[r - 1 + i][c - 1 + j] = v; })); sheet.writes.push({ r, c, vals }); return this; },
+    setValues: (vals) => { vals.forEach((row, i) => row.forEach((v, j) => { while (sheet.rows.length < r + i) sheet.rows.push([]); sheet.rows[r - 1 + i][c - 1 + j] = v; })); sheet.writes.push({ r, c, vals }); return range; },
     setFormulas: function (vals) { return this.setValues(vals); },
     setFormula: function (v) { return this.setValues([[v]]); },
     setValue: function (v) { return this.setValues([[v]]); },
     sort: (spec) => { const block = sheet.rows.slice(r - 1, r - 1 + nr); block.sort((a, b) => { for (const k of spec) { const x = a[k.column - 1] ?? '', y = b[k.column - 1] ?? ''; if (x < y) return -1; if (x > y) return 1; } return 0; }); block.forEach((row, i) => { sheet.rows[r - 1 + i] = row; }); },
-    setFontWeight: () => ({}), clearDataValidations: () => ({}), setWrap: () => ({}),
+    setFontWeight: () => range, clearDataValidations: () => ({}), setWrap: () => ({}),
     setBorder: (top, left, bottom, right, vertical, horizontal, color, style) => {
       sheet.borders = sheet.borders || [];
       sheet.borders.push({ r, c, nr, nc, top, left, bottom, right, vertical, horizontal, color, style });
-      return this;
+      return range;
     }
   };
+  return range;
 };
-const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs']
+const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs']
   .map(f => fs.readFileSync(dir + '/' + f, 'utf8')).join('\n');
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_ };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_ };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -351,6 +352,53 @@ eq(m.sanitizePdfFilename_('9/9 Roster'), '9-9 Roster', 'sanitizePdfFilename_ rep
 eq(m.sanitizePdfFilename_('📍Practice Info'), '📍Practice Info', 'sanitizePdfFilename_ leaves emoji alone');
 eq(m.sanitizePdfFilename_('  Roster:  Final?  '), 'Roster- Final-', 'sanitizePdfFilename_ replaces colon/question mark and trims');
 eq(m.sanitizePdfFilename_('a   b'), 'a b', 'sanitizePdfFilename_ collapses internal whitespace');
+
+
+// 16. Build Coach Availability: headers, CoachID minting, rows keyed by CoachID with a Coaches
+// Name lookup, combined practice+game columns in date order, and all-teams answers carried into
+// per-team columns when a blank-Team game is split.
+eq(m.coachAvailabilityHeaders({ kind: 'practice', formattedDate: '9/23' }).availabilityHeader, '9/23 Practice', 'coach practice header');
+eq(m.coachAvailabilityHeaders({ kind: 'practice', formattedDate: '9/23' }).noteHeader, '9/23 Practice Note', 'coach practice note header');
+eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '9/26', team: 'Blue', ordinalForDate: 1 }).availabilityHeader, '9/26 Blue Game', 'coach team game header');
+eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '9/26', team: 'Blue', ordinalForDate: 2 }).noteHeader, '9/26 Blue Game 2 Note', 'coach second team game note header');
+eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }).availabilityHeader, '10/17 Game', 'coach all-teams game header');
+{
+  const seq = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]; // period 6, so a retry after a collision draws a new id
+  let k = 0; const rnd = () => seq[k++ % seq.length];
+  const taken = new Set([m.mintCoachId_(new Set(), rnd)]);
+  k = 0;
+  const second = m.mintCoachId_(taken, rnd);
+  eq(taken.has(second), false, 'mintCoachId_ never returns a taken id');
+  eq(second.length, 5, 'mintCoachId_ length 5');
+}
+{
+  const practiceInfo = new FakeSheet('📍Practice Info', [['Date', 'Field Name', 'Note'], ['9/29 Tue', 'Track', ''], ['9/25 Fri', 'Track', 'Cancelled'], ['9/22 Tue', 'Track', '']]);
+  const gameInfo = new FakeSheet('📍Game Info', [['Date', 'Label', 'Team'], ['9/26 Sat', 'Game 1', 'Blue'], ['9/26 Sat', 'Game 1', 'Gold'], ['10/17 Sat', 'Game 4', '']]);
+  const coachesSheet = new FakeSheet('Coaches', [['CoachID', 'Name', 'Email', 'Phone', 'About', 'Photo Drive File ID'], ['', 'First Coach', '', '', '', ''], ['c0ach', 'Second Coach', '', '', '', ''], ['', '', '', '', '', '']]);
+  const sheets = { '📍Practice Info': practiceInfo, '📍Game Info': gameInfo, 'Coaches': coachesSheet };
+  const ss = { getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = new FakeSheet(n, [[]])) };
+  const r1 = m.buildCoachAvailabilityCore_(ss, () => 0);
+  const ca = sheets['Coach Availability'];
+  eq(ca.rows[0].join('|'), 'CoachID|Name|9/22 Practice|9/22 Practice Note|9/26 Blue Game|9/26 Blue Game Note|9/26 Gold Game|9/26 Gold Game Note|9/29 Practice|9/29 Practice Note|10/17 Game|10/17 Game Note', 'coach availability headers: date order, practice first, cancelled skipped');
+  eq(r1.coachIdsMinted, 1, 'one CoachID minted (blank-name row ignored)');
+  eq(coachesSheet.rows[1][0], 'aaaaa', 'minted CoachID written to Coaches');
+  eq(r1.rowsAdded, 2, 'one availability row per coach');
+  eq(ca.rows[1][0], 'aaaaa', 'coach rows follow Coaches order'); eq(ca.rows[2][0], 'c0ach', 'second coach row');
+  eq(ca.rows[1][1], `=IF($A2="","",IFERROR(XLOOKUP($A2,'Coaches'!$A:$A,'Coaches'!$B:$B),""))`, 'coach Name lookup formula');
+  eq(r1.availabilityColumns.join(','), '3,5,7,9,11', 'availability columns found by header');
+  eq(r1.noteColumns.join(','), '4,6,8,10,12', 'note columns found by header');
+  // Re-run is a no-op.
+  const r2 = m.buildCoachAvailabilityCore_(ss, () => 0);
+  eq(r2.columnsCreated.length + r2.rowsAdded + r2.coachIdsMinted, 0, 'coach availability re-run changes nothing');
+  // 10/17 is split into team games: answers on the all-teams column carry into each new team column.
+  ca.rows[1][10] = "👎 Can't make it"; ca.rows[1][11] = 'out of town';
+  gameInfo.rows[3][2] = 'Blue'; gameInfo.rows.push(['10/17 Sat', 'Game 4', 'Gold']);
+  const r3 = m.buildCoachAvailabilityCore_(ss, () => 0);
+  eq(r3.columnsCreated.join('|'), '10/17 Blue Game|10/17 Blue Game Note|10/17 Gold Game|10/17 Gold Game Note', 'split creates team columns');
+  eq(ca.rows[1][12], "👎 Can't make it", 'answer carried into 10/17 Blue Game');
+  eq(ca.rows[1][15], 'out of town', 'note carried into 10/17 Gold Game Note');
+  eq(ca.rows[1][10], "👎 Can't make it", 'all-teams column kept');
+}
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);
 process.exit(fails ? 1 : 0);

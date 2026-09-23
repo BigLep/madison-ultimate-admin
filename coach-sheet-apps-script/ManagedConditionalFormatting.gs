@@ -134,9 +134,23 @@ function buildTextEqualsWholeSheetCfRule_(opt, whole) {
 function refreshManagedAvailabilityAndActivationCfOnSheet(sheet) {
   var gameIdx = collectGameAvailabilityColumnIndices_(sheet);
   var practiceCols = collectPracticeAvailabilityColumnIndices_(sheet);
-  var hasAvailabilityTargets = gameIdx.availabilityCols.length > 0 || practiceCols.length > 0;
-  var hasActivationTargets = gameIdx.activationCols.length > 0;
+  applyManagedAvailabilityCfRules_(
+    sheet,
+    gameIdx.availabilityCols.length > 0 || practiceCols.length > 0,
+    gameIdx.activationCols.length > 0
+  );
+}
 
+/**
+ * Replace the sheet's managed whole-sheet text-equals rules: one per availability value when the
+ * sheet has availability columns, one per activation value when it has activation columns. Rules
+ * the coach added by hand are kept. Shared by the player availability sheets and Coach Availability,
+ * which name their columns differently and so find their targets themselves.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {boolean} hasAvailabilityTargets
+ * @param {boolean} hasActivationTargets
+ */
+function applyManagedAvailabilityCfRules_(sheet, hasAvailabilityTargets, hasActivationTargets) {
   var managed = managedAvailabilityCfTextSet_();
   var rules = removeManagedTextEqualsCfRules_(sheet.getConditionalFormatRules(), managed);
   var whole = getWholeSheetRangeForCf_(sheet);

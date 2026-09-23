@@ -39,6 +39,13 @@ _Avoid_: name, display name
 Practice Availability or Game Availability: one row per Player, PlayerID in column A as the only typed per-player value, then Full Name, Grade, and Gender Identification as Roster lookup formulas in the Roster's own shape (`=IF($A2="","",IFERROR(XLOOKUP($A2,'📋 Roster'!$A:$A,'📋 Roster'!$F:$F),""))`), then the date columns families fill in through the portal. Rows are seeded by Build Practice/Game Availability and never deleted or reordered. See ADR 0004.
 _Avoid_: availability tracker, roster copy
 
+**Coaches tab**:
+One row per Coach (see the portal glossary's Coach and CoachID), keyed by CoachID in column A. Mastered here and edited by coaches through the portal; its row order is the display order everywhere.
+
+**Coach Availability**:
+The Availability Sheet for Coaches: CoachID in column A as the only typed value, Name as a Coaches lookup formula, then one column pair per practice and per game (every team's games, since coaches are not assigned to teams). Rows seeded by Build Coach Availability and never deleted.
+_Avoid_: coach attendance, staff availability
+
 **Generated Roster**:
 A practice roster or game roster prep sheet built from the Roster for one date. Each row is keyed by a hidden PlayerID column (the only typed value); Full Name, Team, Gender, Grade, and every availability cell are per-row lookups on it. Includes a Player only when Include In Generated Rosters resolves to TRUE.
 _Avoid_: printout, roster copy
