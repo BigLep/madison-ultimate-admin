@@ -511,20 +511,7 @@ function buildAvailabilityColumns(ss, dates, config) {
     consolidatePracticeAvailabilityDataValidations(availabilitySheet);
   }
 
-  // Enable text wrapping on the sheet so headers and cells wrap
-  const lastCol = availabilitySheet.getLastColumn();
-  const lastRow = Math.max(availabilitySheet.getLastRow(), 2);
-  if (lastCol >= 1 && lastRow >= 1) {
-    availabilitySheet.getRange(1, 1, lastRow, lastCol).setWrap(true);
-  }
-
-  // Apply Format Spruce Up silently (no modal)
-  console.log('✨ Applying Format Spruce Up formatting...');
-  try {
-    applySpruceUpFormatting(availabilitySheet);
-  } catch (error) {
-    console.warn('⚠️ Could not apply Format Spruce Up formatting:', error.message);
-  }
+  wrapAndSpruceUpAvailabilitySheet_(availabilitySheet);
 
   refreshManagedAvailabilityAndActivationCfOnSheet(availabilitySheet);
 
@@ -895,20 +882,12 @@ function consolidateGameAvailabilityDataValidations(sheet) {
   var lastRow = Math.max(sheet.getLastRow(), 100);
   var numRows = lastRow - 1;
   var idx = collectGameAvailabilityColumnIndices_(sheet);
-  var valOpts = GAME_AVAILABILITY_CONFIG.validationOptions.map(function (o) {
-    return o.value;
-  });
   var actOpts = GAME_ACTIVATION_STATUS_OPTIONS.map(function (o) {
     return o.value;
   });
 
   if (idx.availabilityCols.length > 0) {
-    var dvA = SpreadsheetApp.newDataValidation()
-      .requireValueInList(valOpts, true)
-      .setAllowInvalid(false)
-      .setHelpText('Select your availability')
-      .build();
-    applyDataValidationToColumnRanges_(sheet, idx.availabilityCols, numRows, dvA);
+    applyDataValidationToColumnRanges_(sheet, idx.availabilityCols, numRows, availabilityDataValidation_());
   }
   if (idx.activationCols.length > 0) {
     var dvB = SpreadsheetApp.newDataValidation()
@@ -930,15 +909,38 @@ function consolidatePracticeAvailabilityDataValidations(sheet) {
   var cols = collectPracticeAvailabilityColumnIndices_(sheet);
   if (cols.length === 0) return;
 
-  var valOpts = PRACTICE_AVAILABILITY_CONFIG.validationOptions.map(function (o) {
-    return o.value;
-  });
-  var dv = SpreadsheetApp.newDataValidation()
-    .requireValueInList(valOpts, true)
+  applyDataValidationToColumnRanges_(sheet, cols, numRows, availabilityDataValidation_());
+}
+
+/**
+ * The availability dropdown rule shared by Practice, Game, and Coach Availability.
+ * @return {GoogleAppsScript.Spreadsheet.DataValidation}
+ */
+function availabilityDataValidation_() {
+  return SpreadsheetApp.newDataValidation()
+    .requireValueInList(AVAILABILITY_VALIDATION_OPTIONS.map(function (o) { return o.value; }), true)
     .setAllowInvalid(false)
     .setHelpText('Select your availability')
     .build();
-  applyDataValidationToColumnRanges_(sheet, cols, numRows, dv);
+}
+
+/**
+ * Wrap every cell and apply Format Spruce Up silently (no modal). Shared tail of the availability
+ * builds; a Spruce Up failure is logged, never fatal.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ */
+function wrapAndSpruceUpAvailabilitySheet_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  const lastRow = Math.max(sheet.getLastRow(), 2);
+  if (lastCol >= 1) {
+    sheet.getRange(1, 1, lastRow, lastCol).setWrap(true);
+  }
+  console.log('✨ Applying Format Spruce Up formatting...');
+  try {
+    applySpruceUpFormatting(sheet);
+  } catch (error) {
+    console.warn('⚠️ Could not apply Format Spruce Up formatting:', error.message);
+  }
 }
 
 /**

@@ -398,6 +398,13 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   eq(ca.rows[1][12], "👎 Can't make it", 'answer carried into 10/17 Blue Game');
   eq(ca.rows[1][15], 'out of town', 'note carried into 10/17 Gold Game Note');
   eq(ca.rows[1][10], "👎 Can't make it", 'all-teams column kept');
+  // A team game added next to a surviving all-teams row on the same date is not a split: no carry-over.
+  gameInfo.rows.push(['10/24 Sat', 'Game 5', ''], ['10/24 Sat', 'Scrimmage', 'Blue']);
+  m.buildCoachAvailabilityCore_(ss, () => 0);
+  ca.rows[1][ca.rows[0].indexOf('10/24 Game')] = '👍 Planning to be there';
+  gameInfo.rows.push(['10/24 Sat', 'Game 5', 'Gold']);
+  const r4 = m.buildCoachAvailabilityCore_(ss, () => 0);
+  eq(r4.answersCarriedOver, 0, 'no carry-over while the all-teams row for that date still exists');
 }
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);

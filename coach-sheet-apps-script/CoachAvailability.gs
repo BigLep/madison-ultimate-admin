@@ -34,6 +34,11 @@ const COACH_AVAILABILITY_ROW_HEADERS = {
 const COACH_ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 const COACH_ID_LENGTH = 5;
 
+/** A cell value as trimmed text ('' for null/undefined). */
+function cellText_(value) {
+  return value === null || value === undefined ? '' : String(value).trim();
+}
+
 /**
  * Mint a short random opaque CoachID not already in use.
  * @param {Set<string>} taken
@@ -122,9 +127,8 @@ function ensureCoaches_(ss, random) {
   if (lastRow < 2) return { sheet: sheet, coachIds: [], coachIdsMinted: 0 };
 
   const numRows = lastRow - 1;
-  const text = v => (v === null || v === undefined) ? '' : String(v).trim();
-  const ids = sheet.getRange(2, idCol, numRows, 1).getValues().map(r => text(r[0]));
-  const names = sheet.getRange(2, nameCol, numRows, 1).getValues().map(r => text(r[0]));
+  const ids = sheet.getRange(2, idCol, numRows, 1).getValues().map(r => cellText_(r[0]));
+  const names = sheet.getRange(2, nameCol, numRows, 1).getValues().map(r => cellText_(r[0]));
   const taken = new Set(ids.filter(Boolean));
   let minted = 0;
   for (let i = 0; i < numRows; i++) {
@@ -153,6 +157,8 @@ function buildCoachAvailabilityCore_(ss, random) {
 
   // Columns: append any missing pair, in event order.
   const existing = getExistingColumns(sheet);
+  // Dates that still have an all-teams (blank Team) game row: no split has happened there yet.
+  const allTeamsGameDates = new Set(events.filter(e => e.kind === 'game' && !e.team).map(e => e.formattedDate));
   const columnsCreated = [];
   const carryOvers = [];
   let next = sheet.getLastColumn() + 1;
@@ -168,7 +174,7 @@ function buildCoachAvailabilityCore_(ss, random) {
     });
     // A blank-Team game later split into per-team rows: carry each coach's all-teams answer into
     // the new team column (grill Q26). The old column stays; the portal just stops showing it.
-    if (createdPair && event.kind === 'game' && event.team && (event.ordinalForDate || 1) === 1) {
+    if (createdPair && event.kind === 'game' && event.team && (event.ordinalForDate || 1) === 1 && !allTeamsGameDates.has(event.formattedDate)) {
       const allTeams = coachAvailabilityHeaders({ kind: 'game', formattedDate: event.formattedDate });
       if (existing[allTeams.availabilityHeader]) {
         carryOvers.push({ from: existing[allTeams.availabilityHeader], to: existing[hdr.availabilityHeader] });
@@ -192,7 +198,7 @@ function buildCoachAvailabilityCore_(ss, random) {
   const present = new Set();
   if (lastRow >= 2) {
     sheet.getRange(2, idCol, lastRow - 1, 1).getValues().forEach(r => {
-      const id = r[0] === null || r[0] === undefined ? '' : String(r[0]).trim();
+      const id = cellText_(r[0]);
       if (id) present.add(id);
     });
   }
@@ -244,21 +250,9 @@ function buildCoachAvailability() {
     const sheet = result.sheet;
 
     const numRows = Math.max(sheet.getLastRow(), 100) - 1;
-    if (result.availabilityColumns.length > 0) {
-      const dv = SpreadsheetApp.newDataValidation()
-        .requireValueInList(AVAILABILITY_VALIDATION_OPTIONS.map(o => o.value), true)
-        .setAllowInvalid(false)
-        .setHelpText('Select your availability')
-        .build();
-      applyDataValidationToColumnRanges_(sheet, result.availabilityColumns, numRows, dv);
-    }
+    applyDataValidationToColumnRanges_(sheet, result.availabilityColumns, numRows, availabilityDataValidation_());
     result.noteColumns.forEach(c => sheet.getRange(2, c, numRows, 1).clearDataValidations());
-    sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 2), sheet.getLastColumn()).setWrap(true);
-    try {
-      applySpruceUpFormatting(sheet);
-    } catch (error) {
-      console.warn('⚠️ Could not apply Format Spruce Up formatting:', error.message);
-    }
+    wrapAndSpruceUpAvailabilitySheet_(sheet);
     applyManagedAvailabilityCfRules_(sheet, result.availabilityColumns.length > 0, false);
 
     let message = `Processed ${result.eventCount} practice and game event(s).\n\n`;

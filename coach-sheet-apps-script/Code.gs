@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.42';
+const SCRIPT_VERSION = '3.43';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -61,7 +61,7 @@ const CONFIG = {
     sheetName: '📍Game Info'
   },
   // One row per Coach, keyed by CoachID; row order is display order on the portal's Coaches Page.
-  // The portal reads and writes it by header name (madison-ultimate src/lib/coaches-config.ts).
+  // The portal reads and writes it by header name (madison-ultimate src/lib/sheet-config.ts COACH_COLUMN_NAMES).
   coaches: {
     sheetName: 'Coaches'
   },
