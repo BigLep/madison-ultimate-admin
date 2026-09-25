@@ -1,12 +1,14 @@
 /**
  * Reading a Newsletter Block: finding the To field's person chip, and converting
- * the body cell (paragraphs, bullet lists, bold/italic/links, inline images) to
- * Markdown for the Buttondown Draft body.
+ * the body cell (paragraphs, bullet lists, tables, bold/italic/links, inline
+ * images) to Markdown for the Buttondown Draft body.
  */
 
 // No angle brackets: Buttondown's editor parses "<...>" as an HTML tag even in
 // Markdown mode, which swallows surrounding content into a bogus element.
 const IMAGE_UPLOAD_PLACEHOLDER = 'COPY_PASTE_IN_IMAGE';
+// Only for a table nested inside a body table's cell: a Markdown table cell can't
+// hold another table.
 const NESTED_TABLE_PLACEHOLDER = 'COPY_PASTE_IN_TABLE';
 
 // Markdown heading prefix for each DocumentApp.ParagraphHeading value that isn't
@@ -106,11 +108,12 @@ function rowToMarkdown(row, apiKey) {
         const indent = '  '.repeat(item.getNestingLevel());
         listBuffer.push(`${indent}- ${containerInlineMarkdown(item, apiKey)}`);
       } else if (type === DocumentApp.ElementType.TABLE) {
-        // A nested table in the body isn't converted; flagged with a visible
-        // placeholder rather than silently dropped.
+        // A table in the body (distinct from the Newsletter Block's own table)
+        // becomes a GFM Markdown table, always its own chunk.
         flushParagraph();
         flushList();
-        blocks.push(NESTED_TABLE_PLACEHOLDER);
+        const tableMarkdown = tableToMarkdown(child.asTable(), apiKey);
+        if (tableMarkdown) blocks.push(tableMarkdown);
       }
       // Anything else (horizontal rule, page break) is skipped silently.
     }
@@ -118,6 +121,58 @@ function rowToMarkdown(row, apiKey) {
   flushParagraph();
   flushList();
   return blocks.join('\n\n').trim();
+}
+
+/**
+ * A GFM Markdown table for a table in a Newsletter Block's body, or '' if it has
+ * no rows. Google Docs tables have no header-row concept, but GFM requires one,
+ * so the Doc's first row always becomes the header (bold in most renderers).
+ * Rows are padded to the widest row's cell count, since merged cells can leave
+ * rows with fewer cells than others.
+ */
+function tableToMarkdown(table, apiKey) {
+  const rows = [];
+  for (let r = 0; r < table.getNumRows(); r++) {
+    const row = table.getRow(r);
+    const cells = [];
+    for (let c = 0; c < row.getNumCells(); c++) {
+      cells.push(tableCellToMarkdown(row.getCell(c), apiKey));
+    }
+    rows.push(cells);
+  }
+  if (rows.length === 0) return '';
+  const columnCount = Math.max(1, ...rows.map(cells => cells.length));
+  const toLine = cells => {
+    const padded = cells.concat(Array(columnCount - cells.length).fill(''));
+    return `| ${padded.join(' | ')} |`;
+  };
+  const separator = `|${' --- |'.repeat(columnCount)}`;
+  return [toLine(rows[0]), separator, ...rows.slice(1).map(toLine)].join('\n');
+}
+
+/**
+ * One table cell's content on a single line, as a Markdown table cell must be.
+ * Separate paragraphs are joined with a literal <br> (raw HTML passes straight
+ * through Buttondown's Markdown renderer, like <mark>); list items become "• "
+ * lines, since Markdown list syntax doesn't work inside a table cell. Literal
+ * pipes are escaped so they don't split the cell.
+ */
+function tableCellToMarkdown(cell, apiKey) {
+  const lines = [];
+  for (let i = 0; i < cell.getNumChildren(); i++) {
+    const child = cell.getChild(i);
+    const type = child.getType();
+    if (type === DocumentApp.ElementType.PARAGRAPH) {
+      const text = containerInlineMarkdown(child.asParagraph(), apiKey).trim();
+      if (text) lines.push(text);
+    } else if (type === DocumentApp.ElementType.LIST_ITEM) {
+      const text = containerInlineMarkdown(child.asListItem(), apiKey).trim();
+      if (text) lines.push(`• ${text}`);
+    } else if (type === DocumentApp.ElementType.TABLE) {
+      lines.push(NESTED_TABLE_PLACEHOLDER);
+    }
+  }
+  return lines.join('<br>').replace(/\|/g, '\\|');
 }
 
 /**
