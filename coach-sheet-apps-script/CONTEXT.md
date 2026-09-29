@@ -59,7 +59,14 @@ As defined by the portal: Player Info, Caretaker Info, and Photo Upload all done
 _Avoid_: registered, signed up
 
 **Team**:
-The coach-assigned squad for the season, authored in Extra Player Info after tryouts. Fall 2026 values, in the order printouts sort them (`CONFIG.teams`): Blue, Gold, Silver, TBD, Practice Squad. TBD marks a Player not yet placed and goes away once team assignments are done; a blank Team sorts after every listed value. A Game Info row carries the Team it belongs to, blank meaning every team.
+The coach-assigned squad for the season, authored in Extra Player Info after tryouts. Fall 2026 values, in the order printouts sort them (`CONFIG.teams`): Blue, Gold, Silver, TBD, Practice Squad. Practice Squad (practice only, no games) is kept as a known value but has no players in fall 2026, since it was folded into Silver. TBD marks a Player not yet placed and goes away once team assignments are done; a blank Team sorts after every listed value. A Game Info row carries the Team it belongs to, blank meaning every team.
+
+**Activation Status**:
+Whether a Player on an Activation Team plays in a given game: Active, Inactive, or TBD (blank also means TBD). Authored by coaches per player per game in Game Availability's `M/D Activation Status` columns, and separate from the family's availability answer.
+_Avoid_: active roster, dropped, cut (those describe who is on the team at all, not who plays a given Saturday)
+
+**Activation Team**:
+A Team whose players are activated game by game because it has more players than one game roster holds (`CONFIG.gameRosterPrep.activationTeams`). Fall 2026: Silver only. Players on other Teams leave Activation Status blank and play every game they are available for.
 
 **Analyze Signups**:
 The coach sheet's report of Players whose Sources disagree or are incomplete: signups with no SPS Student ID, Final Forms students not yet seeded or joined, signups whose SPS Student ID has left Final Forms, suspected duplicate signups, signups not Profile Complete, and Seeded Signups the family has not finished. It only reports; the portal's Seed Signups from Final Forms does the joining and seeding.

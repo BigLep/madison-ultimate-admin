@@ -38,12 +38,12 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   };
   return range;
 };
-const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs']
+const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs', 'ConvertToAttendance.gs']
   .map(f => fs.readFileSync(dir + '/' + f, 'utf8')).join('\n');
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_ };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_ };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -405,6 +405,22 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   gameInfo.rows.push(['10/24 Sat', 'Game 5', 'Gold']);
   const r4 = m.buildCoachAvailabilityCore_(ss, () => 0);
   eq(r4.answersCarriedOver, 0, 'no carry-over while the all-teams row for that date still exists');
+}
+
+// Activation teams (decision D24): only listed Teams are activated; others' blank status counts as Active for attendance.
+{
+  const saved = m.CONFIG.gameRosterPrep.activationTeams;
+  m.CONFIG.gameRosterPrep.activationTeams = ['Silver'];
+  eq(m.isActivationTeam('Silver'), true, 'Silver is an activation team');
+  eq(m.isActivationTeam(' silver '), true, 'activation team match is case-insensitive');
+  eq(m.isActivationTeam('Blue'), false, 'Blue is not an activation team');
+  eq(m.isActivationTeam(''), false, 'blank Team is not an activation team');
+  eq(m.countsAsActive_('Active', 'Silver'), true, 'Active counts for Silver');
+  eq(m.countsAsActive_('', 'Silver'), false, 'blank Silver status is TBD, not Active');
+  eq(m.countsAsActive_('Inactive', 'Blue'), false, 'explicit Inactive never counts');
+  eq(m.countsAsActive_('', 'Blue'), true, 'blank status counts as Active for a non-activation Team');
+  eq(m.countsAsActive_('', undefined), false, 'blank status with no Team column stays not Active');
+  m.CONFIG.gameRosterPrep.activationTeams = saved;
 }
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);

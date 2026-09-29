@@ -1040,15 +1040,25 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
       console.log('✅ Sorting complete');
     }
 
-    if (hasTeam && fullNameInfo.rowCount > 0 && col.team) {
-      console.log('🔍 Applying filter to hide Practice Squad and Dropped...');
+    // Parent roster means "who is playing": hide Practice Squad and Dropped (by Team) and players
+    // marked Inactive for the first game (by Activation Status). TBD and blank still show.
+    var filterTeam = hasTeam && col.team;
+    var filterActivation = col.games[0] && col.games[0].activation;
+    if (fullNameInfo.rowCount > 0 && (filterTeam || filterActivation)) {
+      console.log('🔍 Applying filter to hide Practice Squad, Dropped, and Inactive...');
       const fullDataRange = newSheet.getRange(1, 1, fullNameInfo.rowCount + 1, numCols);
       const filter = fullDataRange.createFilter();
-      const criteria = SpreadsheetApp.newFilterCriteria()
-        .setHiddenValues(['Practice Squad', 'Dropped'])
-        .build();
-      filter.setColumnFilterCriteria(col.team, criteria);
-      console.log('✅ Filter applied - Practice Squad and Dropped hidden');
+      if (filterTeam) {
+        filter.setColumnFilterCriteria(col.team, SpreadsheetApp.newFilterCriteria()
+          .setHiddenValues(['Practice Squad', 'Dropped'])
+          .build());
+      }
+      if (filterActivation) {
+        filter.setColumnFilterCriteria(filterActivation, SpreadsheetApp.newFilterCriteria()
+          .setHiddenValues(['Inactive'])
+          .build());
+      }
+      console.log('✅ Filter applied');
     }
 
     styleHeaderRow(newSheet, headers.length);
@@ -1090,7 +1100,7 @@ function buildParentGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, gam
 
     var firstAct = col.games[0] && col.games[0].activation;
     const alertDetail = firstAct
-      ? (hasTeam ? 'Sorted using the first game’s activation and availability, then player name. Practice Squad and Dropped players are hidden (filter applied).' : 'Sorted using the first game’s activation and availability, then player name.')
+      ? (hasTeam ? 'Sorted using the first game’s activation and availability, then player name. Practice Squad, Dropped, and Inactive players are hidden (filter applied).' : 'Sorted using the first game’s activation and availability, then player name. Inactive players are hidden (filter applied).')
       : (hasTeam ? 'Sorted by player name. Practice Squad and Dropped players are hidden (filter applied).' : 'Sorted by player name.');
     SpreadsheetApp.getUi().alert(
       'Parent Game Roster Created!',

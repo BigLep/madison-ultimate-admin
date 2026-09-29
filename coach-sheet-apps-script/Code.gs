@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.43';
+const SCRIPT_VERSION = '3.44';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -149,8 +149,14 @@ const CONFIG = {
     // If true, this season tracks a per-game Activation Status (Active/Inactive/TBD): Build Game
     // Availability adds a "$date Activation Status" column per game, Build Game Roster Prep includes
     // it (sorted first), Build Practice Roster shows it for the next game, and the Apply Activation
-    // Status menu item is offered. If false, none of those appear. Fall 2026: false.
-    hasActivationStatus: false
+    // Status menu item is offered. If false, none of those appear. Fall 2026: true (Silver only).
+    hasActivationStatus: true,
+    // Teams whose players are activated game by game (case-insensitive). Other Teams leave their
+    // Activation Status blank and play every game they're available for, so Convert to Actual
+    // Attendance treats their blank as Active. Must match ACTIVATION_TEAMS in
+    // madison-ultimate/src/lib/app-config.ts, which decides who sees the status in the Player Portal.
+    // Fall 2026: Silver, after Practice Squad was folded into it (decision D24).
+    activationTeams: ['Silver']
   }
 };
 

@@ -115,6 +115,18 @@ function seedPrintoutPlayerRows(targetSheet, rosterSheet, startRow, playerIdColu
 }
 
 /**
+ * Whether a Team is one of this season's activation teams (CONFIG.gameRosterPrep.activationTeams),
+ * compared case-insensitively. Blank is never an activation team.
+ * @param {*} team
+ * @return {boolean}
+ */
+function isActivationTeam(team) {
+  const t = team === null || team === undefined ? '' : String(team).trim().toLowerCase();
+  if (t === '') return false;
+  return (CONFIG.gameRosterPrep.activationTeams || []).some(function (a) { return String(a).trim().toLowerCase() === t; });
+}
+
+/**
  * Sort rank of a Team value: its position in CONFIG.teams; blank or unlisted values rank after
  * every listed Team so unassigned Players sit at the bottom of a printout.
  * @param {*} value
