@@ -99,6 +99,7 @@ Reads Signups and Final Forms directly (not the Roster, so it works before the R
 | `CreatePracticeCalendarEvents.gs`, `CreateGameCalendarEvents.gs`, `ExportGameInfoToMarkdown.gs` | Calendar sync and exports |
 | `FormatSpruceUp.gs`, `DeleteEmptyRowsColumns.gs`, `OrganizeSheets.gs`, `FullNameDiff.gs` | Utilities |
 | `GroupBorders.gs` | Draw Group Borders: generic Group Border command for any sheet/columns (CONTEXT.md) |
+| `GroupPastDateColumns.gs` | Group Past Date Columns: folds the active sheet's Past Date Columns into one collapsed column group (CONTEXT.md) |
 
 ### Deployment
 

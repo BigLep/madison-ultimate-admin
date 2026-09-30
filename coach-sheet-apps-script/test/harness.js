@@ -38,12 +38,12 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   };
   return range;
 };
-const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs', 'ConvertToAttendance.gs']
+const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs', 'ConvertToAttendance.gs', 'GroupPastDateColumns.gs']
   .map(f => fs.readFileSync(dir + '/' + f, 'utf8')).join('\n');
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_ };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_ };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -421,6 +421,48 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   eq(m.countsAsActive_('', 'Blue'), true, 'blank status counts as Active for a non-activation Team');
   eq(m.countsAsActive_('', undefined), false, 'blank status with no Team column stays not Active');
   m.CONFIG.gameRosterPrep.activationTeams = saved;
+}
+
+// Group Past Date Columns: past means strictly before today; the span covers every column a past date carries.
+{
+  const today = new Date(2026, 8, 26); // 9/26/2026
+  const gaHeaders = ['PlayerID', 'Full Name', 'Grade', 'Gender Identification',
+    '9/13 Availability', '9/13 Activation Status', '9/13 Note',
+    '9/20 Availability', '9/20 Note', '9/20 Availability (Game 2)', '9/20 Note (Game 2)',
+    '9/26 Availability', '9/26 Note', '10/3 Availability'];
+  const s1 = m.findPastDateColumnSpan_(gaHeaders, today);
+  eq(s1.status, 'ok', 'past span found on Game Availability headers');
+  eq(`${s1.first}-${s1.last}`, '4-10', 'span runs from 9/13 Availability through 9/20 Note (Game 2); today stays visible');
+  eq(`${s1.firstLabel} to ${s1.lastLabel}`, '9/13 to 9/20', 'span labels');
+  eq(`${s1.dateFirst}-${s1.dateLast}`, '4-13', 'date columns span includes future dates');
+  eq(m.findPastDateColumnSpan_(['PlayerID', 'Name', '9/2 Practice', '9/2 Practice Note', '9/6 Silver Game', '9/30 Practice'], today).last, 4, 'Coach Availability headers parse');
+  eq(m.findPastDateColumnSpan_(['PlayerID', '9/9', '9/9 Note', 'Group', '9/12'], today).last, 4, 'non-date column between past dates is inside the span');
+  eq(m.findPastDateColumnSpan_(['PlayerID', '9/26', '10/3 Note'], today).status, 'none', 'no past dates');
+  eq(m.findPastDateColumnSpan_(['PlayerID', 'Full Name', '#', 'Grade 9/10'], today).status, 'none', 'M/D must lead the header');
+  eq(m.findPastDateColumnSpan_(['PlayerID', '9/10abc', '13/1'], today).status, 'none', 'M/D must be followed by whitespace and be a real month');
+  eq(m.findPastDateColumnSpan_(['PlayerID', new Date(2026, 8, 1)], today).last, 1, 'Date-valued header counts');
+  const ooo = m.findPastDateColumnSpan_(['PlayerID', '9/13', '10/3', '9/20'], today);
+  eq(`${ooo.status}|${ooo.header}`, 'outOfOrder|10/3', 'future date before a past date is reported, not grouped');
+
+  // Sheet level: replaces overlapping groups, keeps others, creates one collapsed group.
+  const gs = new FakeSheet('Game Availability', [gaHeaders]);
+  gs.groups = [{ start: 1, n: 2 }, { start: 5, n: 3 }]; // a manual group on PlayerID/Full Name, last week's past-date group
+  gs.getColumnGroup = function (col, depth) {
+    const g = this.groups.find(x => col >= x.start && col < x.start + x.n);
+    if (!g || depth !== 1) return null;
+    const sheet = this;
+    return { remove() { sheet.groups.splice(sheet.groups.indexOf(g), 1); }, collapse() { g.collapsed = true; } };
+  };
+  const baseGetRange = gs.getRange;
+  gs.getRange = function (r, c, nr, nc) { const rg = baseGetRange.call(this, r, c, nr, nc); rg.shiftColumnGroupDepth = (d) => { gs.groups.push({ start: c, n: nc }); return rg; }; return rg; };
+  const res = m.groupPastDateColumnsOnSheet_(gs, today);
+  eq(`${res.status}|${res.columnCount}|${res.firstLabel}|${res.lastLabel}`, 'ok|7|9/13|9/20', 'groupPastDateColumnsOnSheet_ result');
+  eq(JSON.stringify(gs.groups), JSON.stringify([{ start: 1, n: 2 }, { start: 5, n: 7, collapsed: true }]), 'old date group replaced by one collapsed group; unrelated group kept');
+  eq(gs.writes.length, 0, 'grouping never writes cell values');
+  const oooSheet = new FakeSheet('Game Availability', [['PlayerID', '9/13', '10/3', '9/20']]);
+  oooSheet.groups = [{ start: 2, n: 1 }]; oooSheet.getColumnGroup = gs.getColumnGroup;
+  eq(m.groupPastDateColumnsOnSheet_(oooSheet, today).status, 'outOfOrder', 'out-of-order sheet is left alone');
+  eq(JSON.stringify(oooSheet.groups), JSON.stringify([{ start: 2, n: 1 }]), 'out-of-order sheet keeps its existing groups');
 }
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);
