@@ -1,9 +1,10 @@
 name: FinalForms export
 
 on:
-  schedule:
-    # 13:00 UTC = 6:00am Pacific during PDT (7:00am during PST)
-    - cron: "0 13 * * *"
+  # Daily schedule disabled: the export is only needed at the start of the season.
+  # To re-enable, uncomment (13:00 UTC = 6:00am Pacific during PDT, 7:00am during PST):
+  # schedule:
+  #   - cron: "0 13 * * *"
   workflow_dispatch: {}
 
 # Never cancel an in-flight export: the signup dashboard's refresh button (madison-ultimate's
@@ -18,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: Export students_basic CSV and upload to Drive
         run: uv run finalforms-export/export_students_basic.py
         env:
