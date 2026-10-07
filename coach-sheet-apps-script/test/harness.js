@@ -449,10 +449,12 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   gs.groups = [{ start: 1, n: 2 }, { start: 5, n: 3 }]; // a manual group on PlayerID/Full Name, last week's past-date group
   gs.getColumnGroup = function (col, depth) {
     const g = this.groups.find(x => col >= x.start && col < x.start + x.n);
-    if (!g || depth !== 1) return null;
+    // The real API throws, not returns null, when there is no group at the column.
+    if (!g || depth !== 1) throw new Error(`A column group does not exist with index ${col} and group depth ${depth}`);
     const sheet = this;
     return { remove() { sheet.groups.splice(sheet.groups.indexOf(g), 1); }, collapse() { g.collapsed = true; } };
   };
+  gs.getColumnGroupDepth = function (col) { return this.groups.some(x => col >= x.start && col < x.start + x.n) ? 1 : 0; };
   const baseGetRange = gs.getRange;
   gs.getRange = function (r, c, nr, nc) { const rg = baseGetRange.call(this, r, c, nr, nc); rg.shiftColumnGroupDepth = (d) => { gs.groups.push({ start: c, n: nc }); return rg; }; return rg; };
   const res = m.groupPastDateColumnsOnSheet_(gs, today);
@@ -460,7 +462,7 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   eq(JSON.stringify(gs.groups), JSON.stringify([{ start: 1, n: 2 }, { start: 5, n: 7, collapsed: true }]), 'old date group replaced by one collapsed group; unrelated group kept');
   eq(gs.writes.length, 0, 'grouping never writes cell values');
   const oooSheet = new FakeSheet('Game Availability', [['PlayerID', '9/13', '10/3', '9/20']]);
-  oooSheet.groups = [{ start: 2, n: 1 }]; oooSheet.getColumnGroup = gs.getColumnGroup;
+  oooSheet.groups = [{ start: 2, n: 1 }]; oooSheet.getColumnGroup = gs.getColumnGroup; oooSheet.getColumnGroupDepth = gs.getColumnGroupDepth;
   eq(m.groupPastDateColumnsOnSheet_(oooSheet, today).status, 'outOfOrder', 'out-of-order sheet is left alone');
   eq(JSON.stringify(oooSheet.groups), JSON.stringify([{ start: 2, n: 1 }]), 'out-of-order sheet keeps its existing groups');
 }

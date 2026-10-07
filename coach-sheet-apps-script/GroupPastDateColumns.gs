@@ -48,11 +48,11 @@ function groupPastDateColumnsOnSheet_(sheet, today) {
   const span = findPastDateColumnSpan_(headers, today);
   if (span.status !== 'ok') return span;
 
-  // 1-based columns from here on.
+  // 1-based columns from here on. getColumnGroup throws (rather than returning null) when the
+  // column has no group, so check the depth first.
   for (let col = span.dateFirst + 1; col <= span.dateLast + 1; col++) {
-    let group;
     let guard = 0;
-    while ((group = sheet.getColumnGroup(col, 1)) && guard++ < 10) group.remove();
+    while (sheet.getColumnGroupDepth(col) > 0 && guard++ < 10) sheet.getColumnGroup(col, 1).remove();
   }
   const first = span.first + 1;
   const count = span.last - span.first + 1;
