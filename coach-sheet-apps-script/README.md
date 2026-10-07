@@ -272,6 +272,7 @@ Full Name (Preferred First Name followed by Last Name, derived in the Roster) is
 | `CoachAvailability.gs` | Build Coach Availability (Coaches and Coach Availability tabs) |
 | `SaveSheetAsPdf.gs` | Save Sheet as PDF |
 | `GroupPastDateColumns.gs` | Group Past Date Columns (collapse finished dates on the active sheet) |
+| `SortDateColumns.gs` | Sort Date Columns (reorder the active sheet's date columns chronologically, keeping each Note with its event) |
 | `ManagedConditionalFormatting.gs` | Shared whole-sheet CF for availability/activation values (availability tabs + roster prep) |
 | `BuildPracticeRoster.gs` | Practice roster generation |
 | `BuildGameRosterPrepSheet.gs` | Game day roster generation |

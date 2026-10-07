@@ -29,6 +29,7 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
     setFormula: function (v) { return this.setValues([[v]]); },
     setValue: function (v) { return this.setValues([[v]]); },
     sort: (spec) => { const block = sheet.rows.slice(r - 1, r - 1 + nr); block.sort((a, b) => { for (const k of spec) { const x = a[k.column - 1] ?? '', y = b[k.column - 1] ?? ''; if (x < y) return -1; if (x > y) return 1; } return 0; }); block.forEach((row, i) => { sheet.rows[r - 1 + i] = row; }); },
+    getColumn: () => c, getNumColumns: () => nc,
     setFontWeight: () => range, clearDataValidations: () => ({}), setWrap: () => ({}),
     setBorder: (top, left, bottom, right, vertical, horizontal, color, style) => {
       sheet.borders = sheet.borders || [];
@@ -38,12 +39,12 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   };
   return range;
 };
-const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs', 'ConvertToAttendance.gs', 'GroupPastDateColumns.gs']
+const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs', 'ConvertToAttendance.gs', 'GroupPastDateColumns.gs', 'SortDateColumns.gs']
   .map(f => fs.readFileSync(dir + '/' + f, 'utf8')).join('\n');
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_ };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_ };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -465,6 +466,35 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   oooSheet.groups = [{ start: 2, n: 1 }]; oooSheet.getColumnGroup = gs.getColumnGroup; oooSheet.getColumnGroupDepth = gs.getColumnGroupDepth;
   eq(m.groupPastDateColumnsOnSheet_(oooSheet, today).status, 'outOfOrder', 'out-of-order sheet is left alone');
   eq(JSON.stringify(oooSheet.groups), JSON.stringify([{ start: 2, n: 1 }]), 'out-of-order sheet keeps its existing groups');
+}
+
+// Sort Date Columns: stable chronological sort of the one contiguous run of date columns, moved as blocks.
+{
+  const today = new Date(2026, 9, 6);
+  const caHeaders = ['CoachID', 'Name', '9/9 Practice', '9/9 Practice Note', '10/16 Practice', '10/16 Practice Note',
+    '11/14 Game', '11/14 Game Note', '10/17 Blue Game', '10/17 Blue Game Note', '10/17 Gold Game', '10/17 Gold Game Note',
+    '10/24 Blue Game', '10/24 Blue Game Note'];
+  const run = m.findDateColumnRun_(caHeaders, 2026);
+  eq(`${run.status}|${run.start}|${run.keys.length}`, 'ok|2|12', 'date run found after CoachID and Name');
+  eq(m.findDateColumnRun_(['PlayerID', 'Name'], 2026).status, 'none', 'no date columns');
+  const split = m.findDateColumnRun_(['PlayerID', '9/9', '9/9 Note', 'Group', '9/12'], 2026);
+  eq(`${split.status}|${split.header}`, 'split|Group', 'a non-date column inside the dates stops the sort');
+  eq(m.planDateColumnMoves_([1, 2, 2, 3]).length, 0, 'already sorted run needs no moves');
+
+  const cs = new FakeSheet('Coach Availability', [caHeaders.slice()]);
+  cs.moveColumns = function (range, dest) {
+    const c = range.getColumn() - 1;
+    const n = range.getNumColumns();
+    const row = this.rows[0];
+    const block = row.splice(c, n);
+    row.splice(dest - 1 > c ? dest - 1 - n : dest - 1, 0, ...block);
+  };
+  const res = m.sortDateColumnsOnSheet_(cs, today);
+  eq(JSON.stringify(cs.rows[0]), JSON.stringify(['CoachID', 'Name', '9/9 Practice', '9/9 Practice Note', '10/16 Practice', '10/16 Practice Note',
+    '10/17 Blue Game', '10/17 Blue Game Note', '10/17 Gold Game', '10/17 Gold Game Note', '10/24 Blue Game', '10/24 Blue Game Note',
+    '11/14 Game', '11/14 Game Note']), 'columns sorted chronologically, each Note kept after its event, same-day order kept');
+  eq(`${res.status}|${res.columnCount}|${res.moveCount}`, 'ok|12|1', 'out-of-place columns move as one block');
+  eq(m.sortDateColumnsOnSheet_(cs, today).status, 'sorted', 're-running on a sorted sheet changes nothing');
 }
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);
