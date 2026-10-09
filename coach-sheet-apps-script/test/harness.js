@@ -30,7 +30,7 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
     setValue: function (v) { return this.setValues([[v]]); },
     sort: (spec) => { const block = sheet.rows.slice(r - 1, r - 1 + nr); block.sort((a, b) => { for (const k of spec) { const x = a[k.column - 1] ?? '', y = b[k.column - 1] ?? ''; if (x < y) return -1; if (x > y) return 1; } return 0; }); block.forEach((row, i) => { sheet.rows[r - 1 + i] = row; }); },
     getColumn: () => c, getNumColumns: () => nc,
-    setFontWeight: () => range, clearDataValidations: () => ({}), setWrap: () => ({}),
+    setFontWeight: () => range, setHorizontalAlignment: (a) => { sheet.alignments = sheet.alignments || []; sheet.alignments.push({ r, c, nr, nc, a }); return range; }, clearDataValidations: () => ({}), setWrap: () => ({}),
     setBorder: (top, left, bottom, right, vertical, horizontal, color, style) => {
       sheet.borders = sheet.borders || [];
       sheet.borders.push({ r, c, nr, nc, top, left, bottom, right, vertical, horizontal, color, style });
@@ -509,6 +509,25 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   eq(`${r.updated}|${r.skipped}`, '2|1', 'apply joins on column A PlayerID despite a duplicate PlayerID header');
   eq(`${ga.rows[1][3]}|${ga.rows[2][3]}`, 'Active|Inactive', 'statuses written to Game Availability');
   delete sandbox.SpreadsheetApp.getActiveSpreadsheet;
+}
+
+// Build Game Roster Prep team summary: one row per game Team, Bx / Gx counts of active players
+// planning to be there. Silver (an Activation Team) needs "Active"; Blue and Gold also count blank.
+{
+  const prevHasTeam = m.CONFIG.gameRosterPrep.hasTeam, prevHasAct = m.CONFIG.gameRosterPrep.hasActivationStatus;
+  m.CONFIG.gameRosterPrep.hasTeam = true; m.CONFIG.gameRosterPrep.hasActivationStatus = true;
+  const lay = m.getGameRosterPrepColumnLayout('9/13', gCols);
+  eq(lay.headers.join('|'), 'PlayerID|#|Full Name|Team|Gender|Grade|9/13 Activation Status|9/13 Availability|9/13 Note', 'summary case layout');
+  const ss = new FakeSheet('Game Roster Prep', [lay.headers]);
+  const end = vm.runInContext('addCoachGameRosterTeamSummary', sandbox)(ss, 4, lay.indices, '9/13');
+  eq(end, 10, 'summary ends after header row 7 plus three team rows');
+  eq(ss.rows[6].slice(2, 5).join('|'), '9/13 active & planning|Bx|Gx', 'summary header row');
+  eq(ss.rows.slice(7, 10).map(r => r[2]).join(','), 'Blue,Gold,Silver', 'summary rows are the game teams in order');
+  const base = (row, g) => `$D$2:$D$5,$C${row},$E$2:$E$5,${g}$7,$H$2:$H$5,"👍 Planning to be there"`;
+  eq(ss.rows[9][3], `=COUNTIFS(${base(10, 'D')},$G$2:$G$5,"Active")`, 'Silver Bx needs Active');
+  eq(ss.rows[7][4], `=COUNTIFS(${base(8, 'E')},$G$2:$G$5,"Active")+COUNTIFS(${base(8, 'E')},$G$2:$G$5,"")`, 'Blue Gx counts Active or blank');
+  eq(JSON.stringify(ss.alignments), JSON.stringify([{ r: 7, c: 3, nr: 1, nc: 3, a: 'center' }, { r: 8, c: 4, nr: 3, nc: 2, a: 'right' }]), 'summary headers centered, both count columns right-aligned');
+  m.CONFIG.gameRosterPrep.hasTeam = prevHasTeam; m.CONFIG.gameRosterPrep.hasActivationStatus = prevHasAct;
 }
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);

@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.49';
+const SCRIPT_VERSION = '3.51';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -156,7 +156,10 @@ const CONFIG = {
     // Attendance treats their blank as Active. Must match ACTIVATION_TEAMS in
     // madison-ultimate/src/lib/app-config.ts, which decides who sees the status in the Player Portal.
     // Fall 2026: Silver, after Practice Squad was folded into it (decision D24).
-    activationTeams: ['Silver']
+    activationTeams: ['Silver'],
+    // Teams that play games, in row order of the coach game roster prep's team summary (Bx / Gx
+    // counts of active players planning to be there). TBD and Practice Squad don't play games.
+    gameTeams: ['Blue', 'Gold', 'Silver']
   }
 };
 
