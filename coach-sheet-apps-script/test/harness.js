@@ -39,12 +39,12 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   };
   return range;
 };
-const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs', 'ConvertToAttendance.gs', 'GroupPastDateColumns.gs', 'SortDateColumns.gs']
+const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs', 'Availability.gs', 'BuildPracticeRoster.gs', 'BuildGameRosterPrepSheet.gs', 'CreatePracticeCalendarEvents.gs', 'CreateGameCalendarEvents.gs', 'GroupBorders.gs', 'SaveSheetAsPdf.gs', 'CoachAvailability.gs', 'ConvertToAttendance.gs', 'GroupPastDateColumns.gs', 'SortDateColumns.gs', 'ApplyActivationStatusFromRoster.gs']
   .map(f => fs.readFileSync(dir + '/' + f, 'utf8')).join('\n');
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_ };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_, applyActivationStatusFromRosterSheet };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -495,6 +495,20 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
     '11/14 Game', '11/14 Game Note']), 'columns sorted chronologically, each Note kept after its event, same-day order kept');
   eq(`${res.status}|${res.columnCount}|${res.moveCount}`, 'ok|12|1', 'out-of-place columns move as one block');
   eq(m.sortDateColumnsOnSheet_(cs, today).status, 'sorted', 're-running on a sorted sheet changes nothing');
+}
+
+// Apply Activation Status: joins on the first PlayerID column even when a later header is also "PlayerID".
+{
+  const ga = new FakeSheet('Game Availability', [['PlayerID', 'Full Name', '10/10 Availability', '10/10 Activation Status'],
+    ['p1', 'Ann', '', ''], ['p2', 'Bo', '', 'TBD']]);
+  const src = new FakeSheet('Decide Silver Activation', [['PlayerID', 'PlayerID', '10/10 Activation Status'],
+    ['p1', 'Ann', 'Active'], ['CUT_Bx', '', ''], ['p2', 'Bo', 'Inactive']]);
+  const sheets = { 'Game Availability': ga, 'Decide Silver Activation': src };
+  sandbox.SpreadsheetApp.getActiveSpreadsheet = () => ({ getSheetByName: (n) => sheets[n] || null });
+  const r = m.applyActivationStatusFromRosterSheet('Decide Silver Activation', '10/10 Activation Status');
+  eq(`${r.updated}|${r.skipped}`, '2|1', 'apply joins on column A PlayerID despite a duplicate PlayerID header');
+  eq(`${ga.rows[1][3]}|${ga.rows[2][3]}`, 'Active|Inactive', 'statuses written to Game Availability');
+  delete sandbox.SpreadsheetApp.getActiveSpreadsheet;
 }
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);

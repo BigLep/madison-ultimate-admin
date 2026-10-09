@@ -195,7 +195,9 @@ function applyActivationStatusFromRosterSheet(sourceSheetName, activationHeader)
   let colAct = -1;
   for (let i = 0; i < srcHeaders.length; i++) {
     const h = strCell_(srcHeaders[i]);
-    if (h === CONFIG.columns.playerId) colId = i + 1;
+    // First match wins: PlayerID is column A by convention, and a second "PlayerID" header (a
+    // mislabeled name column, say) must not silently turn the join into a no-op.
+    if (h === CONFIG.columns.playerId && colId < 0) colId = i + 1;
     if (h === CONFIG.columns.fullName) colName = i + 1;
     if (headerText_(srcHeaders[i]) === activationHeader) colAct = i + 1;
   }
