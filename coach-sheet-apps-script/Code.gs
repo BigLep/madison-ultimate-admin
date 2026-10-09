@@ -11,7 +11,7 @@
  */
 
 // Script Version - Increment this number when making changes
-const SCRIPT_VERSION = '3.48';
+const SCRIPT_VERSION = '3.49';
 
 // Roster layout: row 1 holds the column headers, data rows start at row 2 (one
 // per Player, each self-contained so the sheet can be sorted and filtered freely).
@@ -139,7 +139,7 @@ const CONFIG = {
   teamDisplay: {
     blue: '🟦 Blue',
     gold: '🟨 Gold',
-    silver: '🪙 Silver',
+    silver: '◻️ Silver',
     'practice squad': '🏋️ Practice Squad'
   },
 
