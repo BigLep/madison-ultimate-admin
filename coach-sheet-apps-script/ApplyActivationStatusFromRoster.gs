@@ -40,60 +40,56 @@ function strCell_(v) {
 }
 
 /**
- * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
- * @return {Array<{ sheetName: string, activationHeader: string }>}
+ * The distinct "M/D Activation Status" headers on one sheet, in column order. Only the active sheet
+ * is scanned, so the dialog opens fast no matter how many sheets the spreadsheet has.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @return {string[]}
  */
-function getSheetsWithGameActivationStatusColumn(ss) {
+function getGameActivationStatusHeadersOnSheet_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return [];
+  const row = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   const out = [];
-  const sheets = ss.getSheets();
-  for (let s = 0; s < sheets.length; s++) {
-    const sh = sheets[s];
-    const name = sh.getName();
-    if (name === PRACTICE_AVAILABILITY_CONFIG.availabilitySheet) continue;
-    if (name === GAME_AVAILABILITY_CONFIG.availabilitySheet) continue;
-    const lastCol = sh.getLastColumn();
-    if (lastCol < 1) continue;
-    const row = sh.getRange(1, 1, 1, lastCol).getValues()[0];
-    const seen = {};
-    for (let c = 0; c < row.length; c++) {
-      const h = headerText_(row[c]);
-      if (parseGameActivationStatusHeader(h) && seen[h] !== true) {
-        seen[h] = true;
-        out.push({ sheetName: name, activationHeader: h });
-      }
-    }
+  for (let c = 0; c < row.length; c++) {
+    const h = headerText_(row[c]);
+    if (parseGameActivationStatusHeader(h) && out.indexOf(h) === -1) out.push(h);
   }
-  out.sort(function (a, b) {
-    if (a.sheetName !== b.sheetName) return a.sheetName.localeCompare(b.sheetName);
-    return a.activationHeader.localeCompare(b.activationHeader);
-  });
   return out;
 }
 
 function showApplyActivationStatusDialog() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const candidates = getSheetsWithGameActivationStatusColumn(ss);
-    if (candidates.length === 0) {
+    const sheet = SpreadsheetApp.getActiveSheet();
+    const sheetName = sheet.getName();
+    if (sheetName === GAME_AVAILABILITY_CONFIG.availabilitySheet || sheetName === PRACTICE_AVAILABILITY_CONFIG.availabilitySheet) {
       ui.alert(
-        'No matching sheets',
-        'No sheets found with a column like "3/28 Activation Status".',
+        'Open the source sheet first',
+        'Apply Activation Status copies from the sheet you are on into Game Availability. Switch to the prep sheet (e.g. "3/28 Game Roster Prep") and run it again.',
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+    const headers = getGameActivationStatusHeadersOnSheet_(sheet);
+    if (headers.length === 0) {
+      ui.alert(
+        'No Activation Status column',
+        'The current sheet "' + sheetName + '" has no column like "3/28 Activation Status". Switch to the prep sheet you want to copy from and run it again.',
         ui.ButtonSet.OK
       );
       return;
     }
 
-    const optionsHtml = candidates.map(function (item) {
+    const optionsHtml = headers.map(function (header) {
       const payload = encodeURIComponent(JSON.stringify({
-        sheetName: item.sheetName,
-        activationHeader: item.activationHeader
+        sheetName: sheetName,
+        activationHeader: header
       }));
       return (
         '<option value="' +
         payload +
         '">' +
-        escapeHtmlApplyActivation(item.sheetName + ' — ' + item.activationHeader) +
+        escapeHtmlApplyActivation(header) +
         '</option>'
       );
     }).join('');
@@ -105,11 +101,11 @@ function showApplyActivationStatusDialog() {
         '.note{font-size:12px;color:#5f6368;margin-top:8px}.buttons{display:flex;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid #e0e0e0}' +
         '.btn{flex:1;padding:10px 16px;border:none;border-radius:4px;font-size:14px;font-weight:500;cursor:pointer}' +
         '.btn-primary{background:#1a73e8;color:#fff}.btn-secondary{background:#f8f9fa;color:#3c4043;border:1px solid #dadce0}</style></head><body>' +
-        '<label for="src">Source sheet and Activation Status column</label>' +
+        '<label for="src">Activation Status column on "' + escapeHtmlApplyActivation(sheetName) + '"</label>' +
         '<select id="src">' +
         optionsHtml +
         '</select>' +
-        '<div class="note">Each player row on the source sheet (matched by PlayerID, or by Full Name on an older sheet) updates that player’s cell in Game Availability for this column (Active, Inactive, or TBD only).</div>' +
+        '<div class="note">Each player row on this sheet (matched by PlayerID, or by Full Name on an older sheet) updates that player’s cell in Game Availability for this column (Active, Inactive, or TBD only).</div>' +
         '<div class="buttons">' +
         '<button class="btn btn-primary" onclick="runApply()">Apply</button>' +
         '<button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>' +

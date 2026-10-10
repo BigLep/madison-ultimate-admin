@@ -511,6 +511,12 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   delete sandbox.SpreadsheetApp.getActiveSpreadsheet;
 }
 
+// Apply Activation Status dialog lists only the active sheet's distinct Activation Status headers, in column order.
+{
+  const sh = new FakeSheet('10/17 Game Roster Prep', [['PlayerID', 'Full Name', '10/17 Activation Status', '10/17 Availability', '10/17 Activation Status (Game 2)', '10/17 Activation Status', 'Note']]);
+  eq(vm.runInContext('getGameActivationStatusHeadersOnSheet_', sandbox)(sh).join('|'), '10/17 Activation Status|10/17 Activation Status (Game 2)', 'activation headers on the active sheet, deduped');
+}
+
 // Build Game Roster Prep team summary: one row per game Team, Bx / Gx counts of active players
 // planning to be there. Silver (an Activation Team) needs "Active"; Blue and Gold also count blank.
 {
