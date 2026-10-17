@@ -18,6 +18,8 @@ FakeSheet.prototype.getMaxRows = function () { return 1000; };
 FakeSheet.prototype.getMaxColumns = function () { return 26; };
 FakeSheet.prototype.hideColumns = function (c) { this.hidden.push(c); };
 FakeSheet.prototype.insertColumnAfter = function (c) { this.rows.forEach(r => { while (r.length < c) r.push(''); r.splice(c, 0, ''); }); };
+FakeSheet.prototype.insertRowAfter = function (r) { this.rows.splice(r, 0, []); };
+FakeSheet.prototype.setRowHeightsForced = function (r, n, h) { this.rowHeights = this.rowHeights || {}; for (let i = 0; i < n; i++) this.rowHeights[r + i] = h; };
 FakeSheet.prototype.deleteColumn = function (c) { this.rows.forEach(r => r.splice(c - 1, 1)); };
 FakeSheet.prototype.getRange = function (r, c, nr, nc) {
   const sheet = this; nr = nr || 1; nc = nc || 1;
@@ -30,7 +32,7 @@ FakeSheet.prototype.getRange = function (r, c, nr, nc) {
     setValue: function (v) { return this.setValues([[v]]); },
     sort: (spec) => { const block = sheet.rows.slice(r - 1, r - 1 + nr); block.sort((a, b) => { for (const k of spec) { const x = a[k.column - 1] ?? '', y = b[k.column - 1] ?? ''; if (x < y) return -1; if (x > y) return 1; } return 0; }); block.forEach((row, i) => { sheet.rows[r - 1 + i] = row; }); },
     getColumn: () => c, getNumColumns: () => nc,
-    setFontWeight: () => range, setHorizontalAlignment: (a) => { sheet.alignments = sheet.alignments || []; sheet.alignments.push({ r, c, nr, nc, a }); return range; }, clearDataValidations: () => ({}), setWrap: () => ({}),
+    setFontWeight: () => range, setBackground: (bg) => { sheet.backgrounds = sheet.backgrounds || []; sheet.backgrounds.push({ r, c, nr, nc, bg }); return range; }, setHorizontalAlignment: (a) => { sheet.alignments = sheet.alignments || []; sheet.alignments.push({ r, c, nr, nc, a }); return range; }, clearDataValidations: () => ({}), setWrap: () => ({}),
     setBorder: (top, left, bottom, right, vertical, horizontal, color, style) => {
       sheet.borders = sheet.borders || [];
       sheet.borders.push({ r, c, nr, nc, top, left, bottom, right, vertical, horizontal, color, style });
@@ -114,8 +116,8 @@ vm.runInContext('numberAndBorderPracticeRosterGroups_', sandbox)(np, 2);
 eq(np.rows[1][1], 1, '# is a plain value, 1 for row 2 (its own group: Blue/Gx)');
 eq(np.rows[2][1], 1, '# resets to 1 for row 3 (its own group: Blue/Bx, Gender changed)');
 eq(np.borders.filter(b => b.bottom === true).map(b => b.r).join(','), '2,3', 'bottom border on both rows (each row is its own group)');
-// 5b. Build Game Roster Prep Sheet's call shape: applyGroupBordersAndNumbering_ with the same
-// [team, activationStatus, gender] group-by set BuildGameRosterPrepSheet.gs passes, 0-based indices.
+// 5b. applyGroupBordersAndNumbering_ with a [team, activationStatus, gender] group-by set, 0-based
+// indices (Build Game Roster Prep Sheet used this until it switched to separator rows).
 const grp = new FakeSheet('Game Roster Prep', [
   ['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade', 'Activation Status', '9/13 Availability', '9/13 Note'],
   ['a', '', '', 'Blue', 'Gx', 7, 'Active', '', ''],
@@ -126,7 +128,7 @@ const grpColIndices = [3, 6, 4]; // team, activationStatus, gender (0-based), ma
 const grpResult = m.applyGroupBordersAndNumbering_(grp, 2, 3, grpColIndices, 1, sandbox.SpreadsheetApp.BorderStyle.SOLID, '#000000');
 eq(grpResult.groupCount, 2, 'game roster prep grouping: 2 groups (Active, then Inactive)');
 eq(grpResult.numbered, true, 'game roster prep grouping: numbered:true when a "#" column and numberColIndex are given');
-eq(grp.rows.slice(1).map(r => r[1]).join(','), '1,2,1', '# is a plain value resetting on Team/Activation Status/Gender, matching BuildGameRosterPrepSheet.gs’s call shape');
+eq(grp.rows.slice(1).map(r => r[1]).join(','), '1,2,1', '# is a plain value resetting on Team/Activation Status/Gender');
 eq(grp.borders.filter(b => b.bottom === true).map(b => b.r).join(','), '3,4', 'bottom border on the last row of each group (rows 3 and 4)');
 // 6. Season without Activation Status: next-game block is two columns, game availability build skips the column
 m.CONFIG.gameRosterPrep.hasActivationStatus = false;
@@ -534,6 +536,34 @@ eq(m.coachAvailabilityHeaders({ kind: 'game', formattedDate: '10/17', team: '' }
   eq(ss.rows[7][4], `=COUNTIFS(${base(8, 'E')},$G$2:$G$5,"Active")+COUNTIFS(${base(8, 'E')},$G$2:$G$5,"")`, 'Blue Gx counts Active or blank');
   eq(JSON.stringify(ss.alignments), JSON.stringify([{ r: 7, c: 3, nr: 1, nc: 3, a: 'center' }, { r: 8, c: 4, nr: 3, nc: 2, a: 'right' }]), 'summary headers centered, both count columns right-aligned');
   m.CONFIG.gameRosterPrep.hasTeam = prevHasTeam; m.CONFIG.gameRosterPrep.hasActivationStatus = prevHasAct;
+}
+
+// Coach game roster prep: availability sorts Planning > blank > Not sure > Can't make it; black
+// separator rows go between sections; "#" is a formula counting from the nearest blank-PlayerID row.
+{
+  const rank = vm.runInContext('gameAvailabilitySortRank_', sandbox);
+  const order = ["👎 Can't make it", '❓ Not sure yet', '', '👍 Planning to be there'].sort((a, b) => rank(a) - rank(b));
+  eq(order.join('|'), "👍 Planning to be there||❓ Not sure yet|👎 Can't make it", 'game prep availability sort order');
+  const sorter = vm.runInContext('sortGameRosterPrep', sandbox);
+  const ss = new FakeSheet('Game Roster Prep', [['PlayerID', '#', 'Full Name', 'Team', 'Gender', 'Grade', 'Avail'],
+    ['a', '', 'Ann', 'Blue', 'Gx', 7, "👎 Can't make it"], ['b', '', 'Bea', 'Blue', 'Gx', 7, ''],
+    ['c', '', 'Cat', 'Blue', 'Gx', 7, '👍 Planning to be there'], ['d', '', 'Dee', 'Blue', 'Gx', 7, '❓ Not sure yet']]);
+  sorter(ss, 4, 7, { team: 4, activationStatus: null, gender: 5, availability: 7, fullName: 3 });
+  eq(ss.rows.slice(1).map(r => r[0]).join(''), 'cbda', 'game prep sorts by availability rank, temp columns removed');
+  eq(ss.rows[0].length, 7, 'sort leaves no temp rank column behind');
+
+  const sep = new FakeSheet('Game Roster Prep', [['PlayerID', '#', 'Full Name', 'Team', 'Gender'],
+    ['a', '', 'A', 'Blue', 'Bx'], ['b', '', 'B', 'Blue', 'Bx'], ['c', '', 'C', 'Blue', 'Gx'], ['d', '', 'D', 'Gold', 'Gx']]);
+  const added = vm.runInContext('insertGameRosterSectionSeparators_', sandbox)(sep, 4, 5, [3, 4]);
+  eq(added, 2, 'two separators for three sections');
+  eq(sep.rows.slice(1).map(r => r[0] || '-').join(''), 'ab-c-d', 'separators sit between sections, none after the last');
+  // The fake doesn't shift recorded formatting when a later insert lands above it (a real sheet
+  // does), so check each separator's shape at insert time rather than its final row number.
+  eq(sep.backgrounds.map(b => `${b.nr}x${b.nc}:${b.bg}`).join(','), '1x5:#000000,1x5:#000000', 'each separator row filled black across every column');
+  eq(Object.values(sep.rowHeights).join(','), '4,4', 'separator rows are thin');
+  vm.runInContext('fillGameRosterNumberFormulas_', sandbox)(sep, 6, 1, 2);
+  eq(sep.rows[1][1], '=IF($A2="","",ROW()-MAX(1,IFERROR(FILTER(ROW($A:$A),ROW($A:$A)<ROW(),$A:$A=""),1)))', '# formula counts from the nearest blank PlayerID row or the header');
+  eq(sep.rows[6][1], '=IF($A7="","",ROW()-MAX(1,IFERROR(FILTER(ROW($A:$A),ROW($A:$A)<ROW(),$A:$A=""),1)))', '# formula on the last row');
 }
 
 console.log(fails === 0 ? 'ALL ASSERTIONS PASSED' : `${fails} FAILURES`);

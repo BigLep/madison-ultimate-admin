@@ -692,21 +692,20 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
       sortGameRosterPrep(newSheet, fullNameInfo.rowCount, headers.length, layout.indices);
     }
 
-    // Number and border AFTER sorting (reset when Team, Activation Status, or Gender changes),
-    // sharing the group-boundary math and orchestration with Draw Group Borders and Build Practice
-    // Roster via applyGroupBordersAndNumbering_ in SheetBuilderUtils.gs (ADR 0005).
+    // Separator rows AFTER sorting (one between each Team / Activation Status / Gender section),
+    // then a "#" formula that counts from the nearest separator above, so a coach can drag rows
+    // within a section and both stay right (ADR 0005, 2026-10-16 amendment).
+    let sheetRowCount = fullNameInfo.rowCount;
     if (fullNameInfo.rowCount > 0) {
       const groupByCols = [idx.team, idx.activationStatus, idx.gender].filter(Boolean).map(function (c) { return c - 1; });
-      applyGroupBordersAndNumbering_(
-        newSheet, 2, fullNameInfo.rowCount, groupByCols, idx.number - 1,
-        BUILD_GROUP_BORDER_STYLE, BUILD_GROUP_BORDER_COLOR
-      );
+      sheetRowCount += insertGameRosterSectionSeparators_(newSheet, fullNameInfo.rowCount, headers.length, groupByCols);
+      fillGameRosterNumberFormulas_(newSheet, sheetRowCount, idx.playerId, idx.number);
     }
 
     // Common cleanup
     finalizeGameRosterSheet(newSheet, fullNameInfo.rowCount);
 
-    addCoachGameRosterTeamSummary(newSheet, fullNameInfo.rowCount, idx, gameDate);
+    addCoachGameRosterTeamSummary(newSheet, sheetRowCount, idx, gameDate);
 
     // Auto-resize columns
     console.log('📏 Auto-resizing columns...');
@@ -720,7 +719,7 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
     for (var ni = 0; ni < idx.games.length; ni++) {
       var nx = idx.games[ni];
       if (nx.note) {
-        newSheet.getRange(2, nx.note, fullNameInfo.rowCount, 1).setWrap(true);
+        newSheet.getRange(2, nx.note, sheetRowCount, 1).setWrap(true);
       }
     }
     if (idx.games.some(function (g) { return g.note; })) {
@@ -736,7 +735,7 @@ function buildCoachGameRoster(newSheet, rosterSheet, gameAvailabilitySheet, game
 
     console.log(`✅ Game roster prep sheet created successfully`);
 
-    const sortDesc = [idx.team && 'Team', idx.activationStatus && 'Activation Status', 'Gender', 'Availability', 'Name']
+    const sortDesc = [idx.team && 'Team', idx.activationStatus && 'Activation Status', 'Gender', 'Availability (Planning, blank, Not sure, Can\'t make it)', 'Name']
       .filter(Boolean).join(' > ');
     SpreadsheetApp.getUi().alert(
       'Game Roster Prep Sheet Created!',
@@ -813,8 +812,89 @@ function populateGameRosterPrepData(newSheet, rosterSheet, rosterHeaderRow, game
 }
 
 /**
+ * Coach game roster prep availability order: Planning, then no answer, then Not sure, then Can't
+ * make it. After a game, "Was there" ranks with Planning and "Wasn't there" with Can't make it.
+ * Unlisted values rank with Not sure.
+ */
+const GAME_ROSTER_AVAIL_SORT_ORDER = {
+  '👍 Planning to be there': 0,
+  'Was there': 0,
+  '': 1,
+  '❓ Not sure yet': 2,
+  '👎 Can\'t make it': 3,
+  'Wasn\'t there': 3
+};
+
+/** @param {*} v @return {number} */
+function gameAvailabilitySortRank_(v) {
+  const s = v != null ? String(v).trim() : '';
+  return GAME_ROSTER_AVAIL_SORT_ORDER.hasOwnProperty(s) ? GAME_ROSTER_AVAIL_SORT_ORDER[s] : 2;
+}
+
+/** Height in pixels of the black separator row between coach game roster prep sections. */
+const GAME_ROSTER_SEPARATOR_ROW_HEIGHT = 4;
+
+/**
+ * Insert a thin black, empty row between each section (contiguous run of matching group-by values)
+ * of the sorted player rows 2..numRows+1. Being a row rather than a cell border, it stays put while
+ * the coach drags player rows around within a section. Its PlayerID cell is blank, which is what
+ * the "#" formula (fillGameRosterNumberFormulas_) counts from.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} numRows - Player data rows, already sorted
+ * @param {number} numColumns - Columns to fill black
+ * @param {number[]} colIndices - 0-based group-by column indices
+ * @return {number} Number of separator rows inserted
+ */
+function insertGameRosterSectionSeparators_(sheet, numRows, numColumns, colIndices) {
+  if (numRows < 1 || colIndices.length === 0) return 0;
+  const rows = sheet.getRange(2, 1, numRows, numColumns).getValues();
+  // Every boundary but the last (the final row of the final section needs no separator below it),
+  // bottom-up so earlier sheet row numbers stay valid as rows are inserted.
+  const boundaries = findGroupBoundaryRows_(rows, colIndices).slice(0, -1).reverse();
+  boundaries.forEach(function (i) {
+    const sheetRow = 2 + i;
+    sheet.insertRowAfter(sheetRow);
+    const sep = sheet.getRange(sheetRow + 1, 1, 1, numColumns);
+    sep.clearDataValidations();
+    sep.setBorder(false, false, false, false, false, false);
+    sep.setBackground('#000000');
+    sheet.setRowHeightsForced(sheetRow + 1, 1, GAME_ROSTER_SEPARATOR_ROW_HEIGHT);
+  });
+  console.log('✅ Inserted ' + boundaries.length + ' section separator row(s)');
+  return boundaries.length;
+}
+
+/**
+ * The coach game roster prep "#" formula for one row: its position below the nearest row above it
+ * with a blank PlayerID (a section separator) or the header. Uses ROW() and whole-column
+ * references only, so it stays right when the coach drags rows around within a section.
+ * @param {string} playerIdLetter
+ * @param {number} row
+ * @return {string}
+ */
+function gameRosterNumberFormula_(playerIdLetter, row) {
+  const col = '$' + playerIdLetter + ':$' + playerIdLetter;
+  return '=IF($' + playerIdLetter + row + '="","",ROW()-MAX(1,IFERROR(FILTER(ROW(' + col + '),ROW(' + col + ')<ROW(),' + col + '=""),1)))';
+}
+
+/**
+ * Write the "#" formula into every row 2..numRows+1 (players and separators; it shows blank on a
+ * separator, whose PlayerID is blank).
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} numRows - Rows below the header, separators included
+ * @param {number} playerIdCol - 1-based
+ * @param {number} numberCol - 1-based
+ */
+function fillGameRosterNumberFormulas_(sheet, numRows, playerIdCol, numberCol) {
+  const letter = getColumnLetter(playerIdCol);
+  const formulas = [];
+  for (let r = 0; r < numRows; r++) formulas.push([gameRosterNumberFormula_(letter, 2 + r)]);
+  sheet.getRange(2, numberCol, numRows, 1).setFormulas(formulas);
+}
+
+/**
  * Sort the coach game roster prep: Team (CONFIG.teams order, if present) > Activation Status (if
- * present) > Gender > Availability > Name.
+ * present) > Gender > Availability (GAME_ROSTER_AVAIL_SORT_ORDER) > Name.
  * @param {Sheet} sheet - The game roster prep sheet
  * @param {number} numRows - Number of data rows
  * @param {number} numColumns - Number of columns
@@ -837,8 +917,11 @@ function sortGameRosterPrep(sheet, numRows, numColumns, indices) {
   }
   sortSpec.push({ column: indices.gender, ascending: true });
   parts.push('Gender');
+  let availRankCol = null;
   if (indices.availability) {
-    sortSpec.push({ column: indices.availability, ascending: true });
+    availRankCol = insertSortRankColumn(sheet, indices.availability, numRows, lastCol, gameAvailabilitySortRank_);
+    lastCol = availRankCol;
+    sortSpec.push({ column: availRankCol, ascending: true });
     parts.push('Availability');
   }
   sortSpec.push({ column: indices.fullName, ascending: true });
@@ -847,6 +930,8 @@ function sortGameRosterPrep(sheet, numRows, numColumns, indices) {
 
   const dataRange = sheet.getRange(2, 1, numRows, lastCol);
   dataRange.sort(sortSpec);
+  // Highest temp column first, so the other's index stays valid
+  if (availRankCol) sheet.deleteColumn(availRankCol);
   if (teamRankCol) sheet.deleteColumn(teamRankCol);
   console.log('✅ Sorting complete');
 }
