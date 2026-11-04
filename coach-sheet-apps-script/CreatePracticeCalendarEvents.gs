@@ -70,7 +70,7 @@ function createPracticeCalendarEvents() {
       });
     }
 
-    const message = 'Created: ' + result.created + '\nUpdated: ' + result.updated + '\nDeleted: ' + result.deleted;
+    const message = formatSyncResultMessage_(result);
     ui.alert('Calendar synced', message, ui.ButtonSet.OK);
   } catch (err) {
     console.error('createPracticeCalendarEvents', err);
@@ -86,7 +86,7 @@ function createPracticeCalendarEvents() {
  *   - sheetEventId: optional stored Google Calendar event ID; if present we match by ID first
  *   - writeBack: optional { row: number, col: number } (1-based); if present we add { row, col, value: eventId } to result.writeBacks
  * @param {function(CalendarEvent): boolean} isEventOurs - returns true if this event is managed by this sync
- * @return {{created: number, updated: number, deleted: number, writeBacks: Array<{row: number, col: number, value: string}>}}
+ * @return {{created: number, updated: number, deleted: number, deletedEvents: Array<{title: string, start: Date}>, writeBacks: Array<{row: number, col: number, value: string}>}}
  */
 function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
   const startOfToday = new Date();
@@ -132,15 +132,38 @@ function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
     }
   });
 
-  let deleted = 0;
+  const deletedEvents = [];
   existingEvents.forEach(function (e) {
     if (!matchedEventIds[e.getId()]) {
+      deletedEvents.push({ title: e.getTitle(), start: e.getStartTime() });
       e.deleteEvent();
-      deleted++;
     }
   });
 
-  return { created: created, updated: updated, deleted: deleted, writeBacks: writeBacks };
+  return { created: created, updated: updated, deleted: deletedEvents.length, deletedEvents: deletedEvents, writeBacks: writeBacks };
+}
+
+/**
+ * Dialog text for a calendar sync: the counts, then every deleted event by title and start so an unexpected
+ * deletion is visible right away.
+ * @param {{created: number, updated: number, deleted: number, deletedEvents: Array<{title: string, start: Date}>}} result
+ * @return {string}
+ */
+function formatSyncResultMessage_(result) {
+  const lines = ['Created: ' + result.created, 'Updated: ' + result.updated, 'Deleted: ' + result.deleted];
+  (result.deletedEvents || []).forEach(function (d) {
+    lines.push('  - ' + d.title + ' (' + formatDeletedEventStart_(d.start) + ')');
+  });
+  return lines.join('\n');
+}
+
+/**
+ * "Tue 11/3 3:55 PM" in the script time zone.
+ * @param {Date} start
+ * @return {string}
+ */
+function formatDeletedEventStart_(start) {
+  return Utilities.formatDate(start, Session.getScriptTimeZone(), 'EEE M/d h:mm a');
 }
 
 /**

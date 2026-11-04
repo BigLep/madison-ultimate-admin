@@ -46,7 +46,7 @@ const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, isGameEventTitle_, isPracticeEventTitle_, PRACTICE_EVENT_TITLE, PRACTICE_TITLE_PREFIX, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_, applyActivationStatusFromRosterSheet };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, isGameEventTitle_, isPracticeEventTitle_, formatSyncResultMessage_, syncEventsToCalendar, PRACTICE_EVENT_TITLE, PRACTICE_TITLE_PREFIX, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_, applyActivationStatusFromRosterSheet };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -234,6 +234,17 @@ eq(m.isGameEventTitle_('TBD Game, 9am'), true, 'game sync owns legacy TBD games'
 eq(m.isGameEventTitle_('Coaches dinner'), false, 'game sync ignores unrelated events');
 eq(m.isGameEventTitle_(gameSpecs[0].title) && m.isGameEventTitle_(gameSpecs[1].title), true, 'every title Sync Game Info authors is one it recognizes');
 eq(m.isPracticeEventTitle_(gameSpecs[1].title), false, 'a warmup is not a practice');
+
+// 9c. Calendar sync dialogs list every deleted event, so an unexpected deletion is visible
+sandbox.Utilities = { formatDate: (d) => 'Tue 11/3 3:55 PM' }; sandbox.Session = { getScriptTimeZone: () => 'America/Los_Angeles' };
+const mkEvent = (id, title, start) => ({ getId: () => id, getTitle: () => title, getStartTime: () => start, deleteEvent() { this.deleted = true; }, getEndTime: () => start, getLocation: () => '', getDescription: () => '', isAllDayEvent: () => false });
+const future = new Date(Date.now() + 5 * 86400000), stale = mkEvent('a@google.com', '🥏 🟦 Blue Warmup', future);
+const syncResult = m.syncEventsToCalendar({ getEvents: () => [stale] }, [], () => true);
+eq(syncResult.deleted, 1, 'sync counts the deleted event');
+eq(stale.deleted, true, 'sync deletes the unmatched event');
+eq(syncResult.deletedEvents.map(d => d.title).join('|'), '🥏 🟦 Blue Warmup', 'sync reports deleted event titles');
+eq(m.formatSyncResultMessage_(syncResult), 'Created: 0\nUpdated: 0\nDeleted: 1\n  - 🥏 🟦 Blue Warmup (Tue 11/3 3:55 PM)', 'dialog lists each deleted event');
+eq(m.formatSyncResultMessage_({ created: 2, updated: 1, deleted: 0, deletedEvents: [] }), 'Created: 2\nUpdated: 1\nDeleted: 0', 'dialog has no list when nothing was deleted');
 
 // 10. Draw Group Borders: pure group-boundary and column-default logic
 eq(m.groupBorderCellText_(null), '', 'groupBorderCellText_ null is blank');

@@ -71,7 +71,7 @@ function createGameCalendarEvents() {
       });
     }
 
-    const message = 'Created: ' + result.created + '\nUpdated: ' + result.updated + '\nDeleted: ' + result.deleted;
+    const message = formatSyncResultMessage_(result);
     ui.alert('Calendar synced', message, ui.ButtonSet.OK);
   } catch (err) {
     console.error('createGameCalendarEvents', err);
@@ -79,12 +79,6 @@ function createGameCalendarEvents() {
   }
 }
 
-/**
- * Load Fields sheet into a lookup map: field name (trimmed, lowercased) -> { googleMapUrl, discNWUrl }.
- * If sheet is missing or has no data, returns {} so sync can continue without URLs.
- * @param {SpreadsheetApp.Spreadsheet} ss
- * @return {Object.<string, {googleMapUrl: string, discNWUrl: string}>}
- */
 /**
  * True when a calendar event title belongs to Sync Game Info (game, warmup, or TBD game), so the sync may
  * update or delete it. Practices are checked first and never match: their title starts with the same 🥏 as
@@ -103,6 +97,12 @@ function isGameEventTitle_(title) {
   return false;
 }
 
+/**
+ * Load Fields sheet into a lookup map: field name (trimmed, lowercased) -> { googleMapUrl, discNWUrl }.
+ * If sheet is missing or has no data, returns {} so sync can continue without URLs.
+ * @param {SpreadsheetApp.Spreadsheet} ss
+ * @return {Object.<string, {googleMapUrl: string, discNWUrl: string}>}
+ */
 function getFieldsLookup(ss) {
   const sheet = CONFIG.fieldsSheet && ss.getSheetByName(CONFIG.fieldsSheet.sheetName);
   if (!sheet) return {};
