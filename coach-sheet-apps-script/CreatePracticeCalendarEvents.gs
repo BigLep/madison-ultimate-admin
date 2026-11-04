@@ -5,7 +5,20 @@
 
 // Shared team calendar for practice and game events - change per season as needed
 const TEAM_CALENDAR_ID = '21081b4ccff3c7ad50dc835ce259ff76a09e0f05d1a66d727fafff195a7af612@group.calendar.google.com';
-const PRACTICE_EVENT_TITLE = '🥏🏃 Practice';
+// What every practice event title starts with. Used both to author the title (PRACTICE_EVENT_TITLE) and to
+// recognize practice events on the calendar (isPracticeEventTitle_), by this sync and by Sync Game Info.
+// Game warmups start with a bare 🥏, so any "is this a warmup?" check must rule practices out first.
+const PRACTICE_TITLE_PREFIX = '🥏🏃';
+const PRACTICE_EVENT_TITLE = PRACTICE_TITLE_PREFIX + ' Practice';
+
+/**
+ * True when a calendar event title is a practice event (starts with PRACTICE_TITLE_PREFIX).
+ * @param {string} title
+ * @return {boolean}
+ */
+function isPracticeEventTitle_(title) {
+  return String(title == null ? '' : title).indexOf(PRACTICE_TITLE_PREFIX) === 0;
+}
 
 // Match tolerance in ms (2 minutes) when matching sheet row to existing calendar event
 const START_TIME_MATCH_MS = 2 * 60 * 1000;
@@ -48,7 +61,7 @@ function createPracticeCalendarEvents() {
       };
     });
     const result = syncEventsToCalendar(calendar, eventSpecs, function (e) {
-      return e.getTitle() === PRACTICE_EVENT_TITLE;
+      return isPracticeEventTitle_(e.getTitle());
     });
 
     if (result.writeBacks && result.writeBacks.length > 0) {

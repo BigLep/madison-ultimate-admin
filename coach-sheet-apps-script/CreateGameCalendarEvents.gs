@@ -61,13 +61,7 @@ function createGameCalendarEvents() {
     }
 
     const isGameEventOurs = function (e) {
-      const title = e.getTitle();
-      if (title.indexOf(GAME_EVENT_TITLE_PREFIX) === 0) return true;
-      // Prefix (not exact-match) so per-team warmup titles like "🥏 🟦 Blue Warmup" still match.
-      if (title.indexOf(GAME_WARMUP_TITLE_PREFIX) === 0) return true;
-      // Legacy or alternate-format TBD events (e.g. "TBD Game, 9am") so we can match/delete them
-      if (title === 'TBD Game' || title.indexOf('TBD Game') === 0) return true;
-      return false;
+      return isGameEventTitle_(e.getTitle());
     };
     const result = syncEventsToCalendar(calendar, eventSpecs, isGameEventOurs);
 
@@ -91,6 +85,24 @@ function createGameCalendarEvents() {
  * @param {SpreadsheetApp.Spreadsheet} ss
  * @return {Object.<string, {googleMapUrl: string, discNWUrl: string}>}
  */
+/**
+ * True when a calendar event title belongs to Sync Game Info (game, warmup, or TBD game), so the sync may
+ * update or delete it. Practices are checked first and never match: their title starts with the same 🥏 as
+ * a warmup, so matching them would make this sync delete future practices.
+ * @param {string} title
+ * @return {boolean}
+ */
+function isGameEventTitle_(title) {
+  const t = String(title == null ? '' : title);
+  if (isPracticeEventTitle_(t)) return false;
+  if (t.indexOf(GAME_EVENT_TITLE_PREFIX) === 0) return true;
+  // Prefix (not exact-match) so per-team warmup titles like "🥏 🟦 Blue Warmup" still match.
+  if (t.indexOf(GAME_WARMUP_TITLE_PREFIX) === 0) return true;
+  // Legacy or alternate-format TBD events (e.g. "TBD Game, 9am") so we can match/delete them
+  if (t.indexOf('TBD Game') === 0) return true;
+  return false;
+}
+
 function getFieldsLookup(ss) {
   const sheet = CONFIG.fieldsSheet && ss.getSheetByName(CONFIG.fieldsSheet.sheetName);
   if (!sheet) return {};

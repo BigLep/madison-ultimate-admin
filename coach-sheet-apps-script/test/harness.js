@@ -46,7 +46,7 @@ const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_, applyActivationStatusFromRosterSheet };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, isGameEventTitle_, isPracticeEventTitle_, PRACTICE_EVENT_TITLE, PRACTICE_TITLE_PREFIX, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_, applyActivationStatusFromRosterSheet };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -221,6 +221,19 @@ eq(gameSpecs[0].title, '🎯 🟦 Blue vs. Salmon Bay Panthers 8th', 'Blue game 
 eq(gameSpecs[1].title, '🥏 🟦 Blue Warmup', 'Blue warmup title has emoji and team name');
 eq(gameSpecs[2].title, '🎯 Game vs. Some Rival', 'blank Team (all-team event) has no team segment');
 eq(gameSpecs[3].title, '🥏 Game Warmup', 'blank Team warmup falls back to the plain title');
+
+// 9b. Sync Game Info must never claim practice events (their title starts with the same 🥏 as a warmup)
+eq(m.isPracticeEventTitle_(m.PRACTICE_EVENT_TITLE), true, 'authored practice title is recognized as a practice');
+eq(m.PRACTICE_EVENT_TITLE.indexOf(m.PRACTICE_TITLE_PREFIX), 0, 'practice title is built from the practice prefix');
+eq(m.isGameEventTitle_(m.PRACTICE_EVENT_TITLE), false, 'game sync does not own practice events');
+eq(m.isGameEventTitle_('🥏🏃 Practice (moved)'), false, 'game sync does not own practice variants');
+eq(m.isGameEventTitle_('🥏 🟦 Blue Warmup'), true, 'game sync owns per-team warmups');
+eq(m.isGameEventTitle_('🥏 Game Warmup'), true, 'game sync owns the plain warmup');
+eq(m.isGameEventTitle_('🎯 🟦 Blue vs. X'), true, 'game sync owns games');
+eq(m.isGameEventTitle_('TBD Game, 9am'), true, 'game sync owns legacy TBD games');
+eq(m.isGameEventTitle_('Coaches dinner'), false, 'game sync ignores unrelated events');
+eq(m.isGameEventTitle_(gameSpecs[0].title) && m.isGameEventTitle_(gameSpecs[1].title), true, 'every title Sync Game Info authors is one it recognizes');
+eq(m.isPracticeEventTitle_(gameSpecs[1].title), false, 'a warmup is not a practice');
 
 // 10. Draw Group Borders: pure group-boundary and column-default logic
 eq(m.groupBorderCellText_(null), '', 'groupBorderCellText_ null is blank');
