@@ -186,7 +186,7 @@ Column definitions live in the `ROSTER_COLUMNS` list in `Code.gs` (name, type, s
 - **Convert to Actual Attendance** - Convert availability to attendance records
 - **Organize Sheets** - Reorder sheet tabs
 - **Sync Practice Info to Calendar** - Syncs "🥏🏃 Practice" events from the Practice Info sheet to the team calendar (create/update/delete to match sheet). Uses a **Google Calendar Event ID** column so the script can keep sheet and calendar in sync without guessing.
-- **Sync Game Info to Calendar** - Syncs game and warmup events from the Game Info sheet to the team calendar ("🎯 Game vs. X", "🎯 TBD Game", "🥏 Game Warmup"; create/update/delete to match sheet). Uses **Google Calendar Event ID** and **Google Calendar Warmup Event ID** columns. Warmup time comes from the **Warmup Arrival** column.
+- **Sync Game Info to Calendar** - Syncs game and warmup events from the Game Info sheet to the team calendar ("🎯 Game vs. X", "🎯 TBD Game", "🥏 Game Warmup"; create/update/delete to match sheet). Uses **Google Calendar Event ID** and **Google Calendar Warmup Event ID** columns. It only updates or deletes events it created: an event counts as its own when its ID is recorded in those columns or it carries the sync's private tag (stamped on every event it creates or matches). Events added by hand are never touched, even if their title starts with 🥏 or 🎯 (a "🥏🎉 Team Party" was deleted by an older title-based check on 2026-11-09). An event whose Game Info row was deleted before this version has no tag and no recorded ID, so delete it by hand. Warmup time comes from the **Warmup Arrival** column.
 
 #### Calendar sync logic (Game and Practice)
 

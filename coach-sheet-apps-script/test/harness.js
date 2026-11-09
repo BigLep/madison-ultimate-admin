@@ -46,7 +46,7 @@ const src = ['Code.gs', 'ManagedConditionalFormatting.gs', 'SheetBuilderUtils.gs
 const sandbox = { console: { log() {}, warn() {}, error() {} }, SpreadsheetApp: { getUi: () => ({}), flush() {}, BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DOTTED: 'DOTTED', DASHED: 'DASHED', DOUBLE: 'DOUBLE' } } };
 const vm = require('vm'); vm.createContext(sandbox);
 vm.runInContext(src + `
-  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, isGameEventTitle_, isPracticeEventTitle_, formatSyncResultMessage_, syncEventsToCalendar, PRACTICE_EVENT_TITLE, PRACTICE_TITLE_PREFIX, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_, applyActivationStatusFromRosterSheet };`, sandbox);
+  ;module = { seedPrintoutPlayerRows, populatePracticeRosterData, populateGameRosterPrepData, getGameRosterPrepColumnLayout, findAvailabilityColumns, playerIdLookupFormula, CONFIG, seedAvailabilityRows_, ROSTER_COLUMNS, getGameEventSpecsFromSheet, gameTeamLabel, buildGameEventOwnershipCheck_, GAME_SYNC_TAG_KEY, GAME_SYNC_TAG_VALUE, isPracticeEventTitle_, formatSyncResultMessage_, syncEventsToCalendar, PRACTICE_EVENT_TITLE, PRACTICE_TITLE_PREFIX, findGroupBoundaryRows_, defaultGroupByColumns_, groupBorderCellText_, drawGroupBordersOnSheet_, groupPositions_, applyGroupBordersAndNumbering_, numberAndBorderPracticeRosterGroups_, capturePracticeRosterGroupValues_, restorePracticeRosterGroupValues_, readPracticeRosterDate_, PRACTICE_ROSTER_COLUMNS, sanitizePdfFilename_, coachAvailabilityHeaders, buildCoachAvailabilityCore_, mintCoachId_, isActivationTeam, countsAsActive_, findPastDateColumnSpan_, groupPastDateColumnsOnSheet_, findDateColumnRun_, planDateColumnMoves_, sortDateColumnsOnSheet_, applyActivationStatusFromRosterSheet };`, sandbox);
 const m = sandbox.module;
 m.CONFIG.gameRosterPrep.hasActivationStatus = true;
 m.CONFIG.gameRosterPrep.hasTeam = false; // earlier game prep cases were written without a Team column
@@ -225,14 +225,20 @@ eq(gameSpecs[3].title, '🥏 Game Warmup', 'blank Team warmup falls back to the 
 // 9b. Sync Game Info must never claim practice events (their title starts with the same 🥏 as a warmup)
 eq(m.isPracticeEventTitle_(m.PRACTICE_EVENT_TITLE), true, 'authored practice title is recognized as a practice');
 eq(m.PRACTICE_EVENT_TITLE.indexOf(m.PRACTICE_TITLE_PREFIX), 0, 'practice title is built from the practice prefix');
-eq(m.isGameEventTitle_(m.PRACTICE_EVENT_TITLE), false, 'game sync does not own practice events');
-eq(m.isGameEventTitle_('🥏🏃 Practice (moved)'), false, 'game sync does not own practice variants');
-eq(m.isGameEventTitle_('🥏 🟦 Blue Warmup'), true, 'game sync owns per-team warmups');
-eq(m.isGameEventTitle_('🥏 Game Warmup'), true, 'game sync owns the plain warmup');
-eq(m.isGameEventTitle_('🎯 🟦 Blue vs. X'), true, 'game sync owns games');
-eq(m.isGameEventTitle_('TBD Game, 9am'), true, 'game sync owns legacy TBD games');
-eq(m.isGameEventTitle_('Coaches dinner'), false, 'game sync ignores unrelated events');
-eq(m.isGameEventTitle_(gameSpecs[0].title) && m.isGameEventTitle_(gameSpecs[1].title), true, 'every title Sync Game Info authors is one it recognizes');
+// Ownership is by recorded event ID or private tag, never by title: a hand-added "🥏🎉 Team Party" was deleted
+// by the old title-prefix check on 2026-11-09.
+const tagEvt = (id, title, tag) => ({ getId: () => id, getTitle: () => title, getTag: (k) => (k === m.GAME_SYNC_TAG_KEY ? (tag || null) : null) });
+const ownedSpecs = [{ sheetEventId: 'game1@google.com' }, { sheetEventId: ' warm1@google.com ' }, { sheetEventId: null }];
+const owns = m.buildGameEventOwnershipCheck_(ownedSpecs);
+eq(owns(tagEvt('game1@google.com', '🎯 🟦 Blue vs. X')), true, 'game sync owns an event whose ID is in the sheet');
+eq(owns(tagEvt('warm1@google.com', '🥏 🟦 Blue Warmup')), true, 'recorded IDs are trimmed before matching');
+eq(owns(tagEvt('orphan@google.com', '🎯 🟦 Blue vs. X', m.GAME_SYNC_TAG_VALUE)), true, 'game sync owns a tagged event whose sheet row is gone');
+eq(owns(tagEvt('party@google.com', '🥏🎉 Team Party (TBD)')), false, 'game sync never owns a hand-added event that starts with 🥏');
+eq(owns(tagEvt('other@google.com', '🎯 Something added by hand')), false, 'game sync never owns a hand-added event that starts with 🎯');
+eq(owns(tagEvt('old@google.com', '🥏 🟦 Blue Warmup')), false, 'a look-alike warmup with no recorded ID and no tag is left alone');
+eq(owns(tagEvt('game1@google.com', m.PRACTICE_EVENT_TITLE)), false, 'game sync does not own practice events even with a recorded ID');
+eq(owns(tagEvt('p@google.com', '🥏🏃 Practice (moved)', m.GAME_SYNC_TAG_VALUE)), false, 'game sync does not own practice variants even when tagged');
+eq(owns(tagEvt('c@google.com', 'Coaches dinner')), false, 'game sync ignores unrelated events');
 eq(m.isPracticeEventTitle_(gameSpecs[1].title), false, 'a warmup is not a practice');
 
 // 9c. Calendar sync dialogs list every deleted event, so an unexpected deletion is visible
@@ -245,6 +251,20 @@ eq(stale.deleted, true, 'sync deletes the unmatched event');
 eq(syncResult.deletedEvents.map(d => d.title).join('|'), '🥏 🟦 Blue Warmup', 'sync reports deleted event titles');
 eq(m.formatSyncResultMessage_(syncResult), 'Created: 0\nUpdated: 0\nDeleted: 1\n  - 🥏 🟦 Blue Warmup (Tue 11/3 3:55 PM)', 'dialog lists each deleted event');
 eq(m.formatSyncResultMessage_({ created: 2, updated: 1, deleted: 0, deletedEvents: [] }), 'Created: 2\nUpdated: 1\nDeleted: 0', 'dialog has no list when nothing was deleted');
+
+// 9d. The sync stamps its tag on events it creates and on matched events that lack it, and only deletes owned ones
+const tagged = {}; const mkTaggable = (id, title, start) => Object.assign(mkEvent(id, title, start), { getTag: (k) => tagged[id + k] || null, setTag: (k, v) => { tagged[id + k] = v; }, setTitle() {}, setLocation() {}, setDescription() {}, setTime() {} });
+const kept = mkTaggable('keep@google.com', '🥏🎉 Team Party (TBD)', future), gone = mkTaggable('gone@google.com', '🎯 🟦 Blue vs. Old', future), matchedEvt = mkTaggable('match@google.com', '🎯 🟦 Blue vs. New', future);
+const tagCal = { getEvents: () => [kept, gone, matchedEvt], createEvent: (t, s, e) => mkTaggable('new@google.com', t, s) };
+tagged['gone@google.com' + m.GAME_SYNC_TAG_KEY] = m.GAME_SYNC_TAG_VALUE;
+const tagSpecs = [{ title: '🎯 🟦 Blue vs. New', startTime: future, endTime: future, location: '', description: '', isAllDay: false, sheetEventId: 'match@google.com' },
+  { title: '🎯 🟦 Blue vs. Created', startTime: new Date(future.getTime() + 86400000), endTime: new Date(future.getTime() + 86400000), location: '', description: '', isAllDay: false, sheetEventId: null }];
+const tagResult = m.syncEventsToCalendar(tagCal, tagSpecs, m.buildGameEventOwnershipCheck_(tagSpecs), { key: m.GAME_SYNC_TAG_KEY, value: m.GAME_SYNC_TAG_VALUE });
+eq(kept.deleted, undefined, 'sync leaves a hand-added event alone');
+eq(gone.deleted, true, 'sync deletes its own tagged event that has no sheet row');
+eq(tagResult.deleted, 1, 'only the sync-owned orphan is deleted');
+eq(tagged['match@google.com' + m.GAME_SYNC_TAG_KEY], m.GAME_SYNC_TAG_VALUE, 'a matched event is stamped with the sync tag');
+eq(tagged['new@google.com' + m.GAME_SYNC_TAG_KEY], m.GAME_SYNC_TAG_VALUE, 'a created event is stamped with the sync tag');
 
 // 10. Draw Group Borders: pure group-boundary and column-default logic
 eq(m.groupBorderCellText_(null), '', 'groupBorderCellText_ null is blank');

@@ -86,9 +86,11 @@ function createPracticeCalendarEvents() {
  *   - sheetEventId: optional stored Google Calendar event ID; if present we match by ID first
  *   - writeBack: optional { row: number, col: number } (1-based); if present we add { row, col, value: eventId } to result.writeBacks
  * @param {function(CalendarEvent): boolean} isEventOurs - returns true if this event is managed by this sync
+ * @param {{key: string, value: string}=} ownerTag - optional private tag stamped on every event this call creates
+ *   or matches, so a later sync can recognize the event as its own even when no sheet row records its ID
  * @return {{created: number, updated: number, deleted: number, deletedEvents: Array<{title: string, start: Date}>, writeBacks: Array<{row: number, col: number, value: string}>}}
  */
-function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
+function syncEventsToCalendar(calendar, eventSpecs, isEventOurs, ownerTag) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const endDate = new Date(startOfToday);
@@ -116,6 +118,7 @@ function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
     }
     if (matched) {
       matchedEventIds[matched.getId()] = true;
+      if (ownerTag && matched.getTag(ownerTag.key) !== ownerTag.value) matched.setTag(ownerTag.key, ownerTag.value);
       if (!calendarEventMatchesSpec(matched, spec)) {
         updateCalendarEventFromSpec(matched, spec);
         updated++;
@@ -125,6 +128,7 @@ function syncEventsToCalendar(calendar, eventSpecs, isEventOurs) {
       }
     } else {
       const createdEvent = createCalendarEventFromSpec(calendar, spec);
+      if (ownerTag && createdEvent) createdEvent.setTag(ownerTag.key, ownerTag.value);
       created++;
       if (spec.writeBack && createdEvent) {
         writeBacks.push({ row: spec.writeBack.row, col: spec.writeBack.col, value: createdEvent.getId() });

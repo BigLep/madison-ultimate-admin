@@ -1,12 +1,19 @@
 /**
  * Sync Game Info sheet to Google Calendar
  * Creates, updates, and deletes game and warmup events on the team calendar to match the sheet.
+ * It only ever updates or deletes events it created (see buildGameEventOwnershipCheck_), never an event
+ * just because its title looks like a game or warmup.
  */
 
 const GAME_EVENT_TITLE_PREFIX = '🎯';
 const GAME_WARMUP_TITLE_PREFIX = '🥏';
 const GAME_TBD_TITLE = '🎯 TBD Game';
 const GAME_WARMUP_TITLE = '🥏 Game Warmup';
+// Private tag this sync stamps on every game, warmup, and TBD event it creates or matches. It is how the
+// sync recognizes its own events that no longer have a Game Info row (e.g. a deleted row), so they can be
+// removed. Tags are invisible in the calendar UI.
+const GAME_SYNC_TAG_KEY = 'madisonGameInfoSync';
+const GAME_SYNC_TAG_VALUE = '1';
 const TBD_DEFAULT_TIME_HOUR = 9;
 const TBD_DEFAULT_TIME_MINUTE = 0;
 
@@ -60,10 +67,8 @@ function createGameCalendarEvents() {
       return;
     }
 
-    const isGameEventOurs = function (e) {
-      return isGameEventTitle_(e.getTitle());
-    };
-    const result = syncEventsToCalendar(calendar, eventSpecs, isGameEventOurs);
+    const isGameEventOurs = buildGameEventOwnershipCheck_(eventSpecs);
+    const result = syncEventsToCalendar(calendar, eventSpecs, isGameEventOurs, { key: GAME_SYNC_TAG_KEY, value: GAME_SYNC_TAG_VALUE });
 
     if (result.writeBacks && result.writeBacks.length > 0) {
       result.writeBacks.forEach(function (wb) {
@@ -80,21 +85,24 @@ function createGameCalendarEvents() {
 }
 
 /**
- * True when a calendar event title belongs to Sync Game Info (game, warmup, or TBD game), so the sync may
- * update or delete it. Practices are checked first and never match: their title starts with the same 🥏 as
- * a warmup, so matching them would make this sync delete future practices.
- * @param {string} title
- * @return {boolean}
+ * Build the check Sync Game Info uses to decide which calendar events it may update or delete.
+ * An event is ours only when this sync created it: its event ID is recorded in the Game Info sheet's
+ * Google Calendar (Warmup) Event ID columns, or it carries the sync's private tag. A title is never enough:
+ * titles start with the same 🥏 or 🎯 as events people add by hand (e.g. "🥏🎉 Team Party"), and the
+ * sync deleted one of those on 2026-11-09. Practice events are excluded as a second guard.
+ * @param {Array<{sheetEventId?: string}>} eventSpecs - every spec built from the sheet (not only future ones)
+ * @return {function(CalendarEvent): boolean}
  */
-function isGameEventTitle_(title) {
-  const t = String(title == null ? '' : title);
-  if (isPracticeEventTitle_(t)) return false;
-  if (t.indexOf(GAME_EVENT_TITLE_PREFIX) === 0) return true;
-  // Prefix (not exact-match) so per-team warmup titles like "🥏 🟦 Blue Warmup" still match.
-  if (t.indexOf(GAME_WARMUP_TITLE_PREFIX) === 0) return true;
-  // Legacy or alternate-format TBD events (e.g. "TBD Game, 9am") so we can match/delete them
-  if (t.indexOf('TBD Game') === 0) return true;
-  return false;
+function buildGameEventOwnershipCheck_(eventSpecs) {
+  const recordedIds = {};
+  eventSpecs.forEach(function (spec) {
+    if (spec.sheetEventId) recordedIds[String(spec.sheetEventId).trim()] = true;
+  });
+  return function (e) {
+    if (isPracticeEventTitle_(e.getTitle())) return false;
+    if (recordedIds[e.getId()] === true) return true;
+    return e.getTag(GAME_SYNC_TAG_KEY) === GAME_SYNC_TAG_VALUE;
+  };
 }
 
 /**
