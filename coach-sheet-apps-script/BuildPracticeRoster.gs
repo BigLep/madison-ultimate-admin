@@ -75,6 +75,35 @@ function findNextUpcomingPractice(practiceDates) {
   return 0; // Default to first practice if no upcoming ones
 }
 
+const PRACTICE_ROSTER_PREFS_KEY = 'practiceRosterDialogPrefs';
+
+/**
+ * Read the coach's last Build Practice Roster dialog choices (action, sheet, sort mode, availability
+ * sort) from per-user script properties. Stored server-side because dialog localStorage is not
+ * reliably kept between openings.
+ * @return {Object} Saved prefs, or {} if none or unreadable
+ */
+function getPracticeRosterPrefs_() {
+  try {
+    const raw = PropertiesService.getUserProperties().getProperty(PRACTICE_ROSTER_PREFS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+/**
+ * Save the coach's Build Practice Roster dialog choices. Called from the dialog on submit.
+ * @param {Object} prefs - { action, sheet, sortMode, sortByAvailability }
+ */
+function savePracticeRosterPrefs(prefs) {
+  try {
+    PropertiesService.getUserProperties().setProperty(PRACTICE_ROSTER_PREFS_KEY, JSON.stringify(prefs || {}));
+  } catch (e) {
+    console.warn('Could not save practice roster prefs:', e.message);
+  }
+}
+
 /**
  * Show the practice date selection dialog
  * @param {Array} practiceDates - Array of practice date objects
@@ -84,7 +113,7 @@ function showPracticeDateSelectionDialog(practiceDates, defaultIndex) {
   const html = createPracticeDateSelectionHtml(practiceDates, defaultIndex);
   const htmlOutput = HtmlService.createHtmlOutput(html)
     .setWidth(450)
-    .setHeight(300);
+    .setHeight(560);
     
   SpreadsheetApp.getUi()
     .showModalDialog(htmlOutput, 'Build Practice Roster');
@@ -254,15 +283,23 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
           <label>Sort Order:</label>
           <div class="radio-group">
             <div class="radio-option">
-              <input type="radio" id="sortTeam" name="sortMode" value="team" checked>
-              <label for="sortTeam" style="margin-bottom: 0;">Team</label>
+              <input type="radio" id="sortGender" name="sortMode" value="gender">
+              <label for="sortGender" style="margin-bottom: 0;">Gender &gt; Name</label>
             </div>
             <div class="radio-option">
-              <input type="radio" id="sortCheckin" name="sortMode" value="checkin">
-              <label for="sortCheckin" style="margin-bottom: 0;">Checkin</label>
+              <input type="radio" id="sortTeamGender" name="sortMode" value="team-gender" checked>
+              <label for="sortTeamGender" style="margin-bottom: 0;">Team &gt; Gender &gt; Name</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="sortTeamGenderGrade" name="sortMode" value="team-gender-grade">
+              <label for="sortTeamGenderGrade" style="margin-bottom: 0;">Team &gt; Gender &gt; Grade &gt; Name</label>
             </div>
           </div>
-          <div class="note">Team: Team &gt; Gender &gt; Grade &gt; Name (for scrimmages). Checkin: Gender &gt; Name (for checking players in).</div>
+          <div class="radio-option" style="margin-top: 8px;">
+            <input type="checkbox" id="sortByAvailability">
+            <label for="sortByAvailability" style="margin-bottom: 0;">Sort by availability within group</label>
+          </div>
+          <div class="note">Puts players who can't make it at the bottom of each group.</div>
         </div>
 
         <div class="form-group" id="newSheetGroup">
@@ -298,6 +335,21 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
 
         <script>
           let activeSheetName = '';
+          const savedPrefs = ${JSON.stringify(getPracticeRosterPrefs_()).replace(/</g, '\\u003c')};
+          let lastSheetName = savedPrefs.sheet || '';
+
+          // Preselect the sheet used last time (falling back to the active sheet), keeping the dropdown usable.
+          function selectPreferredSheet() {
+            const select = document.getElementById('existingSheet');
+            const hasOption = function(name) {
+              return !!name && Array.prototype.some.call(select.options, function(o) { return o.value === name; });
+            };
+            if (hasOption(lastSheetName)) {
+              select.value = lastSheetName;
+            } else if (hasOption(activeSheetName)) {
+              select.value = activeSheetName;
+            }
+          }
 
           // Load existing sheets and restore last selection on page load
           window.onload = function() {
@@ -329,6 +381,7 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
                   option.textContent = sheet;
                   select.appendChild(option);
                 });
+                selectPreferredSheet();
               })
               .withFailureHandler(function(error) {
                 console.error('Failed to load sheets:', error);
@@ -338,9 +391,12 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
           }
 
           function restoreLastSelection() {
-            const lastSheet = localStorage.getItem('lastPracticeRosterSheet');
-            const lastAction = localStorage.getItem('lastPracticeRosterAction');
-            const lastSortMode = localStorage.getItem('lastPracticeRosterSortMode');
+            const lastAction = savedPrefs.action;
+            const lastSortMode = savedPrefs.sortMode;
+
+            if (savedPrefs.sortByAvailability === true) {
+              document.getElementById('sortByAvailability').checked = true;
+            }
 
             if (lastSortMode) {
               const sortRadio = document.querySelector('input[name="sortMode"][value="' + lastSortMode + '"]');
@@ -350,16 +406,6 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             if (lastAction === 'update') {
               document.getElementById('actionUpdate').checked = true;
               toggleActionFields();
-
-              if (lastSheet) {
-                // Wait a bit for sheets to load, then select
-                setTimeout(() => {
-                  const select = document.getElementById('existingSheet');
-                  if (select.querySelector(\`option[value="\${lastSheet}"]\`)) {
-                    select.value = lastSheet;
-                  }
-                }, 500);
-              }
             }
           }
 
@@ -378,11 +424,9 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
               existingSheetGroup.classList.remove('hidden');
               actionButton.textContent = 'Update Roster';
 
-              // When switching to update mode, default to active sheet if available
-              const select = document.getElementById('existingSheet');
-              if (activeSheetName && select.querySelector(\`option[value="\${activeSheetName}"]\`)) {
-                select.value = activeSheetName;
-              }
+              // Switching to update mode preselects the last-used sheet (else the active sheet)
+              // only while nothing is chosen, so a manual pick is never overwritten.
+              if (!document.getElementById('existingSheet').value) selectPreferredSheet();
             }
           }
 
@@ -395,15 +439,16 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             const practiceDate = document.getElementById('practiceDate').value;
             const isCreate = document.getElementById('actionCreate').checked;
             const sortMode = document.querySelector('input[name="sortMode"]:checked').value;
+            const sortByAvailability = document.getElementById('sortByAvailability').checked;
 
             if (isCreate) {
-              createNewRoster(practiceDate, sortMode);
+              createNewRoster(practiceDate, sortMode, sortByAvailability);
             } else {
-              updateExistingRoster(practiceDate, sortMode);
+              updateExistingRoster(practiceDate, sortMode, sortByAvailability);
             }
           }
 
-          function createNewRoster(practiceDate, sortMode) {
+          function createNewRoster(practiceDate, sortMode, sortByAvailability) {
             const sheetName = document.getElementById('sheetName').value.trim();
 
             if (!sheetName) {
@@ -414,10 +459,7 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             // Show progress
             showProgress('Creating Practice Roster...', 'Please wait while we create your roster');
 
-            // Save action to localStorage
-            localStorage.setItem('lastPracticeRosterAction', 'create');
-            localStorage.setItem('lastPracticeRosterSheet', sheetName);
-            localStorage.setItem('lastPracticeRosterSortMode', sortMode);
+            google.script.run.savePracticeRosterPrefs({ action: 'create', sheet: lastSheetName, sortMode: sortMode, sortByAvailability: sortByAvailability });
 
             // Check for duplicate sheet name first
             google.script.run
@@ -432,13 +474,13 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
                 google.script.run
                   .withSuccessHandler(onSuccess)
                   .withFailureHandler(onFailure)
-                  .createPracticeRosterSheet(sheetName, practiceDate, sortMode);
+                  .createPracticeRosterSheet(sheetName, practiceDate, sortMode, sortByAvailability);
               })
               .withFailureHandler(onFailure)
               .isSheetNameDuplicate(sheetName);
           }
 
-          function updateExistingRoster(practiceDate, sortMode) {
+          function updateExistingRoster(practiceDate, sortMode, sortByAvailability) {
             const existingSheet = document.getElementById('existingSheet').value;
 
             if (!existingSheet) {
@@ -449,16 +491,13 @@ function createPracticeDateSelectionHtml(practiceDates, defaultIndex) {
             // Show progress
             showProgress('Updating Practice Roster...', 'Please wait while we update your roster');
 
-            // Save action and sheet to localStorage
-            localStorage.setItem('lastPracticeRosterAction', 'update');
-            localStorage.setItem('lastPracticeRosterSheet', existingSheet);
-            localStorage.setItem('lastPracticeRosterSortMode', sortMode);
+            google.script.run.savePracticeRosterPrefs({ action: 'update', sheet: existingSheet, sortMode: sortMode, sortByAvailability: sortByAvailability });
 
             // Update the existing roster
             google.script.run
               .withSuccessHandler(onSuccess)
               .withFailureHandler(onFailure)
-              .updatePracticeRosterSheet(existingSheet, practiceDate, sortMode);
+              .updatePracticeRosterSheet(existingSheet, practiceDate, sortMode, sortByAvailability);
           }
 
           function showProgress(title, message) {
@@ -517,9 +556,10 @@ function getActiveSheetName() {
  * Update an existing practice roster sheet with new data (content only, preserve formatting)
  * @param {string} sheetName - Name of the existing sheet to update
  * @param {string} practiceDate - Practice date in format "M/D"
- * @param {string} [sortMode] - 'team' (default) or 'checkin'; see sortPracticeRoster
+ * @param {string} [sortMode] - 'gender', 'team-gender' (default) or 'team-gender-grade'; see sortPracticeRoster
+ * @param {boolean} [sortByAvailability] - see sortPracticeRoster
  */
-function updatePracticeRosterSheet(sheetName, practiceDate, sortMode) {
+function updatePracticeRosterSheet(sheetName, practiceDate, sortMode, sortByAvailability) {
   console.log(`🔄 Updating existing practice roster sheet: "${sheetName}" for date: ${practiceDate}`);
 
   try {
@@ -629,7 +669,7 @@ function updatePracticeRosterSheet(sheetName, practiceDate, sortMode) {
       SpreadsheetApp.flush();
 
       // Sort the data AFTER formulas have been calculated
-      sortPracticeRoster(existingSheet, fullNameInfo.rowCount, headers.length, sortMode);
+      sortPracticeRoster(existingSheet, fullNameInfo.rowCount, headers.length, sortMode, sortByAvailability);
 
       // Number and border AFTER sorting (so the group-by columns reflect the final row order)
       numberAndBorderPracticeRosterGroups_(existingSheet, fullNameInfo.rowCount, practiceRosterGroupByColumns_(sortMode));
@@ -662,9 +702,10 @@ function updatePracticeRosterSheet(sheetName, practiceDate, sortMode) {
  * Create the practice roster sheet with all data
  * @param {string} sheetName - Name for the new sheet
  * @param {string} practiceDate - Practice date in format "M/D"
- * @param {string} [sortMode] - 'team' (default) or 'checkin'; see sortPracticeRoster
+ * @param {string} [sortMode] - 'gender', 'team-gender' (default) or 'team-gender-grade'; see sortPracticeRoster
+ * @param {boolean} [sortByAvailability] - see sortPracticeRoster
  */
-function createPracticeRosterSheet(sheetName, practiceDate, sortMode) {
+function createPracticeRosterSheet(sheetName, practiceDate, sortMode, sortByAvailability) {
   console.log(`📋 Creating practice roster sheet: "${sheetName}" for date: ${practiceDate}`);
   
   try {
@@ -776,7 +817,7 @@ function createPracticeRosterSheet(sheetName, practiceDate, sortMode) {
 
     // Sort the data AFTER formulas have been calculated
     if (fullNameInfo.rowCount > 0) {
-      sortPracticeRoster(newSheet, fullNameInfo.rowCount, headers.length, sortMode);
+      sortPracticeRoster(newSheet, fullNameInfo.rowCount, headers.length, sortMode, sortByAvailability);
     }
 
     // Number and border AFTER sorting (so the group-by columns reflect the final row order)
@@ -957,14 +998,13 @@ function numberAndBorderPracticeRosterGroups_(sheet, numRows, groupByColumns) {
 }
 
 /**
- * The "#"/group-border grouping columns for a given sort mode: Team + Gender for 'team' mode
- * (matches its Team > Gender sort), Gender only for 'checkin' mode (matches its Gender > Name
- * sort, since Team isn't part of that ordering).
- * @param {string} [sortMode] - 'team' (default) or 'checkin'
+ * The "#"/group-border grouping columns for a given sort mode: Gender only for 'gender' mode,
+ * Team + Gender for both Team modes (Grade is a sort key only, not a group boundary).
+ * @param {string} [sortMode] - 'gender', 'team-gender' (default) or 'team-gender-grade'
  * @return {Array<number>} 1-based column indices, for numberAndBorderPracticeRosterGroups_
  */
 function practiceRosterGroupByColumns_(sortMode) {
-  return sortMode === 'checkin'
+  return sortMode === 'gender'
     ? [PRACTICE_ROSTER_COLUMNS.gender.index]
     : [PRACTICE_ROSTER_COLUMNS.team.index, PRACTICE_ROSTER_COLUMNS.gender.index];
 }
@@ -1039,51 +1079,54 @@ const PRACTICE_AVAIL_SORT_ORDER = {
 const PRACTICE_AVAIL_COLUMN_INDEX = PRACTICE_ROSTER_COLUMN_KEYS.length + 1;
 
 /**
- * Sort the practice roster. 'team' mode (default): Team > Gender > Practice Availability (custom
- * order) > Grade > Name, for figuring out scrimmages. 'checkin' mode: Gender > Name only, for
- * quickly looking a player up at checkin (Full Name already includes last name, so this is
- * unambiguous without a further tiebreaker).
- * Availability (team mode only): 👍 and blank (assumed coming) share one bucket; then ❓ Not sure
- * yet; then 👎 Can't make it.
+ * Sort the practice roster by one of three modes (Full Name already includes last name, so Name
+ * is an unambiguous final tiebreaker):
+ * - 'gender': Gender > Name (checking players in).
+ * - 'team-gender' (default): Team (CONFIG.teams order) > Gender > Name.
+ * - 'team-gender-grade': Team (CONFIG.teams order) > Gender > Grade > Name (scrimmages).
+ * With sortByAvailability, practice availability is inserted right after the group keys (Team and
+ * Gender, or Gender alone), before Grade/Name: 👍 and blank (assumed coming) share one bucket,
+ * then ❓ Not sure yet, then 👎 Can't make it.
  * Note: # column will automatically update after sort due to formula
  * @param {Sheet} sheet - The practice roster sheet
  * @param {number} numRows - Number of data rows
  * @param {number} numColumns - Number of columns
- * @param {string} [sortMode] - 'team' (default) or 'checkin'
+ * @param {string} [sortMode] - 'gender', 'team-gender' (default) or 'team-gender-grade'
+ * @param {boolean} [sortByAvailability] - Sort by availability within each group
  */
-function sortPracticeRoster(sheet, numRows, numColumns, sortMode) {
-  if (sortMode === 'checkin') {
-    console.log('🔄 Sorting by Gender, Name (Checkin mode)...');
-    sheet.getRange(2, 1, numRows, numColumns).sort([
-      { column: PRACTICE_ROSTER_COLUMNS.gender.index, ascending: true },
-      { column: PRACTICE_ROSTER_COLUMNS.fullName.index, ascending: true }
-    ]);
-    console.log('✅ Sorting complete');
-    return;
+function sortPracticeRoster(sheet, numRows, numColumns, sortMode, sortByAvailability) {
+  const teamFirst = sortMode !== 'gender';
+  const withGrade = sortMode === 'team-gender-grade';
+  console.log('🔄 Sorting by ' + (teamFirst ? 'Team (CONFIG.teams order), ' : '') + 'Gender, ' +
+    (sortByAvailability ? 'Availability, ' : '') + (withGrade ? 'Grade, ' : '') + 'Name...');
+
+  // Temporary numeric sort-key columns (Range.sort() only orders by cell values).
+  let lastCol = numColumns;
+  let teamRankCol = null;
+  let availRankCol = null;
+  if (teamFirst) {
+    teamRankCol = insertSortRankColumn(sheet, PRACTICE_ROSTER_COLUMNS.team.index, numRows, lastCol, teamSortRank);
+    lastCol = teamRankCol;
+  }
+  if (sortByAvailability) {
+    availRankCol = insertSortRankColumn(sheet, PRACTICE_AVAIL_COLUMN_INDEX, numRows, lastCol, function (v) {
+      const s = (v != null ? String(v).trim() : '');
+      return PRACTICE_AVAIL_SORT_ORDER.hasOwnProperty(s) ? PRACTICE_AVAIL_SORT_ORDER[s] : 1;
+    });
+    lastCol = availRankCol;
   }
 
-  console.log('🔄 Sorting by Team (CONFIG.teams order), Gender, Practice Availability, Grade, Name...');
+  const keys = [];
+  if (teamFirst) keys.push({ column: teamRankCol, ascending: true });
+  keys.push({ column: PRACTICE_ROSTER_COLUMNS.gender.index, ascending: true });
+  if (sortByAvailability) keys.push({ column: availRankCol, ascending: true });
+  if (withGrade) keys.push({ column: PRACTICE_ROSTER_COLUMNS.grade.index, ascending: true });
+  keys.push({ column: PRACTICE_ROSTER_COLUMNS.fullName.index, ascending: true });
 
-  // Temporary numeric sort-key columns (Range.sort() only orders by cell values): Team rank in
-  // CONFIG.teams order, then practice-availability rank.
-  const numDataRows = numRows; // data rows = rows 2 to (1 + numRows)
-  const teamRankCol = insertSortRankColumn(sheet, PRACTICE_ROSTER_COLUMNS.team.index, numDataRows, numColumns, teamSortRank);
-  const availRankCol = insertSortRankColumn(sheet, PRACTICE_AVAIL_COLUMN_INDEX, numDataRows, teamRankCol, function (v) {
-    const s = (v != null ? String(v).trim() : '');
-    return PRACTICE_AVAIL_SORT_ORDER.hasOwnProperty(s) ? PRACTICE_AVAIL_SORT_ORDER[s] : 1;
-  });
+  sheet.getRange(2, 1, numRows, lastCol).sort(keys);
 
-  const dataRange = sheet.getRange(2, 1, numDataRows, availRankCol);
-  dataRange.sort([
-    { column: teamRankCol, ascending: true },
-    { column: PRACTICE_ROSTER_COLUMNS.gender.index, ascending: true },
-    { column: availRankCol, ascending: true },
-    { column: PRACTICE_ROSTER_COLUMNS.grade.index, ascending: true },
-    { column: PRACTICE_ROSTER_COLUMNS.fullName.index, ascending: true }
-  ]);
-
-  sheet.deleteColumn(availRankCol);
-  sheet.deleteColumn(teamRankCol);
+  if (availRankCol) sheet.deleteColumn(availRankCol);
+  if (teamRankCol) sheet.deleteColumn(teamRankCol);
   console.log('✅ Sorting complete');
 }
 

@@ -147,22 +147,44 @@ const mkRow = (id, name, team, gender, grade, avail) => [id, '', '', name, team,
 const sp = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note'],
   mkRow('a', 'Ann', 'Practice Squad', 'Gx', 7, ''), mkRow('b', 'Bea', 'TBD', 'Gx', 7, ''), mkRow('c', 'Cal', 'Silver', 'Bx', 8, ''),
   mkRow('d', 'Dee', '', 'Gx', 6, ''), mkRow('e', 'Eli', 'Gold', 'Bx', 8, ''), mkRow('f', 'Fay', 'Blue', 'Gx', 7, '👎 Can\'t make it'), mkRow('g', 'Gus', 'Blue', 'Gx', 7, '')]);
-vm.runInContext('sortPracticeRoster', sandbox)(sp, 7, 9);
-eq(sp.rows.slice(1).map(r => r[3]).join(','), 'Gus,Fay,Eli,Cal,Bea,Ann,Dee', 'practice roster: Blue, Gold, Silver, TBD, Practice Squad, blank; availability within team');
+const sortFn = vm.runInContext('sortPracticeRoster', sandbox);
+const names = sh => sh.rows.slice(1).map(r => r[3]).join(',');
+sortFn(sp, 7, 9);
+eq(names(sp), 'Fay,Gus,Eli,Cal,Bea,Ann,Dee', 'default (team-gender): Team order, Gender, Name; blank team last');
 eq(sp.rows[0].length, 9, 'temp sort columns removed');
+const spTGG = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note'],
+  mkRow('a', 'Ann', 'Blue', 'Gx', 8, ''), mkRow('b', 'Bea', 'Blue', 'Gx', 6, ''), mkRow('c', 'Cal', 'Blue', 'Gx', 7, ''), mkRow('d', 'Dee', 'Gold', 'Bx', 6, '')]);
+sortFn(spTGG, 4, 9, 'team-gender-grade');
+eq(names(spTGG), 'Bea,Cal,Ann,Dee', 'team-gender-grade: Grade breaks ties before Name');
+eq(spTGG.rows[0].length, 9, 'team-gender-grade: no temp sort columns left');
 
-// 7b. Checkin sort mode: Gender > Name only, ignoring Team
+// 7b. Gender mode: Gender > Name only, ignoring Team
 const spCheckin = new FakeSheet('Practice Roster', [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note'],
   mkRow('a', 'Ann', 'Practice Squad', 'Gx', 7, ''), mkRow('b', 'Bea', 'TBD', 'Gx', 7, ''), mkRow('c', 'Cal', 'Silver', 'Bx', 8, ''), mkRow('d', 'Dee', 'Blue', 'Bx', 6, '')]);
-vm.runInContext('sortPracticeRoster', sandbox)(spCheckin, 4, 9, 'checkin');
-eq(spCheckin.rows.slice(1).map(r => r[3]).join(','), 'Cal,Dee,Ann,Bea', 'checkin mode: Gender then Name, ignoring Team');
-eq(spCheckin.rows[0].length, 9, 'checkin mode: no temp sort columns added');
+sortFn(spCheckin, 4, 9, 'gender');
+eq(names(spCheckin), 'Cal,Dee,Ann,Bea', 'gender mode: Gender then Name, ignoring Team');
+eq(spCheckin.rows[0].length, 9, 'gender mode: no temp sort columns added');
 
-// 7c. practiceRosterGroupByColumns_: team mode groups by Team+Gender, checkin mode by Gender only
+// 7b2. Sort by availability within group: 👎 sinks to the bottom of each group, for all three modes
+const availRows = () => [['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note'],
+  mkRow('a', 'Ann', 'Blue', 'Gx', 6, '👎 Can\'t make it'), mkRow('b', 'Bea', 'Blue', 'Gx', 7, '❓ Not sure yet'), mkRow('c', 'Cal', 'Blue', 'Gx', 8, ''),
+  mkRow('d', 'Dee', 'Gold', 'Gx', 6, '👍 Planning to be there'), mkRow('e', 'Eli', 'Gold', 'Gx', 7, '👎 Can\'t make it')];
+const spAvail = new FakeSheet('Practice Roster', availRows());
+sortFn(spAvail, 5, 9, 'team-gender', true);
+eq(names(spAvail), 'Cal,Bea,Ann,Dee,Eli', 'team-gender + availability: unavailable last within each Team/Gender group');
+eq(spAvail.rows[0].length, 9, 'availability sort: no temp columns left');
+const spAvailG = new FakeSheet('Practice Roster', availRows());
+sortFn(spAvailG, 5, 9, 'gender', true);
+eq(names(spAvailG), 'Cal,Dee,Bea,Ann,Eli', 'gender + availability: 👍/blank, then ❓, then 👎');
+const spAvailGr = new FakeSheet('Practice Roster', availRows());
+sortFn(spAvailGr, 5, 9, 'team-gender-grade', true);
+eq(names(spAvailGr), 'Cal,Bea,Ann,Dee,Eli', 'team-gender-grade + availability: availability before Grade');
+
+// 7c. practiceRosterGroupByColumns_: Team modes group by Team+Gender, gender mode by Gender only
 const groupByCols = vm.runInContext('practiceRosterGroupByColumns_', sandbox);
-eq(groupByCols().join(','), '5,6', 'team mode (default) groups by Team, Gender');
-eq(groupByCols('team').join(','), '5,6', 'team mode groups by Team, Gender');
-eq(groupByCols('checkin').join(','), '6', 'checkin mode groups by Gender only');
+eq(groupByCols().join(','), '5,6', 'default groups by Team, Gender');
+eq(groupByCols('team-gender-grade').join(','), '5,6', 'team-gender-grade groups by Team, Gender');
+eq(groupByCols('gender').join(','), '6', 'gender mode groups by Gender only');
 
 // 7d. readPracticeRosterDate_: reads the date header right after Grade, whether or not Group exists
 eq(m.readPracticeRosterDate_(['PlayerID', '#', 'Group', 'Full Name', 'Team', 'Gender', 'Grade', '9/9', '9/9 Note']), '9/9', 'readPracticeRosterDate_ with Group column');
